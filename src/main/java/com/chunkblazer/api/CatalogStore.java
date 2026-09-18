@@ -31,11 +31,9 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.Collections;
 import java.util.HashMap;
@@ -48,7 +46,7 @@ import java.util.zip.GZIPInputStream;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.client.RuneLite;
+import net.runelite.client.util.Filepath;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -64,7 +62,7 @@ import okhttp3.ResponseBody;
  * <p>Mirrors {@code AssetStore}'s outage discipline, with two catalog-specific
  * differences that matter:
  * <ol>
- *   <li><b>The cache/seed load is SYNCHRONOUS.</b> {@link #init()} must populate
+ *   <li><b>The cache/seed load is SYNCHRONOUS.</b> {@link #init(Filepath)} must populate
  *       the in-memory catalog before {@code loadChunkData()} runs, so it loads
  *       from disk cache (or the bundled gzipped seed) on the calling thread, then
  *       schedules only the network refresh in the background. The running session
@@ -107,9 +105,12 @@ public class CatalogStore
 		});
 	}
 
-	private final File cacheDir;
-	private final File catalogFile;
-	private final File etagFile;
+	// Sandboxed plugin data dir + the two cache files under it, set in init() from
+	// the Filepath the plugin resolves via getPluginDirectory(). Null when no plugin
+	// dir is available (rare), in which case we run cache-less off the bundled seed.
+	private volatile Filepath cacheDir;
+	private volatile Filepath catalogFile;
+	private volatile Filepath etagFile;
 
 	// filename -> that file's JSON content. Written on init()/refresh, read on the
 	// game thread by the loaders — volatile publish of an immutable snapshot.
@@ -133,9 +134,6 @@ public class CatalogStore
 			.connectTimeout(10, TimeUnit.SECONDS)
 			.readTimeout(30, TimeUnit.SECONDS)
 			.build();
-		this.cacheDir = new File(RuneLite.RUNELITE_DIR, "chunkblazer");
-		this.catalogFile = new File(cacheDir, "tasks_catalog.json");
-		this.etagFile = new File(cacheDir, "tasks_catalog.etag");
 	}
 
 	/**
@@ -143,8 +141,11 @@ public class CatalogStore
 	 * the catalog immediately, then an async server refresh for next launch. MUST
 	 * be called before {@code loadChunkData()}/{@code loadGlobalTasks()}/
 	 * {@code loadFreeChunks()}.
+	 *
+	 * @param pluginDir the plugin's sandboxed data directory (from
+	 *                  {@code getPluginDirectory()}), or null to run cache-less
 	 */
-	public void init()
+	public void init(Filepath pluginDir)
 	{
 		// Build (or rebuild, after a disable/enable) the refresh pool before anything
 		// submits to it, or a re-enable hits a terminated executor.
@@ -153,8 +154,22 @@ public class CatalogStore
 			refreshExecutor = newRefreshExecutor();
 		}
 
-		//noinspection ResultOfMethodCallIgnored
-		cacheDir.mkdirs();
+		// Point the cache at the plugin's sandboxed dir (Filepath). Null => no disk
+		// cache; the store serves the bundled seed and the network refresh only.
+		this.cacheDir = pluginDir;
+		this.catalogFile = pluginDir != null ? pluginDir.joinSegment("tasks_catalog.json") : null;
+		this.etagFile = pluginDir != null ? pluginDir.joinSegment("tasks_catalog.etag") : null;
+		if (pluginDir != null)
+		{
+			try
+			{
+				pluginDir.createDirectories();
+			}
+			catch (IOException e)
+			{
+				log.warn("Could not create catalog cache dir: {}", e.getMessage());
+			}
+		}
 
 		Map<String, String> cache = loadFromDiskCache();
 		Map<String, String> seed = loadFromSeed();
@@ -246,10 +261,21 @@ public class CatalogStore
 	/** Best-effort removal of a stale disk cache so a newer seed can't lose to it again. */
 	private void deleteStaleCache()
 	{
-		//noinspection ResultOfMethodCallIgnored
-		catalogFile.delete();
-		//noinspection ResultOfMethodCallIgnored
-		etagFile.delete();
+		try
+		{
+			if (catalogFile != null)
+			{
+				catalogFile.deleteIfExists();
+			}
+			if (etagFile != null)
+			{
+				etagFile.deleteIfExists();
+			}
+		}
+		catch (IOException e)
+		{
+			log.debug("Could not delete stale catalog cache: {}", e.getMessage());
+		}
 	}
 
 	/** True once a non-empty catalog has been loaded from cache, seed, or network. */
@@ -298,14 +324,14 @@ public class CatalogStore
 
 	private Map<String, String> loadFromDiskCache()
 	{
-		if (!catalogFile.isFile())
+		Filepath f = catalogFile;
+		if (f == null || !f.isFile())
 		{
 			return null;
 		}
-		try
+		try (InputStream is = f.openInputStream())
 		{
-			byte[] b = Files.readAllBytes(catalogFile.toPath());
-			return parseCombined(new String(b, StandardCharsets.UTF_8));
+			return parseCombined(new String(is.readAllBytes(), StandardCharsets.UTF_8));
 		}
 		catch (Exception e)
 		{
@@ -456,13 +482,14 @@ public class CatalogStore
 
 	private String readEtag()
 	{
-		if (!etagFile.exists())
+		Filepath f = etagFile;
+		if (f == null || !f.exists())
 		{
 			return null;
 		}
-		try
+		try (InputStream is = f.openInputStream())
 		{
-			String s = new String(Files.readAllBytes(etagFile.toPath()), StandardCharsets.UTF_8).trim();
+			String s = new String(is.readAllBytes(), StandardCharsets.UTF_8).trim();
 			return s.isEmpty() ? null : s;
 		}
 		catch (IOException e)
@@ -486,18 +513,31 @@ public class CatalogStore
 		}
 	}
 
-	private static void writeAtomic(File dest, byte[] bytes) throws IOException
+	private void writeAtomic(Filepath dest, byte[] bytes) throws IOException
 	{
-		File tmp = new File(dest.getParentFile(), dest.getName() + ".tmp");
-		Files.write(tmp.toPath(), bytes);
+		Filepath dir = cacheDir;
+		if (dir == null || dest == null)
+		{
+			return; // cache-less mode: nothing to persist
+		}
+		Filepath tmp = dir.createTempFile("catalog", ".tmp");
 		try
 		{
-			Files.move(tmp.toPath(), dest.toPath(),
-				StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			tmp.write(bytes);
+			try
+			{
+				tmp.moveTo(dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			}
+			catch (IOException atomicUnsupported)
+			{
+				// Some filesystems don't support ATOMIC_MOVE; fall back to a plain replace.
+				tmp.moveTo(dest, StandardCopyOption.REPLACE_EXISTING);
+			}
 		}
-		catch (IOException atomicUnsupported)
+		catch (IOException e)
 		{
-			Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			tmp.deleteIfExists();
+			throw e;
 		}
 	}
 }

@@ -230,10 +230,8 @@ public class EquipModule extends AbstractTaskModule
 				}
 			}
 		}
-		else
-		{
-			log.debug("EquipModule: equipment container is NULL during initialization");
-		}
+		// A null equipment container just means it hasn't loaded yet (pre-login /
+		// mid-init); the snapshot stays empty and fills in on the next pass.
 	}
 
 	/**

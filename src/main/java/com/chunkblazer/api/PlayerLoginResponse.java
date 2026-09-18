@@ -67,6 +67,24 @@ public class PlayerLoginResponse
 	private String apiKey;
 
 	/**
+	 * True when the key the client sent belongs to a DIFFERENT account than the
+	 * one logging in (the cross-account key leak). The server declined to
+	 * authenticate as the key's owner and served this account by name instead;
+	 * the client drops the mismatched key on seeing this.
+	 */
+	@SerializedName("key_mismatch")
+	private boolean keyMismatch;
+
+	/**
+	 * True when this login was authenticated by the api_key the client sent
+	 * resolving to THIS account (not the name-based fallback). Lets the client
+	 * confirm a freshly pasted recovery key really belongs to this account before
+	 * it persists it, so a wrong or unknown key can never overwrite a working one.
+	 */
+	@SerializedName("authed_by_key")
+	private boolean authedByKey;
+
+	/**
 	 * Check if the login was successful.
 	 */
 	public boolean isSuccess()
@@ -165,6 +183,14 @@ public class PlayerLoginResponse
 		 */
 		@SerializedName("unrevealed_tasks")
 		private String unrevealedTasks = "";
+
+		/**
+		 * The roll's ETag: bumps when a new region is committed server-side. Stored by
+		 * the client (cleared on reset) so it can tell when the committed roll changed
+		 * under it (e.g. another device unlocked a chunk). 0 when no roll is committed.
+		 */
+		@SerializedName("roll_version")
+		private long rollVersion;
 
 		/**
 		 * Whether this player has completed RSN ownership verification via the

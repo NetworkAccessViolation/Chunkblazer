@@ -102,6 +102,11 @@ public class RaidChallengeModule extends AbstractTaskModule
 {
 	private static final String TYPE = "RAID_CHALLENGE";
 
+	// Verbose raid-challenge tracing. OFF in shipped builds — the calls compile to a
+	// dead branch and emit nothing. Flip to true and rebuild to diagnose a raid task's
+	// gating/credit while authoring; see rcDebug.
+	private static final boolean RAID_DEBUG = false;
+
 	// ToA defaults, overridable per-task in the challenge block.
 	private static final int DEFAULT_RAID_LEVEL_VARBIT = 14380;
 	private static final int DEFAULT_RUN_VARP = 173;
@@ -267,7 +272,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		task.setTargetQuantity(s.target);
 
 		RaidChallenge ch = task.getChallenge();
-		log.debug("[RAIDCHALLENGE-DEBUG] tracking {} (msg='{}', rooms={}, raidVarbit={}={}, minRaid={}, solo={}, forbidden={}, obtainAll={}, target={}, satisfyTriggered={})",
+		rcDebug("tracking {} (msg='{}', rooms={}, raidVarbit={}={}, minRaid={}, solo={}, forbidden={}, obtainAll={}, target={}, satisfyTriggered={})",
 			task.getTaskId(), ch.getCompleteMessage(), ch.getRoomRegions(),
 			(ch.getRaidLevelVarbit() != null ? ch.getRaidLevelVarbit() : DEFAULT_RAID_LEVEL_VARBIT), raidLevel(ch),
 			ch.getMinRaidLevel(), ch.getSolo(),
@@ -369,7 +374,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				s.windowOpen = true;
 				resetAttempt(s); // fresh attempt each time the window (re)opens
 				seedObtainSnapshot(ch, s); // baseline counts so items held at entry don't count
-				log.debug("[RAIDCHALLENGE-DEBUG] {} window OPEN (region={}, rooms={}, raidLevel={}, team={})",
+				rcDebug("{} window OPEN (region={}, rooms={}, raidLevel={}, team={})",
 					task.getTaskId(), region, ch.getRoomRegions(), raidLevel(ch), teamSize(ch));
 			}
 			else if (!inWin && s.windowOpen)
@@ -379,7 +384,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				// attempt's violated/accumulator flags must survive until either the
 				// message is evaluated or a new attempt opens the window again.
 				s.windowOpen = false;
-				log.debug("[RAIDCHALLENGE-DEBUG] {} window CLOSED (region={}, violated={})",
+				rcDebug("{} window CLOSED (region={}, violated={})",
 					task.getTaskId(), region, s.violated);
 			}
 			if (!inWin)
@@ -409,7 +414,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				s.surviveTicks++;
 				if (s.surviveTicks % 25 == 0 || s.surviveTicks >= ch.getSurviveTicks())
 				{
-					log.debug("[RAIDCHALLENGE-DEBUG] {} survive {}/{} ticks (phase active)",
+					rcDebug("{} survive {}/{} ticks (phase active)",
 						task.getTaskId(), s.surviveTicks, ch.getSurviveTicks());
 				}
 				if (s.surviveTicks >= ch.getSurviveTicks())
@@ -477,12 +482,12 @@ public class RaidChallengeModule extends AbstractTaskModule
 			}
 			boolean gates = gatesPass(ch);
 			boolean pit = pointInTimeOk(ch);
-			log.debug("[RAIDCHALLENGE-DEBUG] {} complete-msg matched; gatesPass={} (raidLevel={} min={} team={} solo={}) violated={} pointInTime={} progress={}/{}",
+			rcDebug("{} complete-msg matched; gatesPass={} (raidLevel={} min={} team={} solo={}) violated={} pointInTime={} progress={}/{}",
 				task.getTaskId(), gates, raidLevel(ch), ch.getMinRaidLevel(), teamSize(ch), ch.getSolo(),
 				s.violated, pit, s.progress, s.target);
 			if (!gates || s.violated || !pit)
 			{
-				log.debug("[RAIDCHALLENGE-DEBUG] {} did NOT qualify this run — resetting attempt", task.getTaskId());
+				rcDebug("{} did NOT qualify this run — resetting attempt", task.getTaskId());
 				// If a rule was broken mid-fight we already told the player why; only
 				// announce the point-in-time / gate reason when nothing was flagged yet.
 				if (!s.violated)
@@ -496,12 +501,12 @@ public class RaidChallengeModule extends AbstractTaskModule
 			task.setCurrentProgress(s.progress);
 			if (s.progress >= s.target)
 			{
-				log.debug("[RAIDCHALLENGE-DEBUG] {} COMPLETE ({}/{})", task.getTaskId(), s.progress, s.target);
+				rcDebug("{} COMPLETE ({}/{})", task.getTaskId(), s.progress, s.target);
 				complete(task, s);
 			}
 			else if (completionCallback != null)
 			{
-				log.debug("[RAIDCHALLENGE-DEBUG] {} progressed to {}/{}", task.getTaskId(), s.progress, s.target);
+				rcDebug("{} progressed to {}/{}", task.getTaskId(), s.progress, s.target);
 				completionCallback.onProgressUpdated(task, s.progress);
 				sendProgress(task, s.progress, s.target);
 			}
@@ -534,7 +539,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (dmg > 0 && ch != null && Boolean.TRUE.equals(ch.getNoDamage()) && !s.violated)
 				{
 					s.violated = true;
-					log.debug("[RAIDCHALLENGE-DEBUG] {} VIOLATED: took {} damage", task.getTaskId(), dmg);
+					rcDebug("{} VIOLATED: took {} damage", task.getTaskId(), dmg);
 					announceFailure(task, "You took damage. This challenge must be done without taking a hit.");
 				}
 			}
@@ -562,7 +567,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			resetAttempt(s);          // fresh fight — clear any stale violation/flags
 			s.encounterActive = true;
 			s.encounterStartTick = client.getTickCount();
-			log.debug("[RAIDCHALLENGE-DEBUG] {} encounter START (npc={})", task.getTaskId(), npcId);
+			rcDebug("{} encounter START (npc={})", task.getTaskId(), npcId);
 		}
 
 		// (c) Damage the LOCAL PLAYER deals to a style-gated NPC. Every hit on such an
@@ -587,7 +592,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			if (!styleMatches(current, required))
 			{
 				s.violated = true;
-				log.debug("[RAIDCHALLENGE-DEBUG] {} VIOLATED: hit NPC {} with {} (needs {})",
+				rcDebug("{} VIOLATED: hit NPC {} with {} (needs {})",
 					task.getTaskId(), npcId, current, required);
 				announceFailure(task, "You hit this boss with a " + current.label()
 					+ " attack, " + required.label() + " only.");
@@ -609,7 +614,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			}
 			if (amount >= ch.getMinHitsplat() && !s.violated)
 			{
-				log.debug("[RAIDCHALLENGE-DEBUG] {} min_hitsplat {} met (hit {})",
+				rcDebug("{} min_hitsplat {} met (hit {})",
 					task.getTaskId(), ch.getMinHitsplat(), amount);
 				complete(task, s);
 			}
@@ -629,7 +634,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			}
 			if (ch.getHitsplatValues().contains(amount) && !s.violated)
 			{
-				log.debug("[RAIDCHALLENGE-DEBUG] {} hitsplat_values matched (hit {})",
+				rcDebug("{} hitsplat_values matched (hit {})",
 					task.getTaskId(), amount);
 				complete(task, s);
 			}
@@ -651,7 +656,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			{
 				s.hitStreak++;
 				int need = ch.getConsecutiveHitsplatCount() == null ? 2 : ch.getConsecutiveHitsplatCount();
-				log.debug("[RAIDCHALLENGE-DEBUG] {} consecutive_hitsplat {}/{} (hit {})",
+				rcDebug("{} consecutive_hitsplat {}/{} (hit {})",
 					task.getTaskId(), s.hitStreak, need, amount);
 				if (s.hitStreak >= need && !s.violated)
 				{
@@ -809,7 +814,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				&& ch.getNoNpcDeathIds() != null && ch.getNoNpcDeathIds().contains(id))
 			{
 				s.violated = true; // a protected NPC died (e.g. an energy siphon)
-				log.debug("[RAIDCHALLENGE-DEBUG] {} VIOLATED: protected NPC {} died", task.getTaskId(), id);
+				rcDebug("{} VIOLATED: protected NPC {} died", task.getTaskId(), id);
 				announceFailure(task, "A protected NPC was killed. This run no longer counts.");
 			}
 			// defeat_count: tally a counted add's death within the fight window.
@@ -834,7 +839,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 					// (resolvePendingVengeanceKill) so death-vs-varbit order can't race.
 					boolean gates = gatesPass(ch);
 					boolean pit = pointInTimeOk(ch);
-					log.debug("[RAIDCHALLENGE-DEBUG] {} defeat_npc {} died (venge finish pending); violated={} gates={} pit={}",
+					rcDebug("{} defeat_npc {} died (venge finish pending); violated={} gates={} pit={}",
 						task.getTaskId(), id, s.violated, gates, pit);
 					s.encounterActive = false;
 					if (!s.violated && gates && pit)
@@ -862,7 +867,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 					ticks.add(tick);
 					final int cut = tick - window;
 					ticks.removeIf(t -> t < cut);
-					log.debug("[RAIDCHALLENGE-DEBUG] {} simultaneous kill: {} death(s) within {} ticks (violated={})",
+					rcDebug("{} simultaneous kill: {} death(s) within {} ticks (violated={})",
 						task.getTaskId(), ticks.size(), window, s.violated);
 					if (ticks.size() >= ch.getDefeatSimultaneous() && s.encounterActive
 						&& !s.violated && gatesPass(ch) && pointInTimeOk(ch))
@@ -882,7 +887,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 					// ("defeat a Manticore in 24 seconds"). A slow kill fails the attempt.
 					boolean tooSlow = ch.getMaxDefeatTicks() != null && s.encounterStartTick >= 0
 						&& (client.getTickCount() - s.encounterStartTick) > ch.getMaxDefeatTicks();
-					log.debug("[RAIDCHALLENGE-DEBUG] {} defeat_npc {} died; violated={} gates={} pointInTime={} tooSlow={}",
+					rcDebug("{} defeat_npc {} died; violated={} gates={} pointInTime={} tooSlow={}",
 						task.getTaskId(), id, s.violated, gates, pit, tooSlow);
 					s.encounterActive = false;
 					if (!s.violated && gates && pit && !tooSlow)
@@ -930,7 +935,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 					if (it != null && ch.getForbiddenItemIds().contains(it.getId()))
 					{
 						s.violated = true; // took a raid-supplied item
-						log.debug("[RAIDCHALLENGE-DEBUG] {} VIOLATED: forbidden item {} in inventory", task.getTaskId(), it.getId());
+						rcDebug("{} VIOLATED: forbidden item {} in inventory", task.getTaskId(), it.getId());
 						announceFailure(task, "You picked up an item that isn't allowed for this challenge.");
 						break;
 					}
@@ -1002,7 +1007,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			return;
 		}
 		s.defeatCount++;
-		log.debug("[RAIDCHALLENGE-DEBUG] {} defeat_count {}/{}", task.getTaskId(), s.defeatCount, ch.getDefeatCount());
+		rcDebug("{} defeat_count {}/{}", task.getTaskId(), s.defeatCount, ch.getDefeatCount());
 		if (s.defeatCount >= ch.getDefeatCount())
 		{
 			trySatisfy(task, ch, s);
@@ -1299,7 +1304,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		if (why != null)
 		{
 			s.violated = true;
-			log.debug("[RAIDCHALLENGE-DEBUG] {} VIOLATED: {}", task.getTaskId(), why);
+			rcDebug("{} VIOLATED: {}", task.getTaskId(), why);
 			announceFailure(task, reason);
 		}
 	}
@@ -1370,7 +1375,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		if (s.violated || !gatesPass(ch) || !pointInTimeOk(ch))
 		{
 			boolean pit = pointInTimeOk(ch);
-			log.debug("[RAIDCHALLENGE-DEBUG] {} reached its target but did NOT qualify (violated={} gates={} pointInTime={})",
+			rcDebug("{} reached its target but did NOT qualify (violated={} gates={} pointInTime={})",
 				task.getTaskId(), s.violated, gatesPass(ch), pit);
 			// This runs every tick while the accumulator is maxed but the gates fail;
 			// announce the reason once so it doesn't spam the chatbox each tick.
@@ -1383,7 +1388,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		}
 		s.progress = s.target;
 		task.setCurrentProgress(s.target);
-		log.debug("[RAIDCHALLENGE-DEBUG] {} SATISFIED -> complete", task.getTaskId());
+		rcDebug("{} SATISFIED -> complete", task.getTaskId());
 		complete(task, s);
 	}
 
@@ -1528,7 +1533,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		}
 		s.progress = s.obtainedGroups.size();
 		task.setCurrentProgress(s.progress);
-		log.debug("[RAIDCHALLENGE-DEBUG] {} obtain-all(made) {}/{}", task.getTaskId(), s.progress, groups.size());
+		rcDebug("{} obtain-all(made) {}/{}", task.getTaskId(), s.progress, groups.size());
 		if (s.obtainedGroups.size() >= groups.size())
 		{
 			trySatisfy(task, ch, s);
@@ -1569,7 +1574,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		// UNKNOWN mode (a relog): only a KNOWN Entry raid blocks a forbid_entry_mode task.
 		if (task.isForbidEntryMode() && tobMode.isEntry())
 		{
-			log.debug("[RAIDCHALLENGE-DEBUG] {} blocked — Theatre of Blood Entry mode does not count", task.getTaskId());
+			rcDebug("{} blocked — Theatre of Blood Entry mode does not count", task.getTaskId());
 			return;
 		}
 		task.setCompleted(true);
@@ -1621,12 +1626,12 @@ public class RaidChallengeModule extends AbstractTaskModule
 		}
 		if (pendingVengeanceKillTick == client.getTickCount() && vengeanceReboundedThisTick)
 		{
-			log.debug("[RAIDCHALLENGE-DEBUG] {} vengeance finish CONFIRMED", task.getTaskId());
+			rcDebug("{} vengeance finish CONFIRMED", task.getTaskId());
 			complete(task, s);
 		}
 		else
 		{
-			log.debug("[RAIDCHALLENGE-DEBUG] {} died without a vengeance rebound this tick", task.getTaskId());
+			rcDebug("{} died without a vengeance rebound this tick", task.getTaskId());
 			announceFailure(task, "The finishing blow wasn't a Vengeance rebound. Vengeance must land the kill.");
 			resetAttempt(s);
 		}
@@ -2036,7 +2041,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			if (healthPct <= pct)
 			{
 				s.arenaHpGateLatched = true;
-				log.debug("[RAIDCHALLENGE-DEBUG] arena HP gate OPEN (npc {} at {}% <= {}%)",
+				rcDebug("arena HP gate OPEN (npc {} at {}% <= {}%)",
 					npc.getId(), Math.round(healthPct), pct);
 				return;
 			}
@@ -2194,5 +2199,17 @@ public class RaidChallengeModule extends AbstractTaskModule
 			}
 		}
 		return "The run didn't meet this challenge's requirements.";
+	}
+
+	/**
+	 * Gated verbose raid tracing (see {@link #RAID_DEBUG}). Compiles to a no-op in shipped
+	 * builds, so it emits nothing unless RAID_DEBUG is flipped on and the plugin rebuilt.
+	 */
+	private void rcDebug(String fmt, Object... args)
+	{
+		if (RAID_DEBUG)
+		{
+			log.debug("[RAIDCHALLENGE-DEBUG] " + fmt, args);
+		}
 	}
 }

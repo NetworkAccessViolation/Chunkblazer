@@ -28,10 +28,9 @@ package com.chunkblazer.api;
 
 import com.chunkblazer.ChunkBlazerConfig;
 import com.google.gson.Gson;
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.Collections;
@@ -43,7 +42,7 @@ import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.client.RuneLite;
+import net.runelite.client.util.Filepath;
 import okhttp3.Dispatcher;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -69,7 +68,7 @@ import okhttp3.ResponseBody;
  *   <li><b>Revalidate, don't re-download.</b> The manifest ETag is persisted and
  *       sent as {@code If-None-Match}; steady state is a ~0-byte 304.</li>
  *   <li><b>The play/render path never touches the network.</b>
- *       {@link #getIfPresent(AudioAsset)} is a pure disk lookup. Downloads
+ *       {@link #isPresent(AudioAsset)} is a pure disk lookup. Downloads
  *       happen only on the single warm thread, guarded against duplicate
  *       in-flight fetches — so a 50fps overlay can't turn into a download
  *       storm (the TCG failure mode).</li>
@@ -116,9 +115,12 @@ public class AssetStore
 	// flight (the render-path storm guard).
 	private final Set<String> inFlight = ConcurrentHashMap.newKeySet();
 
-	private final File cacheDir;
-	private final File manifestFile;
-	private final File etagFile;
+	// Sandboxed assets dir + the two cache files under it, set in init() from the
+	// plugin's Filepath. Null when no plugin dir is available (rare) — the store
+	// then serves the bundled fallback audio only.
+	private volatile Filepath cacheDir;
+	private volatile Filepath manifestFile;
+	private volatile Filepath etagFile;
 
 	// Written on the warm thread, read on the game thread — volatile publish.
 	private volatile AssetManifest manifest;
@@ -139,18 +141,17 @@ public class AssetStore
 		this.httpClient = sharedClient.newBuilder()
 			.dispatcher(dispatcher)
 			.build();
-
-		this.cacheDir = new File(RuneLite.RUNELITE_DIR, "chunkblazer/assets");
-		this.manifestFile = new File(cacheDir, "manifest.json");
-		this.etagFile = new File(cacheDir, "manifest.etag");
 	}
 
 	/**
 	 * Load the last-good manifest from disk immediately (instant, offline-safe),
 	 * then kick an async server check that only ever upgrades it. Safe to call
 	 * once on plugin start.
+	 *
+	 * @param pluginDir the plugin's sandboxed data directory (from
+	 *                  {@code getPluginDirectory()}), or null to run cache-less
 	 */
-	public void init()
+	public void init(Filepath pluginDir)
 	{
 		// Build (or rebuild, after a disable/enable) the warm pool before anything
 		// submits to it, or a re-enable hits a terminated executor.
@@ -159,16 +160,30 @@ public class AssetStore
 			warmExecutor = newWarmExecutor();
 		}
 
-		//noinspection ResultOfMethodCallIgnored
-		cacheDir.mkdirs();
-
-		// cache -> memory (instant)
-		if (manifestFile.exists())
+		// Assets live in a sandboxed "assets" subfolder of the plugin dir (Filepath).
+		// Null => no disk cache; isPresent stays false and the bundled fallback plays.
+		this.cacheDir = pluginDir != null ? pluginDir.joinSegment("assets") : null;
+		this.manifestFile = cacheDir != null ? cacheDir.joinSegment("manifest.json") : null;
+		this.etagFile = cacheDir != null ? cacheDir.joinSegment("manifest.etag") : null;
+		if (cacheDir != null)
 		{
 			try
 			{
+				cacheDir.createDirectories();
+			}
+			catch (IOException e)
+			{
+				log.warn("Could not create asset cache dir: {}", e.getMessage());
+			}
+		}
+
+		// cache -> memory (instant)
+		if (manifestFile != null && manifestFile.exists())
+		{
+			try (InputStream is = manifestFile.openInputStream())
+			{
 				AssetManifest disk = gson.fromJson(
-					new String(Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8),
+					new String(is.readAllBytes(), StandardCharsets.UTF_8),
 					AssetManifest.class);
 				if (isUsable(disk))
 				{
@@ -218,26 +233,54 @@ public class AssetStore
 	}
 
 	/**
-	 * Render/play-path-safe lookup: returns the cached file for this asset if it
-	 * is present on disk, else {@code null}. Does <b>no</b> network I/O and never
-	 * enqueues a download — a caller on the game thread can hit this every frame
-	 * safely. A {@code null} return means "play the bundled fallback for now";
+	 * Render/play-path-safe presence check: is this asset cached on disk? Does
+	 * <b>no</b> network I/O and never enqueues a download — a caller on the game
+	 * thread can hit this every frame safely.
+	 */
+	public boolean isPresent(AudioAsset asset)
+	{
+		if (asset == null || asset.getPath() == null)
+		{
+			return false;
+		}
+		try
+		{
+			Filepath f = cacheFilepathFor(asset);
+			return f != null && f.isFile() && f.size() > 0;
+		}
+		catch (Exception e)
+		{
+			return false;
+		}
+	}
+
+	/**
+	 * The cached bytes for this asset if present on disk, else {@code null}. Does
+	 * <b>no</b> network I/O. A {@code null} return means "play the bundled fallback";
 	 * pair it with {@link #warm(AudioAsset)} to fetch it for next time.
 	 */
-	public File getIfPresent(AudioAsset asset)
+	public byte[] readIfPresent(AudioAsset asset)
 	{
 		if (asset == null || asset.getPath() == null)
 		{
 			return null;
 		}
-		File f = cacheFileFor(asset);
-		if (f.isFile() && f.length() > 0)
+		try
 		{
-			//noinspection ResultOfMethodCallIgnored
-			f.setLastModified(System.currentTimeMillis()); // LRU touch
-			return f;
+			Filepath f = cacheFilepathFor(asset);
+			if (f == null || !f.isFile() || f.size() <= 0)
+			{
+				return null;
+			}
+			try (InputStream is = f.openInputStream())
+			{
+				return is.readAllBytes();
+			}
 		}
-		return null;
+		catch (Exception e)
+		{
+			return null;
+		}
 	}
 
 	/**
@@ -251,7 +294,7 @@ public class AssetStore
 		{
 			return;
 		}
-		if (getIfPresent(asset) != null)
+		if (isPresent(asset))
 		{
 			return;
 		}
@@ -387,13 +430,20 @@ public class AssetStore
 
 	private void download(AudioAsset asset) throws IOException
 	{
-		File dest = cacheFileFor(asset);
-		if (dest.isFile() && dest.length() > 0)
+		Filepath dest = cacheFilepathFor(asset);
+		if (dest == null)
+		{
+			return; // cache-less mode: nothing to download to
+		}
+		if (dest.isFile() && dest.size() > 0)
 		{
 			return;
 		}
-		//noinspection ResultOfMethodCallIgnored
-		dest.getParentFile().mkdirs();
+		Filepath parent = dest.getParent();
+		if (parent != null)
+		{
+			parent.createDirectories();
+		}
 
 		String url = config.apiBaseUrl() + "/" + asset.getPath();
 		Request req = new Request.Builder().url(url).get().build();
@@ -419,15 +469,27 @@ public class AssetStore
 		}
 	}
 
-	/** Maps an /assets-rooted manifest path to its location under the cache dir. */
-	private File cacheFileFor(AudioAsset asset)
+	/**
+	 * Maps an /assets-rooted (server-provided) manifest path to a Filepath under
+	 * the cache dir. {@code cacheDir.join(rel)} normalizes the path and REJECTS
+	 * anything that would escape the plugin's sandbox (it throws), so a malicious or
+	 * malformed server path can never construct a location outside the assets
+	 * folder — the file I/O is provably confined to the plugin subfolder. Returns
+	 * null in cache-less mode.
+	 */
+	private Filepath cacheFilepathFor(AudioAsset asset)
 	{
+		Filepath dir = cacheDir;
+		if (dir == null)
+		{
+			return null;
+		}
 		String rel = asset.getPath();
 		if (rel.startsWith(ASSET_URL_PREFIX))
 		{
 			rel = rel.substring(ASSET_URL_PREFIX.length());
 		}
-		return new File(cacheDir, rel);
+		return dir.join(rel);
 	}
 
 	private static boolean isUsable(AssetManifest m)
@@ -437,13 +499,14 @@ public class AssetStore
 
 	private String readEtag()
 	{
-		if (!etagFile.exists())
+		Filepath f = etagFile;
+		if (f == null || !f.exists())
 		{
 			return null;
 		}
-		try
+		try (InputStream is = f.openInputStream())
 		{
-			String s = new String(Files.readAllBytes(etagFile.toPath()), StandardCharsets.UTF_8).trim();
+			String s = new String(is.readAllBytes(), StandardCharsets.UTF_8).trim();
 			return s.isEmpty() ? null : s;
 		}
 		catch (IOException e)
@@ -452,20 +515,35 @@ public class AssetStore
 		}
 	}
 
-	private static void writeAtomic(File dest, byte[] bytes) throws IOException
+	private void writeAtomic(Filepath dest, byte[] bytes) throws IOException
 	{
-		File tmp = new File(dest.getParentFile(), dest.getName() + ".tmp");
-		Files.write(tmp.toPath(), bytes);
+		if (dest == null)
+		{
+			return; // cache-less mode: nothing to persist
+		}
+		Filepath dir = dest.getParent();
+		if (dir == null)
+		{
+			return;
+		}
+		Filepath tmp = dir.createTempFile("asset", ".tmp");
 		try
 		{
-			Files.move(tmp.toPath(), dest.toPath(),
-				StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			tmp.write(bytes);
+			try
+			{
+				tmp.moveTo(dest, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			}
+			catch (IOException atomicUnsupported)
+			{
+				// Some filesystems don't support ATOMIC_MOVE; fall back to a plain replace.
+				tmp.moveTo(dest, StandardCopyOption.REPLACE_EXISTING);
+			}
 		}
-		catch (IOException atomicUnsupported)
+		catch (IOException e)
 		{
-			// Some filesystems don't support ATOMIC_MOVE across the temp+dest;
-			// fall back to a plain replace.
-			Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+			tmp.deleteIfExists();
+			throw e;
 		}
 	}
 
@@ -490,50 +568,58 @@ public class AssetStore
 
 	/**
 	 * Enforce the hard disk cap with a simple LRU: while over budget, delete the
-	 * least-recently-touched cached file. Content addressing means a deleted
-	 * asset is simply re-fetched on next demand — eviction is never destructive.
+	 * oldest cached file. Content addressing means a deleted asset is simply
+	 * re-fetched on next demand — eviction is never destructive.
 	 */
 	private void enforceCap()
 	{
+		Filepath dir = cacheDir;
+		if (dir == null)
+		{
+			return;
+		}
 		try
 		{
-			File audioDir = new File(cacheDir, "audio");
+			Filepath audioDir = dir.joinSegment("audio");
 			if (!audioDir.isDirectory())
 			{
 				return;
 			}
-			java.util.List<File> files = new java.util.ArrayList<>();
-			collectFiles(audioDir, files);
+			java.util.List<Filepath> files = new java.util.ArrayList<>();
 			long total = 0;
-			for (File f : files)
+			try (java.util.stream.Stream<Filepath> walk = audioDir.walk())
 			{
-				total += f.length();
+				java.util.Iterator<Filepath> it = walk.iterator();
+				while (it.hasNext())
+				{
+					Filepath fp = it.next();
+					if (fp.isFile() && !fp.getFileName().endsWith(".tmp"))
+					{
+						files.add(fp);
+						total += sizeOf(fp);
+					}
+				}
 			}
 			if (total <= CACHE_CAP_BYTES)
 			{
 				return;
 			}
-			files.sort(java.util.Comparator.comparingLong(File::lastModified)); // oldest first
-			for (File f : files)
+			files.sort(java.util.Comparator.comparingLong(AssetStore::mtimeOf)); // oldest first
+			for (Filepath fp : files)
 			{
 				if (total <= CACHE_CAP_BYTES)
 				{
 					break;
 				}
-				long len = f.length();
-				if (f.delete())
+				long len = sizeOf(fp);
+				try
 				{
+					fp.deleteIfExists();
 					total -= len;
-					File parent = f.getParentFile();
-					if (parent != null && parent.isDirectory())
-					{
-						String[] kids = parent.list();
-						if (kids != null && kids.length == 0)
-						{
-							//noinspection ResultOfMethodCallIgnored
-							parent.delete();
-						}
-					}
+				}
+				catch (IOException ignored)
+				{
+					// couldn't delete this one; move on
 				}
 			}
 		}
@@ -543,23 +629,27 @@ public class AssetStore
 		}
 	}
 
-	private static void collectFiles(File dir, java.util.List<File> out)
+	private static long sizeOf(Filepath fp)
 	{
-		File[] kids = dir.listFiles();
-		if (kids == null)
+		try
 		{
-			return;
+			return fp.size();
 		}
-		for (File k : kids)
+		catch (IOException e)
 		{
-			if (k.isDirectory())
-			{
-				collectFiles(k, out);
-			}
-			else if (k.isFile() && !k.getName().endsWith(".tmp"))
-			{
-				out.add(k);
-			}
+			return 0;
+		}
+	}
+
+	private static long mtimeOf(Filepath fp)
+	{
+		try
+		{
+			return fp.getLastModifiedTime().toMillis();
+		}
+		catch (IOException e)
+		{
+			return 0;
 		}
 	}
 }

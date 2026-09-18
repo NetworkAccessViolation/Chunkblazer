@@ -31,6 +31,7 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -78,6 +79,7 @@ import lombok.Setter;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.ProfileChanged;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.plugins.Plugin;
@@ -85,6 +87,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.Filepath;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
@@ -99,7 +102,12 @@ import com.chunkblazer.verification.VarPlayerVerificationService;
 @PluginDescriptor(
 	name = "ChunkBlazer",
 	description = "A Nuzlocke Chunk Unlocker Plugin with RNG Task Assignment",
-	tags = {"chunk", "chunkblazer", "nuzlocke", "challenge", "task"}
+	tags = {"chunk", "chunkblazer", "nuzlocke", "challenge", "task"},
+	// Roots getPluginDirectory() at .runelite/plugin-data/chunkblazer. legacy dir
+	// moves the old .runelite/chunkblazer cache over on first run, so existing
+	// users keep their downloaded catalog + audio.
+	internalName = "chunkblazer",
+	legacyDataDirectory = "chunkblazer"
 )
 public class ChunkBlazerPlugin extends Plugin
 {
@@ -296,12 +304,27 @@ public class ChunkBlazerPlugin extends Plugin
 		// Start verification service (registers for VarPlayer events)
 		varPlayerService.startUp();
 
+		// Resolve this plugin's OWN sandboxed data directory as a Filepath, rooted
+		// under .runelite/plugin-data/chunkblazer. All disk I/O in the stores goes
+		// through it, so a path can never escape the plugin's folder (RuneLite's
+		// Filepath enforces that on every join). Null on the rare resolution
+		// failure — the stores then run cache-less off the bundled seed / network.
+		Filepath pluginDir = null;
+		try
+		{
+			pluginDir = getPluginDirectory();
+		}
+		catch (IOException e)
+		{
+			log.warn("Could not resolve plugin data directory; running without disk cache", e);
+		}
+
 		// Load the media asset manifest: cached copy loads instantly, then an
 		// async server check upgrades it. Never blocks startup; degrades to the
 		// bundled seed audio when offline. See AssetStore.
 		if (assetStore != null)
 		{
-			assetStore.init();
+			assetStore.init(pluginDir);
 		}
 
 		// Task catalog: load synchronously (disk cache → bundled gzipped seed)
@@ -309,7 +332,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// next launch. Falls back to bundled raw JSON if the store has nothing.
 		if (catalogStore != null)
 		{
-			catalogStore.init();
+			catalogStore.init(pluginDir);
 		}
 
 		// Load task data — sourced from the catalog store (server/cache/seed),
@@ -508,6 +531,12 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	private volatile boolean serverLoginDone = false;
 
+	// A recovery key the player pasted, being validated on the CURRENT login attempt.
+	// It is only a candidate: it is never written over the stored key until the server
+	// confirms it authenticates THIS account (login response authed_by_key), so a wrong
+	// or unknown key can never brick a working account. Cleared once the login resolves.
+	private String pendingPastedKey;
+
 	// Last RS profile key onProfileChanged acted on. A world hop (and some no-op
 	// ProfilePanel actions) re-activate the config profile without changing the
 	// account, re-firing ProfileChanged; acting again revokes sync and reseeds off
@@ -568,7 +597,9 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			else if (!serverStateMerged)
 			{
-				log.warn("[CHUNKBLAZER] skipping logout sync — server state was never "
+				// Expected on any session that logs out before a server merge (e.g. the
+				// cold login screen), so this is normal bookkeeping, not a fault: debug.
+				log.debug("[CHUNKBLAZER] skipping logout sync — server state was never "
 					+ "merged this session, so local progress is not authoritative");
 			}
 			else
@@ -589,6 +620,7 @@ public class ChunkBlazerPlugin extends Plugin
 			stableSkillSamples = 0;
 			// Every session must re-merge before it is allowed to sync.
 			serverStateMerged = false;
+			serverRollRestoreResolved = false;
 			// Real logout — reset the dedupe flag so the NEXT LOGGED_IN
 			// (which is a fresh game session) re-runs loginToServer.
 			serverLoginDone = false;
@@ -708,6 +740,7 @@ public class ChunkBlazerPlugin extends Plugin
 			+ "this profile has merged the server's record");
 
 		serverStateMerged = false;
+		serverRollRestoreResolved = false;
 		serverLoginDone = false;
 		cachedProgressionBaseline = null;
 		cachedBaselineOwner = null;
@@ -1111,12 +1144,22 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// Pre-roll tasks for the starting chunk so they're ready immediately.
 		// Other chunks get their tasks rolled lazily when unlocked.
-		if (getRolledTasksForRegion(DEFAULT_START_REGION).isEmpty())
+		//
+		// Gate this exactly like the reconstruction reroll in loadActiveTasks: with
+		// sync on and the server restore still pending, an empty start-region roll
+		// almost always means the server-persisted roll hasn't landed yet (e.g. right
+		// after a reset wiped local disk). Rolling now would seed a throwaway roll that
+		// races the restore — harmless when the reconcile lands and overwrites it, but a
+		// real reroll if the server is unreachable, and it also poisons the reveal-card
+		// set. Wait for the restore; loadActiveTasks then rolls any genuine gap once the
+		// roll-restore has resolved (server had none / is offline / truly new account).
+		boolean startRollAllowed = !config.apiEnabled() || serverRollRestoreResolved;
+		if (startRollAllowed && getRolledTasksForRegion(DEFAULT_START_REGION).isEmpty())
 		{
 			NuzlockeChunk chunk = chunksByRegionId.get(DEFAULT_START_REGION);
 			if (chunk != null && chunk.getTasks() != null && !chunk.getTasks().isEmpty())
 			{
-				Set<String> newTasks = rollTasksForRegion(DEFAULT_START_REGION);
+				rollTasksForRegion(DEFAULT_START_REGION);
 			}
 			else
 			{
@@ -2678,7 +2721,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		if (apiClient == null)
 		{
-			log.warn("[CB-DIAG] apiClient is NULL — Guice injection failed for plugin class");
+			log.warn("apiClient is null; Guice injection failed for the plugin");
 			return;
 		}
 		// Load this account's stored API key BEFORE login. The server now discloses the
@@ -2694,9 +2737,63 @@ public class ChunkBlazerPlugin extends Plugin
 				if (resp != null && resp.isSuccess())
 				{
 					serverLoginDone = true;
-					// First-claim logins return a fresh key; capture it per-account and
-					// mirror it into the visible recovery field. Idempotent afterwards.
-					persistApiKey(apiClient.getPlayerApiKey());
+					if (resp.isKeyMismatch())
+					{
+						if (pendingPastedKey != null)
+						{
+							// A pasted candidate that belongs to a DIFFERENT account. Discard
+							// it and keep the stored key untouched — a bad paste must never
+							// wipe a working key.
+							restoreStoredApiKey();
+							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+							addPluginChatMessage("That sync key belongs to a different account, so it "
+								+ "was ignored and your saved key kept.");
+						}
+						else
+						{
+							// The STORED key belongs to another account (the cross-account
+							// leak). Drop it so we stop impersonating; the server served THIS
+							// account by name. Sync re-enables once this account's own key is
+							// present (RuneLite config-sync carries it, else a one-time paste).
+							log.info("[CHUNKBLAZER] server rejected our stored key as belonging to another "
+								+ "account; cleared it and served {} by name. Paste this account's own key "
+								+ "to re-enable sync.", rsn);
+							if (isAccountStateAvailable())
+							{
+								setAccountState("apiKey", "");
+							}
+							apiClient.setPlayerApiKey(null);
+						}
+					}
+					else if (pendingPastedKey != null)
+					{
+						if (resp.isAuthedByKey())
+						{
+							// The pasted key key-authenticated as THIS account: confirmed
+							// correct, so NOW persist it (replacing any old key) and wipe
+							// the shared recovery field.
+							persistApiKey(pendingPastedKey);
+							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+							addPluginChatMessage("Sync key accepted. This account is now synced with it.");
+						}
+						else
+						{
+							// The pasted key did NOT authenticate this account (unknown or
+							// wrong; the server served us by name). Discard it WITHOUT
+							// touching the stored key, so a bad paste can never brick a
+							// working account.
+							restoreStoredApiKey();
+							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+							addPluginChatMessage("That sync key wasn't recognised for this account, so it "
+								+ "was ignored and your saved key kept.");
+						}
+					}
+					else
+					{
+						// First-claim logins return a fresh key; capture it per-account.
+						persistApiKey(apiClient.getPlayerApiKey());
+					}
+					pendingPastedKey = null;
 					// A Competitive lock the player asked for while sync was off:
 					// now that we're logged in (api_key is set), start it. beginNuzlockeLock
 					// handles the eligibility check + verification handshake from here.
@@ -2707,11 +2804,22 @@ public class ChunkBlazerPlugin extends Plugin
 					}
 				}
 				hydrateFromLoginResponse(resp);
+				if (resp == null || !resp.isSuccess())
+				{
+					// Offline / error: no server roll is coming. Resolve the restore so
+					// loadActiveTasks stops deferring and reconstructs from the local roll
+					// (or backfills) instead of leaving the account task-less.
+					serverRollRestoreResolved = true;
+					clientThread.invokeLater(this::loadActiveTasks);
+				}
 				maybeStartVerification(resp);
 			})
 			.exceptionally(e ->
 			{
-				log.warn("[CB-DIAG] login failed: {}", e.toString());
+				// Expected when the server is unreachable or sync is mid-toggle; not an error.
+				log.debug("login request failed: {}", e.toString());
+				serverRollRestoreResolved = true;
+				clientThread.invokeLater(this::loadActiveTasks);
 				return null;
 			});
 	}
@@ -2719,10 +2827,15 @@ public class ChunkBlazerPlugin extends Plugin
 	/**
 	 * Load the current account's ChunkBlazer API key into the api client before login.
 	 * The authoritative copy is the per-account RSProfile store, which survives a settings
-	 * Reset (Reset only clears declared config items, never RSProfile keys). If it is empty
-	 * (a fresh install or new RuneLite profile), a key the player pasted into the visible
-	 * "Sync recovery key" field is adopted. The masked field is then kept mirrored to the
-	 * true key so the player can reveal it in settings to move the account to another device.
+	 * Reset (Reset only clears declared config items, never RSProfile keys).
+	 *
+	 * <p>A key the player pasted into the "Sync recovery key" field is treated as a CANDIDATE,
+	 * not truth: it is used for this login attempt but is NOT written over the stored key here.
+	 * Only a login the server confirms was key-authenticated as this account (authed_by_key)
+	 * lets {@code onLoginResponse} persist it. That, plus rejecting anything that is not even a
+	 * valid key format, means a wrong, unknown, or mistyped paste can never overwrite a working
+	 * key and brick the account. If this account has no key at all, the api client's key is
+	 * explicitly cleared so a previously-logged-in account's key is never reused.
 	 */
 	private void loadPersistedApiKey()
 	{
@@ -2730,35 +2843,74 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return;
 		}
-		String key = acStr("apiKey", "");
+		pendingPastedKey = null;
+		String stored = acStr("apiKey", "");
 		String field = config.apiKey() == null ? "" : config.apiKey().trim();
-		if ((key == null || key.isEmpty()) && !field.isEmpty())
+		if (!field.isEmpty())
 		{
-			// Fresh install / new profile: adopt a pasted recovery key as this account's.
-			key = field;
-			if (isAccountStateAvailable())
+			if (isValidApiKeyFormat(field))
 			{
-				setAccountState("apiKey", key);
+				// Try the pasted key on this login WITHOUT overwriting the stored one.
+				// The login response tells us whether it really authenticated this
+				// account; only then do we keep it (see the login callback).
+				pendingPastedKey = field;
+				apiClient.setPlayerApiKey(field);
+				return;
 			}
+			// Garbage in the recovery box (typo, partial paste, stray text). Never adopt
+			// it and wipe it, so it cannot override a good key or be retried every login.
+			log.warn("[CHUNKBLAZER] ignored a recovery key that is not a valid account-key format");
+			configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+			addPluginChatMessage("That sync key doesn't look valid, so it was ignored. Your saved key is unchanged.");
 		}
-		if (key != null && !key.isEmpty())
+		if (stored != null && !stored.isEmpty())
 		{
-			apiClient.setPlayerApiKey(key);
-			// Keep the masked "Sync recovery key" field showing the true key so it is viewable
-			// in settings (via the reveal eye). Self-heals after a Reset clears it or an edit
-			// changes it, because the RSProfile copy stays authoritative.
-			if (!key.equals(config.apiKey()))
-			{
-				configManager.setConfiguration(CONFIG_GROUP, "apiKey", key);
-			}
+			apiClient.setPlayerApiKey(stored);
+		}
+		else
+		{
+			// No key for this account. The apiClient is a singleton reused across
+			// account switches, so we MUST clear any key a previously-logged-in
+			// account left on it — otherwise this account would authenticate as
+			// them. With no key we send none and the server name-authenticates (a
+			// first-ever login claims one; a returning account recovers its key from
+			// RuneLite's own config-sync, or a one-time paste).
+			apiClient.setPlayerApiKey(null);
 		}
 	}
 
 	/**
-	 * Persist the account's API key so it survives restarts without a re-fetch. The
-	 * authoritative copy is the per-account RSProfile key (survives a settings Reset); the
-	 * visible masked field mirrors it so the player can reveal it in settings to move the
-	 * account to another computer. loadPersistedApiKey keeps the two in sync.
+	 * Whether a string is shaped like a ChunkBlazer account key (a canonical UUID, which is
+	 * what the server issues). A cheap format gate so a mistyped or partial paste is rejected
+	 * before it can be tried, let alone stored.
+	 */
+	private static boolean isValidApiKeyFormat(String s)
+	{
+		return s != null && s.trim().matches(
+			"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+	}
+
+	/**
+	 * Point the api client back at this account's stored key (or null if it has none). Undoes
+	 * a pasted candidate the server did not accept, so the stored key is never lost to a bad
+	 * paste.
+	 */
+	private void restoreStoredApiKey()
+	{
+		if (apiClient == null)
+		{
+			return;
+		}
+		String stored = acStr("apiKey", "");
+		apiClient.setPlayerApiKey(stored == null || stored.isEmpty() ? null : stored);
+	}
+
+	/**
+	 * Persist the account's API key so it survives restarts without a re-fetch. The sole
+	 * store is the per-account RSProfile key (survives a settings Reset). It is deliberately
+	 * NOT mirrored into the shared config.apiKey() field: that global slot is the cross-
+	 * account leak — mirroring every account's key there is what let the next account inherit
+	 * it. The panel reveals the key straight from the per-account store (getSyncRecoveryKey).
 	 */
 	private void persistApiKey(String key)
 	{
@@ -2770,10 +2922,43 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			setAccountState("apiKey", key);
 		}
-		if (!key.equals(config.apiKey()))
+	}
+
+	/**
+	 * Wipe every per-account ChunkBlazer value for the account logged in right now, so it
+	 * re-restores cleanly from the server on the next fresh start. This is the repair for a
+	 * contaminated local state — e.g. an account that authenticated with a neighbouring
+	 * account's key (the cross-account leak) and merged in that account's mode, tasks, and
+	 * points, and that a RuneLite profile switch cannot clear because the data lives in the
+	 * shared RSProfile store. It is RSProfile-scoped, so it only touches THIS account; others
+	 * on the same install are untouched, and the SERVER record is never changed. The api key
+	 * is cleared too: afterwards the account either name-authenticates (first claim / the
+	 * server key-mismatch heal) or the player pastes its own key into the recovery field.
+	 * In-memory state is only fully rebuilt on a fresh plugin start, so callers must tell the
+	 * player to restart the client and log back in. Sync is left with no key, so a stale
+	 * logout sync can never push the cleared data back to the server.
+	 */
+	public void resetAccountLocalData()
+	{
+		if (configManager == null || !isAccountStateAvailable())
 		{
-			configManager.setConfiguration(CONFIG_GROUP, "apiKey", key);
+			return;
 		}
+		for (String key : MIGRATION_KEYS)
+		{
+			configManager.unsetRSProfileConfiguration(CONFIG_GROUP, key);
+		}
+		configManager.unsetRSProfileConfiguration(CONFIG_GROUP, "apiKey");
+		configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+		if (apiClient != null)
+		{
+			apiClient.setPlayerApiKey(null);
+		}
+		serverLoginDone = false;
+		serverStateMerged = false;
+		serverRollRestoreResolved = false;
+		log.info("[CHUNKBLAZER] cleared this account's local sync data on request; restart the client "
+			+ "and log in to restore it fresh from the server.");
 	}
 
 	/**
@@ -2874,6 +3059,22 @@ public class ChunkBlazerPlugin extends Plugin
 		if (key != null && engagedBossKeys.contains(key))
 		{
 			recordBossCompletion(key);
+		}
+	}
+
+	/**
+	 * React to the Server Sync toggle while the plugin is already open. The
+	 * sync-only panel controls (the sync header, "Show my sync key" and "Reset
+	 * this account's sync data") are gated on sync being on, and without this
+	 * their visibility only refreshed on a login — so flipping the toggle mid
+	 * session left them hidden until a relog. Refresh the panel on the change.
+	 */
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if ("chunkblazer".equals(event.getGroup()) && "serverSyncEnabled".equals(event.getKey()) && panel != null)
+		{
+			panel.updatePanel();
 		}
 	}
 
@@ -3214,6 +3415,13 @@ public class ChunkBlazerPlugin extends Plugin
 	// chunks on 2026-07-21. Reset on logout so every session must earn it again.
 	private volatile boolean serverStateMerged;
 
+	// True once the server-roll restore for this login has RESOLVED — either the roll
+	// was restored (restoreRollStateFromServer) or the attempt gave up (offline / server
+	// has no roll). Until then, with sync on, loadActiveTasks must NOT reconstruct a roll
+	// for an empty region: doing so races the async restore and re-rolls the account (the
+	// reset-then-reroll bug). Reset on logout so every session waits for its own restore.
+	private volatile boolean serverRollRestoreResolved;
+
 	private static final String CONFIG_GROUP = "chunkblazer";
 
 	// Every per-account key copied from the legacy profile-global store into RSProfile,
@@ -3225,7 +3433,7 @@ public class ChunkBlazerPlugin extends Plugin
 		"currentTaskId", "currentTaskQuantity", "currentTaskProgress",
 		"totalPoints", "pointsSpent", "bossTokens", "taskProgressData",
 		"progressionBaseline", "bossCompletions",
-		"unrevealedTasks", "gameMode", "accountModeHash",
+		"unrevealedTasks", "gameMode", "accountModeHash", "rollVersion",
 	};
 
 	// --- Per-account state accessors ---------------------------------------
@@ -3547,25 +3755,106 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return;
 		}
+		// Server-authoritative reconcile. The server owns each region's committed roll
+		// (it merges per region and never lets a client overwrite one), so the region
+		// rolls it holds are the truth: adopt every one of them. KEEP any region only
+		// the client has — a roll for a chunk the server hasn't seen yet (a fresh
+		// unlock, or one unlocked offline): the next sync commits it and the server
+		// adds it. This replaces the old "restore only when local is empty" rule, which
+		// let a stale or re-rolled local win and push back over the server — the bug
+		// behind the reset reroll. Any region NEITHER side has is left for
+		// loadActiveTasks to roll (the gap), gated on the roll-restore being resolved.
 		String localRoll = acStr("regionRolledTasks", "");
-		if (localRoll != null && !localRoll.isEmpty())
-		{
-			return; // local roll is authoritative — never clobber it
-		}
 		String serverRoll = pdata.getRegionRolledTasks();
-		if (serverRoll == null || serverRoll.isEmpty())
+
+		Map<String, String> reconciled = parseRollBlob(serverRoll);
+		for (Map.Entry<String, String> e : parseRollBlob(localRoll).entrySet())
 		{
-			return; // server has no roll to restore — bulk backfill will handle it
+			reconciled.putIfAbsent(e.getKey(), e.getValue());
+		}
+		String merged = serializeRollBlob(reconciled);
+		if (!merged.equals(localRoll))
+		{
+			setAccountState("regionRolledTasks", merged);
+			log.info("[CHUNKBLAZER] reconciled task roll with the server ({} region entr{})",
+				reconciled.size(), reconciled.size() == 1 ? "y" : "ies");
 		}
 
-		setAccountState("regionRolledTasks", serverRoll);
-		String serverUnrevealed = pdata.getUnrevealedTasks();
-		setAccountState("unrevealedTasks", serverUnrevealed == null ? "" : serverUnrevealed);
+		// The face-down card set is client-updatable (revealing a card is a live local
+		// change), so restore the server's copy only on a fresh load — an empty local
+		// set — and otherwise keep the live reveal state.
+		if (acStr("unrevealedTasks", "").isEmpty())
+		{
+			String serverUnrevealed = pdata.getUnrevealedTasks();
+			setAccountState("unrevealedTasks", serverUnrevealed == null ? "" : serverUnrevealed);
+		}
 
-		int regionEntries = serverRoll.split("\\|").length;
-		log.info("[CHUNKBLAZER] restored task roll from the server ({} region entr{}) — "
-			+ "skipping the wholesale re-roll",
-			regionEntries, regionEntries == 1 ? "y" : "ies");
+		// Track the server's roll ETag (cleared on reset via MIGRATION_KEYS) so a later
+		// login can tell when the committed roll changed under us — e.g. another device
+		// unlocked a chunk. The reconcile above is always safe on its own; this is the
+		// change signal Kalin's model hangs on.
+		setAccountState("rollVersion", pdata.getRollVersion());
+	}
+
+	/**
+	 * Split a roll blob ("regionId:task1,task2|regionId2:task3") into region id -> tasks-CSV,
+	 * mirroring the server's merge (see rollmerge.go). Empty or delimiter-less entries skip.
+	 */
+	private static Map<String, String> parseRollBlob(String blob)
+	{
+		Map<String, String> out = new HashMap<>();
+		if (blob == null || blob.isEmpty())
+		{
+			return out;
+		}
+		for (String entry : blob.split("\\|"))
+		{
+			if (entry.isEmpty())
+			{
+				continue;
+			}
+			int i = entry.indexOf(':');
+			if (i <= 0)
+			{
+				continue;
+			}
+			out.put(entry.substring(0, i), entry.substring(i + 1));
+		}
+		return out;
+	}
+
+	/**
+	 * Render region -> tasks back into the blob format, ordered by numeric region id
+	 * (lexical fallback) so the stored roll is stable and matches the server's ordering.
+	 */
+	private static String serializeRollBlob(Map<String, String> regions)
+	{
+		if (regions.isEmpty())
+		{
+			return "";
+		}
+		List<String> ids = new ArrayList<>(regions.keySet());
+		ids.sort((a, b) ->
+		{
+			try
+			{
+				return Integer.compare(Integer.parseInt(a), Integer.parseInt(b));
+			}
+			catch (NumberFormatException ex)
+			{
+				return a.compareTo(b);
+			}
+		});
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < ids.size(); i++)
+		{
+			if (i > 0)
+			{
+				sb.append('|');
+			}
+			sb.append(ids.get(i)).append(':').append(regions.get(ids.get(i)));
+		}
+		return sb.toString();
 	}
 
 	private void hydrateFromLoginResponse(PlayerLoginResponse response)
@@ -3654,6 +3943,10 @@ public class ChunkBlazerPlugin extends Plugin
 			mergeUnlockedRegionsFromServer(pdata);
 			mergeCompletedTasksFromServer(pdata);
 			restoreRollStateFromServer(pdata);
+			// The server-roll restore is now resolved (either the stored roll was written
+			// back, or the server had none). The loadActiveTasks() below may now reconstruct
+			// a roll for any region the server genuinely had none for, without racing this.
+			serverRollRestoreResolved = true;
 
 			// 4. Points.
 			//
@@ -4124,7 +4417,14 @@ public class ChunkBlazerPlugin extends Plugin
 				// account. The loop below then settles already-satisfied tasks silently
 				// and puts the unfinished remainder straight into the list — no wall of
 				// cards to click through (the "572 cards on account switch" report).
-				if (rolledTaskIds.isEmpty() && !isFreeUnlockableRegion(regionId))
+				// Hold off reconstructing a roll while a server restore is still pending:
+				// with sync on and the restore unresolved, an empty roll usually means the
+				// server-persisted roll simply hasn't landed yet. Rolling now would race it
+				// and permanently replace the account's real roll (the reset-then-reroll
+				// bug). Once the restore resolves — roll restored, or the server had none /
+				// is unreachable — this fires normally as the graceful reconstruction.
+				boolean rerollAllowed = !config.apiEnabled() || serverRollRestoreResolved;
+				if (rolledTaskIds.isEmpty() && !isFreeUnlockableRegion(regionId) && rerollAllowed)
 				{
 					rolledTaskIds = rollTasksForRegion(regionId, false, false);
 				}
@@ -4501,7 +4801,10 @@ public class ChunkBlazerPlugin extends Plugin
 			// Log each missing region once per client run — see warnedMissingChunkRegions.
 			if (warnedMissingChunkRegions.add(regionId))
 			{
-				log.warn("rollTasksForRegion: No chunk found for region {}. Total chunks in map: {}",
+				// Expected for any region outside the overworld chunk grid — underground
+				// areas, dungeons, instances. They carry no tasks and are not lockable, so
+				// this is normal, not an error. Debug, deduped per region for a clean log.
+				log.debug("rollTasksForRegion: no chunk for region {} (outside the chunk grid; total {})",
 					regionId, chunksByRegionId.size());
 			}
 			return new HashSet<>();

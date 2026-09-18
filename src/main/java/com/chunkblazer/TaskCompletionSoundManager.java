@@ -30,10 +30,8 @@ import com.chunkblazer.api.AssetStore;
 import com.chunkblazer.api.AudioAsset;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -154,11 +152,11 @@ public class TaskCompletionSoundManager
 		if (!remote.isEmpty())
 		{
 			// Prefer a jingle from THIS region that's already cached, for regional
-			// variety. getIfPresent() is a pure disk lookup — no network.
+			// variety. isPresent() is a pure disk lookup — no network.
 			List<AudioAsset> cached = new ArrayList<>();
 			for (AudioAsset a : remote)
 			{
-				if (assetStore.getIfPresent(a) != null)
+				if (assetStore.isPresent(a))
 				{
 					cached.add(a);
 				}
@@ -166,7 +164,7 @@ public class TaskCompletionSoundManager
 			if (!cached.isEmpty())
 			{
 				AudioAsset pick = cached.get(random.nextInt(cached.size()));
-				playFile(assetStore.getIfPresent(pick));
+				playAsset(assetStore.readIfPresent(pick));
 			}
 			else
 			{
@@ -216,18 +214,24 @@ public class TaskCompletionSoundManager
 	}
 
 	/**
-	 * Play a sound from a cached asset file on disk (the server-delivered copy).
-	 * @param file The cached .wav file
+	 * Play a sound from a cached asset's bytes (the server-delivered copy). Falls
+	 * back to the bundled seed jingle if the bytes are missing.
+	 * @param wav The cached .wav bytes, or null
 	 */
-	private void playFile(File file)
+	private void playAsset(byte[] wav)
 	{
+		if (wav == null || wav.length == 0)
+		{
+			playSeed();
+			return;
+		}
 		try
 		{
-			play(Files.readAllBytes(file.toPath()));
+			play(wav);
 		}
 		catch (Exception e)
 		{
-			log.error("Failed to play cached asset {}: {}", file, e.getMessage(), e);
+			log.error("Failed to play cached asset: {}", e.getMessage(), e);
 		}
 	}
 
