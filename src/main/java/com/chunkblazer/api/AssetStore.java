@@ -314,7 +314,7 @@ public class AssetStore
 	{
 		if (warmExecutor != null)
 		{
-			warmExecutor.shutdownNow();
+			warmExecutor.shutdown();
 		}
 	}
 

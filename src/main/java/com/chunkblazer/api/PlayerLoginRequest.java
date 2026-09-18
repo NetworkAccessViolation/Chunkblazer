@@ -53,4 +53,13 @@ public class PlayerLoginRequest
 	 */
 	@SerializedName("client_version")
 	private String clientVersion;
+
+	/**
+	 * The account's stored API key, when the client already has one. The server
+	 * authenticates by this secret (not the public rsn_hash) and reconciles a
+	 * renamed display name onto the same account, so a name change updates the
+	 * account instead of orphaning it. Omitted (null) on a first-ever login.
+	 */
+	@SerializedName("api_key")
+	private String apiKey;
 }

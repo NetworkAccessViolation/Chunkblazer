@@ -104,10 +104,17 @@ public class ChunkBlazerApiClient
 
 		CompletableFuture<PlayerLoginResponse> future = new CompletableFuture<>();
 
+		// Send the stored key (if we have one) so the server authenticates by it and
+		// reconciles a renamed display name onto this same account, instead of the
+		// public rsn_hash creating a new empty account. Same key the authenticated
+		// calls use: the per-account loaded key, else the visible recovery field.
+		String storedKey = (playerApiKey != null && !playerApiKey.isEmpty()) ? playerApiKey : config.apiKey();
+
 		PlayerLoginRequest request = PlayerLoginRequest.builder()
 			.rsn(rsn)
 			.rsnHash(rsnHash)
 			.clientVersion(CLIENT_VERSION)
+			.apiKey(storedKey != null && !storedKey.isEmpty() ? storedKey : null)
 			.build();
 
 		String url = config.apiBaseUrl() + "/api/player/login";
