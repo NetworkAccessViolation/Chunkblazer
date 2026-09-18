@@ -82,6 +82,12 @@ import okhttp3.ResponseBody;
 public class CatalogStore
 {
 	private static final String CATALOG_URL_PATH = "/api/tasks";
+
+	// Hard ceiling on the catalog body, enforced DURING the read (a hostile or
+	// compromised server can lie about or omit Content-Length). Bounds peak memory
+	// so the server can never OOM the client. Set well above the real catalog
+	// (~1.4MB today) to leave room for growth without ever tripping legitimately.
+	private static final long MAX_CATALOG_BYTES = 16L * 1024 * 1024;
 	// Bundled gzipped combined catalog, in com/chunkblazer/ (built by
 	// build-task-seed.ps1). Offline/first-run floor.
 	private static final String SEED_RESOURCE = "tasks_catalog.json.gz";
@@ -389,7 +395,8 @@ public class CatalogStore
 			}
 
 			ResponseBody body = resp.body();
-			String json = body != null ? body.string() : "";
+			String json = body != null
+				? new String(HttpBodies.readBounded(body, MAX_CATALOG_BYTES), StandardCharsets.UTF_8) : "";
 			if (json.isEmpty())
 			{
 				return; // empty body is a failure, never "zero tasks"
