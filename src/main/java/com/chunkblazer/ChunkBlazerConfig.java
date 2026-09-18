@@ -257,8 +257,8 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "apiKey",
 		name = "Sync recovery key",
-		description = "Your account key, set automatically. Paste a saved key here to restore sync on a "
-			+ "new device. Keep it private.",
+		description = "Paste a saved key here to restore sync on a new device. Your key is stored per "
+			+ "account and is cleared from this box once applied. Keep it private.",
 		position = 2,
 		secret = true
 	)

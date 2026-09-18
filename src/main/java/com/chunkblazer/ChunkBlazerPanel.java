@@ -134,6 +134,7 @@ public class ChunkBlazerPanel extends PluginPanel
 	// first-run "Enable Sync" prompt (shown when it's OFF, the default) — toggled in updatePanel.
 	private JPanel dataNoticeRow;
 	private JButton showKeyButton;
+	private JButton resetAccountButton;
 	private JPanel syncPromptPanel;
 	private JPanel currentTaskPanel;
 	private JPanel activeTasksContentPanel; // Inner panel for active tasks
@@ -393,6 +394,22 @@ public class ChunkBlazerPanel extends PluginPanel
 		showKeyButton.addActionListener(e -> showSyncKeyBackup());
 		showKeyButton.setVisible(plugin != null && plugin.isServerSyncEnabled());
 		mainPanel.add(showKeyButton);
+
+		// Repair link for a contaminated account (wrong mode, or another account's progress).
+		// Clears only THIS account's local data so it restores fresh from the server.
+		resetAccountButton = new JButton("Reset this account's sync data");
+		resetAccountButton.setFont(FontManager.getRunescapeSmallFont());
+		resetAccountButton.setForeground(new Color(170, 110, 110));
+		resetAccountButton.setBorderPainted(false);
+		resetAccountButton.setContentAreaFilled(false);
+		resetAccountButton.setFocusPainted(false);
+		resetAccountButton.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		resetAccountButton.setAlignmentX(LEFT_ALIGNMENT);
+		resetAccountButton.setToolTipText("Wipe this account's local ChunkBlazer data and restore it fresh "
+			+ "from the server. Your server progress is not touched.");
+		resetAccountButton.addActionListener(e -> confirmResetAccountData());
+		resetAccountButton.setVisible(plugin != null && plugin.isServerSyncEnabled());
+		mainPanel.add(resetAccountButton);
 		mainPanel.add(Box.createVerticalStrut(8));
 
 		// Add vertical glue at the bottom to push content up and prevent shrinking
@@ -726,6 +743,18 @@ public class ChunkBlazerPanel extends PluginPanel
 				"Sync key", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
+		// Gate the reveal behind an explicit confirmation. The key is a full account
+		// credential and RuneLite is often streamed or screen-shared, so we never put
+		// it on screen until the player says so.
+		int confirm = JOptionPane.showConfirmDialog(this,
+			"This will reveal your account's Sync Key on screen. Anyone who can see your "
+				+ "screen, including a stream or screen share, will be able to read it. "
+				+ "Are you sure you want to show it?",
+			"Reveal sync key?", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.YES_OPTION)
+		{
+			return;
+		}
 		JTextField keyField = new JTextField(key);
 		keyField.setEditable(false);
 		keyField.setCaretPosition(0);
@@ -737,6 +766,35 @@ public class ChunkBlazerPanel extends PluginPanel
 			+ "can access your account. Do not share it.</b></body></html>"), BorderLayout.NORTH);
 		content.add(keyField, BorderLayout.CENTER);
 		JOptionPane.showMessageDialog(this, content, "Your account sync key", JOptionPane.WARNING_MESSAGE);
+	}
+
+	/**
+	 * Confirm-gated repair for a contaminated account. Clears only this account's local
+	 * ChunkBlazer data (never the server record) so it restores fresh from the server on the
+	 * next fresh start. Used when an account is stuck on the wrong mode or showing another
+	 * account's progress after the cross-account key leak. A RuneLite profile switch does not
+	 * help, because the per-account data lives in the shared RSProfile store.
+	 */
+	private void confirmResetAccountData()
+	{
+		int confirm = JOptionPane.showConfirmDialog(this,
+			"<html><body style='width:270px'>This clears this account's ChunkBlazer data on THIS "
+				+ "computer (mode, tasks, points, chunks, and the stored sync key) and restores it "
+				+ "fresh from the server the next time you log in. Your server progress is not "
+				+ "touched.<br><br>Use this only if this account is showing the wrong mode or another "
+				+ "account's progress. After it finishes, restart RuneLite and log back in.<br><br>"
+				+ "Continue?</body></html>",
+			"Reset this account's local data?", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+		if (confirm != JOptionPane.YES_OPTION)
+		{
+			return;
+		}
+		plugin.resetAccountLocalData();
+		JOptionPane.showMessageDialog(this,
+			"Local data cleared. Restart RuneLite and log back in to restore this account from the "
+				+ "server. If sync does not come back on its own, paste this account's key into the "
+				+ "\"Sync recovery key\" setting.",
+			"Done", JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
@@ -2926,6 +2984,10 @@ public class ChunkBlazerPanel extends PluginPanel
 			if (showKeyButton != null)
 			{
 				showKeyButton.setVisible(syncOn);
+			}
+			if (resetAccountButton != null)
+			{
+				resetAccountButton.setVisible(syncOn);
 			}
 
 			// Always-on gameplay sections simply follow login state.
