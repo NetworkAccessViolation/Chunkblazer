@@ -290,7 +290,7 @@ public class CatalogStore
 	{
 		if (refreshExecutor != null)
 		{
-			refreshExecutor.shutdownNow();
+			refreshExecutor.shutdown();
 		}
 	}
 
