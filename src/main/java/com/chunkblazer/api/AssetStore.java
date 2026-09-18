@@ -90,6 +90,14 @@ public class AssetStore
 	// a firm bound — the plugin can never silently eat the user's disk.
 	private static final long CACHE_CAP_BYTES = 40L * 1024 * 1024;
 
+	// Hard ceilings on a single HTTP body, enforced DURING the read because a
+	// hostile or compromised server can lie about or omit Content-Length. These
+	// bound peak memory so the server can never OOM the client; the on-disk total
+	// is separately bounded by CACHE_CAP_BYTES. Set well above the largest
+	// legitimate payload (audio seen ~220KB), so real growth never trips them.
+	private static final long MAX_ASSET_BYTES = 4L * 1024 * 1024;
+	private static final long MAX_MANIFEST_BYTES = 8L * 1024 * 1024;
+
 	private final OkHttpClient httpClient;
 	private final ChunkBlazerConfig config;
 	private final Gson gson;
@@ -395,7 +403,8 @@ public class AssetStore
 			}
 
 			ResponseBody body = resp.body();
-			String json = body != null ? body.string() : "";
+			String json = body != null
+				? new String(HttpBodies.readBounded(body, MAX_MANIFEST_BYTES), StandardCharsets.UTF_8) : "";
 			if (json.isEmpty())
 			{
 				return; // empty body is a failure, never "zero assets"
@@ -453,7 +462,7 @@ public class AssetStore
 			{
 				throw new IOException("HTTP " + resp.code());
 			}
-			byte[] bytes = resp.body().bytes();
+			byte[] bytes = HttpBodies.readBounded(resp.body(), MAX_ASSET_BYTES);
 
 			// Content-addressed: verify before trusting. A mismatch means a
 			// corrupt/truncated transfer or a stale url — drop it.
