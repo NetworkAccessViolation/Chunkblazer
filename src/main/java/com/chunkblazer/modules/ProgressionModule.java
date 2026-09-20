@@ -140,7 +140,7 @@ public class ProgressionModule extends AbstractTaskModule
 
 		if (skillName == null || skillName.isEmpty())
 		{
-			log.warn("SKILL_THRESHOLD task '{}' has no constraints.required_skill — not tracking",
+			log.warn("SKILL_THRESHOLD task '{}' has no constraints.required_skill, not tracking",
 				task.getTaskId());
 			return;
 		}
@@ -152,7 +152,7 @@ public class ProgressionModule extends AbstractTaskModule
 		}
 		catch (IllegalArgumentException e)
 		{
-			log.warn("SKILL_THRESHOLD task '{}' names unknown skill '{}' — not tracking",
+			log.warn("SKILL_THRESHOLD task '{}' names unknown skill '{}', not tracking",
 				task.getTaskId(), skillName);
 			return;
 		}
@@ -160,7 +160,7 @@ public class ProgressionModule extends AbstractTaskModule
 		int level = constraints.getRequiredLevel();
 		if (level <= 1)
 		{
-			log.warn("SKILL_THRESHOLD task '{}' has no meaningful required_level ({}) — not tracking",
+			log.warn("SKILL_THRESHOLD task '{}' has no meaningful required_level ({}), not tracking",
 				task.getTaskId(), level);
 			return;
 		}

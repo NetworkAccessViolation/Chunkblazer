@@ -410,7 +410,7 @@ public class CatalogStore
 			}
 			if (!resp.isSuccessful())
 			{
-				log.warn("Task catalog fetch returned HTTP {} — keeping last-good; server sync may be stale", resp.code());
+				log.warn("Task catalog fetch returned HTTP {}, keeping last-good; server sync may be stale", resp.code());
 				return; // keep last-good
 			}
 
@@ -439,7 +439,7 @@ public class CatalogStore
 			}
 			this.files = fresh;
 			this.loaded = true;
-			log.info("Task catalog refreshed from server ({} files, v{}) — applies next launch",
+			log.info("Task catalog refreshed from server ({} files, v{}), applies next launch",
 				fresh.size(), versionOf(fresh));
 		}
 		catch (IOException e)
@@ -452,7 +452,7 @@ public class CatalogStore
 			// A code/config bug in the refresh path (e.g. the apiEnabled proxy throw)
 			// would otherwise surface only as a generic RuneLite "uncaught exception".
 			// Attribute it clearly so a dead sync layer never hides again.
-			log.warn("Task catalog refresh crashed — server sync is down this session", e);
+			log.warn("Task catalog refresh crashed, server sync is down this session", e);
 		}
 	}
 

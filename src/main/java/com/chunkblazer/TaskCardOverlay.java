@@ -237,7 +237,7 @@ public class TaskCardOverlay extends Overlay
 		}
 		if (fronts.isEmpty() && backs.isEmpty())
 		{
-			log.info("[CHUNKBLAZER] No task card art found under Task_Cards/ — drawing placeholder cards");
+			log.info("[CHUNKBLAZER] No task card art found under Task_Cards/, drawing placeholder cards");
 		}
 	}
 
@@ -436,7 +436,7 @@ public class TaskCardOverlay extends Overlay
 			{
 				// A pending id with no task behind it can never be revealed by clicking,
 				// so it would wedge the queue forever. Drop it rather than draw nothing.
-				log.warn("[CHUNKBLAZER] unrevealed task '{}' has no definition — discarding", taskId);
+				log.warn("[CHUNKBLAZER] unrevealed task '{}' has no definition, discarding", taskId);
 				plugin.revealTaskCard(taskId);
 				continue;
 			}

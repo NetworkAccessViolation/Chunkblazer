@@ -243,7 +243,7 @@ public class FarmingModule extends AbstractTaskModule
 			}
 			if (watched.isEmpty())
 			{
-				log.warn("FARMING task '{}' ({}) has no required_items — cannot track it",
+				log.warn("FARMING task '{}' ({}) has no required_items, cannot track it",
 					task.getName(), task.getTaskId());
 				return;
 			}

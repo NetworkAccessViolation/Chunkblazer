@@ -248,7 +248,7 @@ public class ConstructionModule extends AbstractTaskModule
 				// Every authored construction task names its finished object;
 				// a task without one can never credit. Shout so the authoring
 				// gap is visible instead of silently untrackable.
-				log.warn("CONSTRUCTION task '{}' ({}) has no required_finished_object — cannot track it",
+				log.warn("CONSTRUCTION task '{}' ({}) has no required_finished_object, cannot track it",
 					task.getName(), task.getTaskId());
 				return;
 			}

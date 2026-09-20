@@ -217,7 +217,7 @@ public class ObtainModule extends AbstractTaskModule
 					}
 					else
 					{
-						log.warn("      >>> WARNING: itemIds is NULL/empty for this RequiredItem — slot ignored!");
+						log.warn("      >>> WARNING: itemIds is NULL/empty for this RequiredItem, slot ignored!");
 					}
 				}
 			}

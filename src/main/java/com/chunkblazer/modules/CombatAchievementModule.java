@@ -126,7 +126,7 @@ public class CombatAchievementModule extends AbstractTaskModule
 		List<Integer> caIds = task.getCaIds();
 		if (caIds == null || caIds.isEmpty())
 		{
-			log.warn("COMBAT_ACHIEVEMENT task {} has no ca_ids — it can never complete", task.getTaskId());
+			log.warn("COMBAT_ACHIEVEMENT task {} has no ca_ids, it can never complete", task.getTaskId());
 			return;
 		}
 		taskCaIds.put(task.getTaskId(), new ArrayList<>(caIds));

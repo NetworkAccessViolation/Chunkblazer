@@ -590,12 +590,12 @@ public class ChunkBlazerPlugin extends Plugin
 			{
 				// Expected on any session that logs out before a server merge (e.g. the
 				// cold login screen), so this is normal bookkeeping, not a fault: debug.
-				log.debug("[CHUNKBLAZER] skipping logout sync — server state was never "
+				log.debug("[CHUNKBLAZER] skipping logout sync, server state was never "
 					+ "merged this session, so local progress is not authoritative");
 			}
 			else
 			{
-				log.warn("[CHUNKBLAZER] skipping logout sync — RS profile already cleared, so "
+				log.warn("[CHUNKBLAZER] skipping logout sync, RS profile already cleared, so "
 					+ "per-account state is unreadable and a sync would push empty over the record");
 			}
 			activeTask = null;
@@ -693,7 +693,7 @@ public class ChunkBlazerPlugin extends Plugin
 	{
 		if (!isAccountStateAvailable())
 		{
-			log.debug("[CHUNKBLAZER] RS profile cleared (logout) — dropping in-memory task state");
+			log.debug("[CHUNKBLAZER] RS profile cleared (logout), dropping in-memory task state");
 			pendingProfileBootstrap = false;
 			loadActiveTasks(); // clears, since state is unavailable
 			if (panel != null)
@@ -708,7 +708,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// even if the immediate bootstrap below runs against a null name.
 		pendingProfileBootstrap = true;
 
-		log.info("[CHUNKBLAZER] RS profile available — bootstrapping account state");
+		log.info("[CHUNKBLAZER] RS profile available, bootstrapping account state");
 		// One-time move of any legacy profile-global progress into this account's RSProfile,
 		// BEFORE the bootstrap, so ensureStartingChunkUnlocked sees the migrated unlocks.
 		migrateLegacyGlobalStateToRSProfile();
@@ -727,7 +727,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	void revokeSyncAuthorityForProfileSwitch()
 	{
-		log.info("[CHUNKBLAZER] RuneLite profile changed — revoking sync authority until "
+		log.info("[CHUNKBLAZER] RuneLite profile changed, revoking sync authority until "
 			+ "this profile has merged the server's record");
 
 		serverStateMerged = false;
@@ -1123,7 +1123,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// The start region reads as unlocked ONLY because the config
 			// interface default supplied it. Nothing is on disk, so external
 			// readers see an empty unlock set. Force the write.
-			log.debug("[CHUNKBLAZER] unlockedChunks absent from disk — seeding start region {}",
+			log.debug("[CHUNKBLAZER] unlockedChunks absent from disk, seeding start region {}",
 				DEFAULT_START_REGION);
 			needsUpdate = true;
 		}
@@ -1429,7 +1429,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			// Loud, because the failure is otherwise invisible: the section
 			// just renders empty and no global task ever awards a point.
-			log.error("Global Tasks loaded but contained ZERO tasks — check the region-group wrapper");
+			log.error("Global Tasks loaded but contained ZERO tasks, check the region-group wrapper");
 		}
 	}
 
@@ -1611,7 +1611,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		if (progressionSkipped > 0)
 		{
-			log.debug("Progression: {} rungs at or below the frozen baseline — not eligible", progressionSkipped);
+			log.debug("Progression: {} rungs at or below the frozen baseline, not eligible", progressionSkipped);
 		}
 
 		if (backfilled.isEmpty())
@@ -3568,7 +3568,7 @@ public class ChunkBlazerPlugin extends Plugin
 	{
 		if (!isAccountStateAvailable())
 		{
-			log.warn("[CHUNKBLAZER] per-account write '{}' refused — no RS profile is active, so an "
+			log.warn("[CHUNKBLAZER] per-account write '{}' refused, no RS profile is active, so an "
 				+ "RSProfile write would be silently dropped. This caller must be gated on the profile.", key);
 			return;
 		}
@@ -3607,7 +3607,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (configManager.getRSProfileConfiguration(CONFIG_GROUP, "unlockedChunks") != null
 			|| configManager.getRSProfileConfiguration(CONFIG_GROUP, "completedTasks") != null)
 		{
-			log.debug("[CHUNKBLAZER] legacy migration: RSProfile already populated — nothing to do");
+			log.debug("[CHUNKBLAZER] legacy migration: RSProfile already populated, nothing to do");
 			return;
 		}
 		// (2) Nothing in the legacy store: nothing to move.
@@ -3623,14 +3623,14 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!anyLegacy)
 		{
 			log.info("[CHUNKBLAZER] legacy migration: no global data to move (RSProfile empty AND "
-				+ "no legacy global keys) — this account has no local progress in either store");
+				+ "no legacy global keys), this account has no local progress in either store");
 			return;
 		}
 		// (3) Ownership evidence: migrate only a blob that belongs to THIS account.
 		String rsn = getPlayerName();
 		if (rsn == null)
 		{
-			log.debug("[CHUNKBLAZER] legacy migration: name not loaded yet — deferring");
+			log.debug("[CHUNKBLAZER] legacy migration: name not loaded yet, deferring");
 			return; // name not loaded yet; this fires again once it is
 		}
 		String owner = hashRsn(rsn);
@@ -4074,7 +4074,7 @@ public class ChunkBlazerPlugin extends Plugin
 	private void declareIntentionalReset(String reason)
 	{
 		pendingIntentionalReset = true;
-		log.warn("[CHUNKBLAZER] intentional reset declared ({}) — the next sync will be "
+		log.warn("[CHUNKBLAZER] intentional reset declared ({}), the next sync will be "
 			+ "allowed to drop progress server-side", reason);
 	}
 
@@ -4312,7 +4312,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// an account switch.
 		if (!isAccountStateAvailable())
 		{
-			log.debug("[CHUNKBLAZER] loadActiveTasks skipped — no account known yet");
+			log.debug("[CHUNKBLAZER] loadActiveTasks skipped, no account known yet");
 			activeTasks.clear();
 			activeTask = null;
 			taskModuleManager.clearTask();
@@ -4481,7 +4481,7 @@ public class ChunkBlazerPlugin extends Plugin
 		int inMemoryProgress = task.getCurrentProgress();
 		if (inMemoryProgress > savedProgress)
 		{
-			log.warn("PROGRESS REGRESSION: task '{}' (id={}) in-memory={}, restoring from config={} — caller stack:",
+			log.warn("PROGRESS REGRESSION: task '{}' (id={}) in-memory={}, restoring from config={}, caller stack:",
 				task.getName(), task.getTaskId(), inMemoryProgress, savedProgress, new Throwable());
 		}
 
@@ -6142,7 +6142,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// persisted balance, so it still derives correctly.
 		if (!isPointsBalancePersisted())
 		{
-			log.info("[CHUNKBLAZER] skipping spend derivation — no balance stored locally "
+			log.info("[CHUNKBLAZER] skipping spend derivation, no balance stored locally "
 				+ "(fresh profile or account switch), so a zero balance means UNKNOWN, "
 				+ "not SPENT EVERYTHING. The server's spend figure stands.");
 			return;
@@ -6305,7 +6305,7 @@ public class ChunkBlazerPlugin extends Plugin
 		Set<Integer> neighbors = getNeighborRegionIds();
 		if (!neighbors.contains(regionId))
 		{
-			log.warn("unlockBossRegion({}) refused — not adjacent to any unlocked chunk", regionId);
+			log.warn("unlockBossRegion({}) refused, not adjacent to any unlocked chunk", regionId);
 			addPluginChatMessage("That boss chunk isn't adjacent to your unlocked area yet.");
 			return;
 		}
@@ -6859,7 +6859,7 @@ public class ChunkBlazerPlugin extends Plugin
 		Set<Integer> neighbors = getNeighborRegionIds();
 		if (!neighbors.contains(regionId))
 		{
-			log.warn("unlockRegion({}) refused — region is not adjacent to any unlocked chunk (neighbors: {})",
+			log.warn("unlockRegion({}) refused, region is not adjacent to any unlocked chunk (neighbors: {})",
 				regionId, neighbors);
 			return;
 		}

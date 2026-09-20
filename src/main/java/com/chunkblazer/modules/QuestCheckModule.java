@@ -141,7 +141,7 @@ public class QuestCheckModule extends AbstractTaskModule
 
 		if (questName == null || questName.isEmpty())
 		{
-			log.warn("QUEST_CHECK task '{}' has no constraints.quest — not tracking", task.getTaskId());
+			log.warn("QUEST_CHECK task '{}' has no constraints.quest, not tracking", task.getTaskId());
 			return;
 		}
 
@@ -154,7 +154,7 @@ public class QuestCheckModule extends AbstractTaskModule
 		{
 			if (unknownQuestNames.add(questName))
 			{
-				log.warn("QUEST_CHECK task '{}' names unknown quest constant '{}' — "
+				log.warn("QUEST_CHECK task '{}' names unknown quest constant '{}', "
 					+ "task data is likely newer than the RuneLite API this plugin was built against",
 					task.getTaskId(), questName);
 			}
