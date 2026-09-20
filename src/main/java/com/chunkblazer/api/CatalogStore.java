@@ -139,6 +139,10 @@ public class CatalogStore
 		this.httpClient = sharedClient.newBuilder()
 			.connectTimeout(10, TimeUnit.SECONDS)
 			.readTimeout(30, TimeUnit.SECONDS)
+			// We only ever fetch from our own API and never need a redirect; refuse
+			// them so a rogue 3xx can't send the request to another host.
+			.followRedirects(false)
+			.followSslRedirects(false)
 			.build();
 	}
 
@@ -366,6 +370,22 @@ public class CatalogStore
 		return null;
 	}
 
+	/**
+	 * The single gated chokepoint for every synchronous networking call. Its body
+	 * is only the opt-in check and the call, so no request can reach the network
+	 * without {@code serverSyncEnabled} being true (Plugin Hub 3rd-party-networking
+	 * rule). Throwing when disabled folds into the caller's existing offline
+	 * handling (it keeps last-good on any IOException).
+	 */
+	private Response executeGated(Request req) throws IOException
+	{
+		if (!config.apiEnabled())
+		{
+			throw new IOException("server sync disabled");
+		}
+		return httpClient.newCall(req).execute();
+	}
+
 	private void refreshCatalog()
 	{
 		if (!config.apiEnabled())
@@ -381,7 +401,7 @@ public class CatalogStore
 			rb.addHeader("If-None-Match", etag);
 		}
 
-		try (Response resp = httpClient.newCall(rb.build()).execute())
+		try (Response resp = executeGated(rb.build()))
 		{
 			if (resp.code() == 304)
 			{

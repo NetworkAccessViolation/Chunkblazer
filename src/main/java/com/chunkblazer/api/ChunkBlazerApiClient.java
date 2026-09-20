@@ -81,7 +81,30 @@ public class ChunkBlazerApiClient
 			.connectTimeout(10, TimeUnit.SECONDS)
 			.readTimeout(30, TimeUnit.SECONDS)
 			.writeTimeout(30, TimeUnit.SECONDS)
+			// Never follow a redirect: our requests carry the X-API-Key credential in
+			// a custom header, which OkHttp does NOT strip on a cross-host redirect, so
+			// a rogue/compromised 3xx could leak the key to another host. We only ever
+			// talk to our own API and never need a redirect, so refuse them outright.
+			.followRedirects(false)
+			.followSslRedirects(false)
 			.build();
+	}
+
+	/**
+	 * The single gated chokepoint for every asynchronous networking call. Its body
+	 * is only the opt-in check and the call, so no request can reach the network
+	 * without {@code serverSyncEnabled} being true (Plugin Hub 3rd-party-networking
+	 * rule). Callers still return-early on the same flag first, so a disabled call
+	 * completes its future correctly rather than being silently dropped here; this
+	 * gate is the belt-and-suspenders that also covers any future call site.
+	 */
+	private void enqueueGated(Request req, Callback cb)
+	{
+		if (!config.apiEnabled())
+		{
+			return;
+		}
+		httpClient.newCall(req).enqueue(cb);
 	}
 
 	// ==================== Player Account Endpoints ====================
@@ -127,7 +150,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -192,7 +215,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, "{}"))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -251,7 +274,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -326,7 +349,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -417,7 +440,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -493,7 +516,7 @@ public class ChunkBlazerApiClient
 			.get()
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -549,7 +572,7 @@ public class ChunkBlazerApiClient
 			.get()
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -608,7 +631,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -664,7 +687,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -725,7 +748,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
@@ -780,7 +803,7 @@ public class ChunkBlazerApiClient
 			.post(RequestBody.create(JSON, json))
 			.build();
 
-		httpClient.newCall(httpRequest).enqueue(new Callback()
+		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
