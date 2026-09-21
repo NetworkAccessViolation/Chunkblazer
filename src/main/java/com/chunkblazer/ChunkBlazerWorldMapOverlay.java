@@ -380,8 +380,8 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 			line2 = "Cost: FREE";
 		} else if (isBoss)
 		{
-			line2 = "Cost: 1 boss token";
-			line3 = "Need 1 more boss token";
+			line2 = "Cost: 1 Boss Token";
+			line3 = "Need 1 more Boss Token";
 		} else
 		{
 			line2 = "Cost: " + unlockCost + " pts";
