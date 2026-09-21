@@ -39,6 +39,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -148,6 +149,12 @@ public class AssetStore
 		dispatcher.setMaxRequestsPerHost(2);
 		this.httpClient = sharedClient.newBuilder()
 			.dispatcher(dispatcher)
+			.connectTimeout(10, TimeUnit.SECONDS)
+			.readTimeout(30, TimeUnit.SECONDS)
+			// We only ever fetch from our own API and never need a redirect; refuse
+			// them so a rogue 3xx can't send the request to another host.
+			.followRedirects(false)
+			.followSslRedirects(false)
 			.build();
 	}
 
@@ -371,6 +378,22 @@ public class AssetStore
 
 	// ==================== internals ====================
 
+	/**
+	 * The single gated chokepoint for every synchronous networking call. Its body
+	 * is only the opt-in check and the call, so no request can reach the network
+	 * without {@code serverSyncEnabled} being true (Plugin Hub 3rd-party-networking
+	 * rule). Throwing when disabled folds into the callers' existing offline
+	 * handling (they keep last-good on any IOException).
+	 */
+	private Response executeGated(Request req) throws IOException
+	{
+		if (!config.apiEnabled())
+		{
+			throw new IOException("server sync disabled");
+		}
+		return httpClient.newCall(req).execute();
+	}
+
 	private void refreshManifest()
 	{
 		if (!config.apiEnabled())
@@ -386,7 +409,7 @@ public class AssetStore
 			rb.addHeader("If-None-Match", etag);
 		}
 
-		try (Response resp = httpClient.newCall(rb.build()).execute())
+		try (Response resp = executeGated(rb.build()))
 		{
 			if (resp.code() == 304)
 			{
@@ -456,7 +479,7 @@ public class AssetStore
 
 		String url = config.apiBaseUrl() + "/" + asset.getPath();
 		Request req = new Request.Builder().url(url).get().build();
-		try (Response resp = httpClient.newCall(req).execute())
+		try (Response resp = executeGated(req))
 		{
 			if (!resp.isSuccessful() || resp.body() == null)
 			{
