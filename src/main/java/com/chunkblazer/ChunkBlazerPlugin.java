@@ -855,7 +855,7 @@ public class ChunkBlazerPlugin extends Plugin
 			.setOption("Unlock chunk")
 			.setTarget("<col=ffff00>" + regionName + "</col> (" + cost + " pts)")
 			.setType(MenuAction.RUNELITE)
-			.onClick(e -> showMinimapUnlockPopup(hoveredRegion));
+			.onClick(e -> showChatboxUnlockPopup(hoveredRegion));
 	}
 
 	/**
@@ -888,7 +888,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// Show the unlock confirm both as a chatbox Yes/No prompt and in the top-right
 		// side panel, matching the walk-into-a-chunk experience. unlockRegion is
 		// idempotent, so acting on either prompt is safe if both are open.
-		showMinimapUnlockPopup(regionId);
+		showChatboxUnlockPopup(regionId);
 		panel.promptUnlockForRegion(regionId);
 	}
 
@@ -902,38 +902,68 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 	}
 
-	private void showMinimapUnlockPopup(int regionId)
+	private void showChatboxUnlockPopup(int regionId)
 	{
-		String regionName = getRegionName(regionId);
+		String chunkName = chunksByRegionId.get(regionId).getName();
 		int cost = getRegionUnlockCost(regionId);
 		int currentPoints = getTotalPoints();
-
+		int currentTokens = getBossTokens();
 		clientThread.invokeLater(() ->
 		{
-			if (currentPoints < cost)
+			// Boss chunks cost a Boss Token, not points — show a token prompt and route
+			// to the token unlock path instead of the points one below.
+			if (isBossRegion(regionId))
 			{
+				if (currentTokens <= 0)
+				{
+					// Not enough tokens - show info message
+					chatboxPanelManager.openTextMenuInput(
+									"You need a Boss Token to unlock " + chunkName + ".")
+							.option("OK", () ->
+							{
+							})
+							.build();
+				}
+				else
+				{
+					// Can afford - show unlock confirmation
+					chatboxPanelManager.openTextMenuInput(
+									"Unlock " + chunkName + " for 1 Boss Token? " +
+											"(Remaining: " + (currentTokens - 1) + ")")
+							.option("Yes, unlock!", () ->
+							{
+								unlockRegion(regionId);
+							})
+							.option("No, not yet", () ->
+							{
+							})
+							.build();
+				}
+			}
+			else if (currentPoints < cost)
+			{
+				// Not enough points - show info message
 				chatboxPanelManager.openTextMenuInput(
-						"Cannot unlock " + regionName + "! " +
-						"Need " + (cost - currentPoints) + " more points. " +
-						"(Cost: " + cost + ", You have: " + currentPoints + ")")
-					.option("OK", () ->
-					{
-					})
-					.build();
+								"You need " + (cost - currentPoints) + " more points to unlock " + chunkName + ".")
+						.option("OK", () ->
+						{
+						})
+						.build();
 			}
 			else
 			{
+				// Can afford - show unlock confirmation
 				chatboxPanelManager.openTextMenuInput(
-						"Unlock " + regionName + " for " + cost + " points? " +
-						"(Remaining: " + (currentPoints - cost) + " points)")
-					.option("Yes, unlock!", () ->
-					{
-						unlockRegion(regionId);
-					})
-					.option("No", () ->
-					{
-					})
-					.build();
+								"Unlock " + chunkName + " for " + cost + " points? " +
+										"(Remaining: " + (currentPoints - cost) + ")")
+						.option("Yes, unlock!", () ->
+						{
+							unlockRegion(regionId);
+						})
+						.option("No, not yet", () ->
+						{
+						})
+						.build();
 			}
 		});
 	}
@@ -963,76 +993,7 @@ public class ChunkBlazerPlugin extends Plugin
 			return; // Not a neighbor
 		}
 
-		// Boss chunks cost a Boss Token, not points — show a token prompt and route
-		// to the token unlock path instead of the points one below.
-		if (chunk.isBoss())
-		{
-			final int tokens = getBossTokens();
-			final String bossName = chunk.getName();
-			clientThread.invokeLater(() ->
-			{
-				if (tokens <= 0)
-				{
-					chatboxPanelManager.openTextMenuInput(
-							"Boss chunk: " + bossName + "! You need a Boss Token to unlock it.")
-						.option("OK", () ->
-						{
-						})
-						.build();
-				}
-				else
-				{
-					chatboxPanelManager.openTextMenuInput(
-							"Unlock boss chunk " + bossName + "? This will cost 1 boss token."
-								+ " You will need to defeat this boss to gain another. (You have " + tokens + ")")
-						.option("Yes, unlock!", () ->
-						{
-							unlockBossRegion(regionId);
-						})
-						.option("No, not yet", () ->
-						{
-						})
-						.build();
-				}
-			});
-			return;
-		}
-
-		// Show the unlock popup
-		int cost = getRegionUnlockCost(regionId);
-		int currentPoints = getTotalPoints();
-		String regionName = chunk.getName();
-
-		clientThread.invokeLater(() ->
-		{
-			if (currentPoints < cost)
-			{
-				// Not enough points - show info message
-				chatboxPanelManager.openTextMenuInput(
-						"New region: " + regionName + "! " +
-						"Need " + (cost - currentPoints) + " more points to unlock. " +
-						"(Cost: " + cost + ", You have: " + currentPoints + ")")
-					.option("OK", () ->
-					{
-					})
-					.build();
-			}
-			else
-			{
-				// Can afford - show unlock confirmation
-				chatboxPanelManager.openTextMenuInput(
-						"Unlock " + regionName + " for " + cost + " points? " +
-						"(Remaining: " + (currentPoints - cost) + " points)")
-					.option("Yes, unlock!", () ->
-					{
-						unlockRegion(regionId);
-					})
-					.option("No, not yet", () ->
-					{
-					})
-					.build();
-			}
-		});
+		showChatboxUnlockPopup(regionId);
 	}
 
 	/**
