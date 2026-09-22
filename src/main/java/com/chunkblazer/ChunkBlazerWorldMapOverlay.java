@@ -364,14 +364,37 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		String regionName = plugin.getRegionName(regionId);
 		int unlockCost = plugin.getRegionUnlockCost(regionId);
 		int playerPoints = plugin.getTotalPoints();
+		boolean isBoss = plugin.isBossRegion(regionId);
 		boolean canAfford = playerPoints >= unlockCost;
+
+		if (isBoss)
+		{
+			canAfford = (plugin.getBossTokens() > 0);
+		}
 
 		// Build tooltip text
 		String line1 = regionName;
-		String line2 = "Cost: " + unlockCost + " pts";
-		String line3 = canAfford
-			? "Hold " + config.worldMapUnlockKey() + " + click to unlock"
-			: "Need " + (unlockCost - playerPoints) + " more pts";
+		String line2, line3 = "";
+		if (plugin.isFreeUnlockableRegion(regionId))
+		{
+			line2 = "Cost: FREE";
+		}
+		else if (isBoss)
+		{
+			line2 = "Cost: 1 Boss Token";
+			line3 = "Need 1 more Boss Token";
+		}
+		else
+		{
+			line2 = "Cost: " + unlockCost + " pts";
+			line3 = "Need " + (unlockCost - playerPoints) + " more pts";
+		}
+
+		if (canAfford)
+		{
+			line3 = "Hold " + config.worldMapUnlockKey() + " + click to unlock";
+		}
+
 
 		// Setup font
 		Font font = FontManager.getRunescapeSmallFont();
