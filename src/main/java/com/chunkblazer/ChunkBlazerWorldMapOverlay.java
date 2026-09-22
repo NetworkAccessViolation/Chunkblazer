@@ -378,11 +378,13 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		if (plugin.isFreeUnlockableRegion(regionId))
 		{
 			line2 = "Cost: FREE";
-		} else if (isBoss)
+		}
+		else if (isBoss)
 		{
 			line2 = "Cost: 1 Boss Token";
 			line3 = "Need 1 more Boss Token";
-		} else
+		}
+		else
 		{
 			line2 = "Cost: " + unlockCost + " pts";
 			line3 = "Need " + (unlockCost - playerPoints) + " more pts";

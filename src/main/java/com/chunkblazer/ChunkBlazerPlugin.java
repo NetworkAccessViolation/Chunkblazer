@@ -904,7 +904,11 @@ public class ChunkBlazerPlugin extends Plugin
 
 	private void showChatboxUnlockPopup(int regionId)
 	{
-		String chunkName = chunksByRegionId.get(regionId).getName();
+		// Null-safe: charter ports and free-list chunks are unlockable but live in
+		// freeUnlockableNames, not chunksByRegionId, so a direct .get().getName()
+		// would NPE on them. getRegionName() handles every case.
+		NuzlockeChunk popupChunk = chunksByRegionId.get(regionId);
+		String chunkName = popupChunk != null ? popupChunk.getName() : getRegionName(regionId);
 		int cost = getRegionUnlockCost(regionId);
 		int currentPoints = getTotalPoints();
 		int currentTokens = getBossTokens();
