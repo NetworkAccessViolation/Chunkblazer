@@ -1941,7 +1941,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		regionUnlockPanel.add(Box.createVerticalStrut(5));
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			regionName + " (" + regionId + ")",
+			regionName,
 			FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD),
 			Color.WHITE,
 			TASK_TEXT_WRAP_WIDTH);
@@ -2002,7 +2002,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		regionUnlockPanel.add(Box.createVerticalStrut(5));
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			regionName + " (" + regionId + ")",
+			regionName,
 			FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD),
 			Color.WHITE,
 			TASK_TEXT_WRAP_WIDTH);
@@ -2093,6 +2093,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		JButton no = actionButton("No", new Color(110, 50, 50));
 		no.addActionListener(e ->
 		{
+			plugin.closeChatboxPrompt();
 			// Cancel drops the world-map click pin too.
 			mapUnlockRegionId = -1;
 			updateRegionUnlockSection();
@@ -2104,6 +2105,13 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		buttonRow.revalidate();
 		buttonRow.repaint();
+	}
+
+	public void hideUnlockSection()
+	{
+		mapUnlockRegionId = -1;
+		updateRegionUnlockSection();
+		updateStats();
 	}
 
 	private JPanel createStatBox(String label, String value)
