@@ -238,7 +238,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 	public ChunkBlazerPanel()
 	{
-		super(false);
+		super(true);
 	}
 
 	private static final int PANEL_WIDTH = 225; // Standard RuneLite panel width
@@ -256,27 +256,10 @@ public class ChunkBlazerPanel extends PluginPanel
 	public void init(ChunkBlazerPlugin plugin)
 	{
 		this.plugin = plugin;
-
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
-		setPreferredSize(new Dimension(PANEL_WIDTH, 600));
-		setMaximumSize(new Dimension(PANEL_WIDTH, Integer.MAX_VALUE));
-
-		// Wrap main panel in a scroll pane to prevent overflow
 		JPanel mainContent = createMainPanel();
-		// Don't set fixed preferred height - let content determine size for proper scrolling
-		mainContent.setMaximumSize(new Dimension(PANEL_WIDTH - 10, Integer.MAX_VALUE));
-
-		JScrollPane mainScrollPane = new JScrollPane(mainContent);
-		mainScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
-		mainScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		mainScrollPane.setBorder(null);
-		mainScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		mainScrollPane.getViewport().setBackground(ColorScheme.DARK_GRAY_COLOR);
-		mainScrollPane.getVerticalScrollBar().setUnitIncrement(16);
-		// Don't set fixed preferred size - let scroll pane expand based on content
-
-		add(mainScrollPane, BorderLayout.CENTER);
+		add(mainContent, BorderLayout.CENTER);
 	}
 
 	private JPanel createMainPanel()
@@ -309,7 +292,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		// player is in-game (most controls are account-specific and can't act
 		// before login). Toggled by updateLoginGate().
 		loggedOutPanel = createLoggedOutSection();
-		setupSectionPanel(loggedOutPanel);
 		loggedOutPanel.setVisible(false);
 		mainPanel.add(loggedOutPanel);
 
@@ -317,7 +299,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		// thing an unverified player sees. Hidden by default; the plugin calls
 		// showVerificationPrompt() once the server issues a code.
 		verificationPanel = createVerificationSection();
-		setupSectionPanel(verificationPanel);
 		verificationPanel.setVisible(false);
 		mainPanel.add(verificationPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
@@ -331,18 +312,15 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Region Unlock Section — visible only when the player is standing in a
 		// locked region. Hidden otherwise so it doesn't waste vertical space.
 		regionUnlockPanel = createRegionUnlockSection();
-		setupSectionPanel(regionUnlockPanel);
 		mainPanel.add(regionUnlockPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
 		// Mode Selection Section (hidden once the mode is locked)
 		modeSelectionPanel = createModeSelectionSection();
-		setupSectionPanel(modeSelectionPanel);
 		mainPanel.add(modeSelectionPanel);
 
 		// Locked-mode card — shown in place of the selector once the mode is locked.
 		lockedModePanel = createLockedModeSection();
-		setupSectionPanel(lockedModePanel);
 		lockedModePanel.setVisible(false);
 		mainPanel.add(lockedModePanel);
 
@@ -350,13 +328,11 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		// Current Task Section
 		currentTaskPanel = createCurrentTaskSection();
-		setupSectionPanel(currentTaskPanel);
 		mainPanel.add(currentTaskPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
 		// Completed Tasks Section
 		completedTasksPanel = createCompletedTasksSection();
-		setupSectionPanel(completedTasksPanel);
 		mainPanel.add(completedTasksPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
@@ -364,21 +340,19 @@ public class ChunkBlazerPanel extends PluginPanel
 		// account. Sits above the region task list because it's always relevant,
 		// regardless of which chunks the player owns.
 		globalTasksPanel = createGlobalTasksSection();
-		setupSectionPanel(globalTasksPanel);
 		mainPanel.add(globalTasksPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
 		// Task List Section (Region Tasks)
 		taskListPanel = createTaskListSection();
-		setupSectionPanel(taskListPanel);
 		mainPanel.add(taskListPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
 		// Unlocked Chunks — read-only list, tucked below the active tasks so it's
 		// out of the way (it can get long).
 		unlockedListPanel = createUnlockedListSection();
-		setupSectionPanel(unlockedListPanel);
 		mainPanel.add(unlockedListPanel);
+		mainPanel.add(Box.createVerticalStrut(8));
 
 		// Subtle "Show my sync key" link, tucked below Unlocked Chunks so it stays out of the
 		// way. Reads the key from the authoritative per-account store for reliability
@@ -418,17 +392,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		return mainPanel;
 	}
 
-	/**
-	 * Configure a section panel to fill width in BoxLayout.
-	 * Lock horizontal width but allow vertical expansion based on content.
-	 */
-	private void setupSectionPanel(JPanel panel)
-	{
-		panel.setAlignmentX(LEFT_ALIGNMENT);
-		// Fixed width, but let height be determined by content (don't set preferredSize height)
-		panel.setMaximumSize(new Dimension(PANEL_WIDTH - 10, Integer.MAX_VALUE));
-		panel.setMinimumSize(new Dimension(PANEL_WIDTH - 10, 0));
-	}
 
 	/**
 	 * Thin flame-orange divider drawn under a section title — the consistent accent
@@ -1634,8 +1597,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 	}
 
-	private static final int HEADER_HEIGHT = 38; // Fixed height for header section
-	private static final int STATS_HEIGHT = 42; // Fixed height for stats section
 
 	private JPanel createHeaderSection()
 	{
@@ -1644,10 +1605,6 @@ public class ChunkBlazerPanel extends PluginPanel
 			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
 			new EmptyBorder(3, 6, 3, 6)
 		));
-		// Fixed size - never changes
-		headerPanel.setPreferredSize(new Dimension(PANEL_WIDTH - 10, HEADER_HEIGHT));
-		headerPanel.setMinimumSize(new Dimension(PANEL_WIDTH - 10, HEADER_HEIGHT));
-		headerPanel.setMaximumSize(new Dimension(PANEL_WIDTH - 10, HEADER_HEIGHT));
 
 		// Title row with Discord button
 		JPanel titleRow = styledPanel(new BorderLayout(3, 0), ColorScheme.DARKER_GRAY_COLOR);
@@ -1691,10 +1648,6 @@ public class ChunkBlazerPanel extends PluginPanel
 			BorderFactory.createLineBorder(FLAME), // Gold border
 			new EmptyBorder(2, 3, 2, 3)
 		));
-		// Fixed size - never changes
-		statsPanel.setPreferredSize(new Dimension(PANEL_WIDTH - 10, STATS_HEIGHT));
-		statsPanel.setMinimumSize(new Dimension(PANEL_WIDTH - 10, STATS_HEIGHT));
-		statsPanel.setMaximumSize(new Dimension(PANEL_WIDTH - 10, STATS_HEIGHT));
 
 		JPanel pointsPanel = createStatBox("Points", "0");
 		totalPointsLabel = (JLabel) ((JPanel) pointsPanel.getComponent(0)).getComponent(1);
@@ -1779,12 +1732,15 @@ public class ChunkBlazerPanel extends PluginPanel
 			return;
 		}
 
+		unlockedListPanel.setAlignmentX(LEFT_ALIGNMENT);
+		
 		// Collapsible header: title + count on the left, a toggle on the right.
 		// Collapsed by default so a long unlock list doesn't dominate the panel —
 		// the rows only render when expanded.
-		JPanel headerRow = styledPanel(new BorderLayout(4, 0), ColorScheme.DARKER_GRAY_COLOR);
+		JPanel headerRow = styledPanel(new BorderLayout(5, 0), ColorScheme.DARKER_GRAY_COLOR);
 		headerRow.setAlignmentX(LEFT_ALIGNMENT);
-		headerRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 20));
+		headerRow.setPreferredSize(new Dimension(CONTENT_WIDTH, 25));
+		headerRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 25));
 
 		headerRow.add(styledLabel("Unlocked Chunks (" + names.size() + ")",
 			FontManager.getRunescapeBoldFont(), Color.WHITE), BorderLayout.WEST);
@@ -1792,8 +1748,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		JToggleButton toggle = new JToggleButton();
 		setToggleArrow(toggle, unlockedListExpanded);
 		toggle.setFont(new Font("Arial", Font.PLAIN, 10));
-		toggle.setPreferredSize(new Dimension(30, 18));
-		toggle.setMaximumSize(new Dimension(30, 18));
+		toggle.setPreferredSize(new Dimension(30, 20));
+		toggle.setMaximumSize(new Dimension(30, 20));
 		toggle.setSelected(unlockedListExpanded);
 		toggle.setToolTipText("Show/hide your unlocked chunks");
 		toggle.addActionListener(e ->
@@ -1803,12 +1759,11 @@ public class ChunkBlazerPanel extends PluginPanel
 		});
 		headerRow.add(toggle, BorderLayout.EAST);
 		unlockedListPanel.add(headerRow);
+		unlockedListPanel.add(sectionDivider());
+		unlockedListPanel.add(Box.createVerticalStrut(5));
 
 		if (unlockedListExpanded)
 		{
-			unlockedListPanel.add(Box.createVerticalStrut(3));
-			unlockedListPanel.add(sectionDivider());
-			unlockedListPanel.add(Box.createVerticalStrut(5));
 			if (names.isEmpty())
 			{
 				addLabel(unlockedListPanel, "No chunks unlocked yet.",
@@ -2721,7 +2676,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Task name (wrapped via WrappingTextLabel).
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
 			selectedTask.getName(),
-			FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD),
+			FontManager.getRunescapeBoldFont(),
 			Color.WHITE,
 			TASK_TEXT_WRAP_WIDTH);
 		selectedTaskPanel.add(nameLabel);
