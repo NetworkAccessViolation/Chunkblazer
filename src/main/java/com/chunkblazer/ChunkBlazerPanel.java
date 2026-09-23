@@ -1942,7 +1942,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
 			regionName,
-			FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD),
+			FontManager.getRunescapeBoldFont(),
 			Color.WHITE,
 			TASK_TEXT_WRAP_WIDTH);
 		regionUnlockPanel.add(nameLabel);
@@ -1957,7 +1957,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		final int finalRegionId = regionId;
 		final String finalRegionName = regionName;
 		final int finalCost = cost;
-		JPanel buttonRow = styledPanel(new BorderLayout(4, 0), ColorScheme.DARKER_GRAY_COLOR);
+		JPanel buttonRow = styledPanel(new BorderLayout(4, 4), ColorScheme.DARKER_GRAY_COLOR);
 		buttonRow.setAlignmentX(LEFT_ALIGNMENT);
 		buttonRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 28));
 
@@ -1987,7 +1987,7 @@ public class ChunkBlazerPanel extends PluginPanel
 	/**
 	 * Render the locked-region prompt for a BOSS chunk: costs one Boss Token (not
 	 * points) and grants every task on unlock. Mirrors the points layout but reads
-	 * the token balance and routes to {@code unlockBossRegion}.
+	 * the token balance.
 	 */
 	private void renderBossUnlockSection(int regionId, String regionName)
 	{
@@ -2003,7 +2003,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
 			regionName,
-			FontManager.getRunescapeSmallFont().deriveFont(Font.BOLD),
+			FontManager.getRunescapeBoldFont(),
 			Color.WHITE,
 			TASK_TEXT_WRAP_WIDTH);
 		regionUnlockPanel.add(nameLabel);
@@ -2013,7 +2013,7 @@ public class ChunkBlazerPanel extends PluginPanel
 			FontManager.getRunescapeSmallFont(), canAfford ? new Color(150, 255, 150) : new Color(255, 130, 130));
 		regionUnlockPanel.add(Box.createVerticalStrut(4));
 
-		addLabel(regionUnlockPanel, "Unlocking grants every task on this chunk.",
+		addLabel(regionUnlockPanel, "All tasks will be granted upon unlock.",
 			FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 		regionUnlockPanel.add(Box.createVerticalStrut(4));
 
@@ -2027,10 +2027,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		regionUnlockPanel.add(Box.createVerticalStrut(6));
 
 		final int finalRegionId = regionId;
-		JPanel buttonRow = styledPanel(new BorderLayout(4, 0), ColorScheme.DARKER_GRAY_COLOR);
+		final String finalRegionName = regionName;
+		JPanel buttonRow = styledPanel(new BorderLayout(4, 4), ColorScheme.DARKER_GRAY_COLOR);
 		buttonRow.setAlignmentX(LEFT_ALIGNMENT);
 		buttonRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 28));
-
 		if (!canAfford)
 		{
 			JButton disabled = new JButton("Need a Boss Token");
@@ -2042,14 +2042,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		else
 		{
 			JButton unlockBtn = actionButton("Unlock for 1 Boss Token", new Color(50, 110, 60));
-			unlockBtn.addActionListener(e ->
-			{
-				plugin.closeChatboxPrompt();
-				plugin.unlockBossRegion(finalRegionId);
-				mapUnlockRegionId = -1;
-				updateRegionUnlockSection();
-				updateStats();
-			});
+			unlockBtn.addActionListener(e -> showUnlockConfirm(buttonRow, finalRegionId, finalRegionName, 0));
 			buttonRow.add(unlockBtn, BorderLayout.CENTER);
 		}
 		regionUnlockPanel.add(buttonRow);
@@ -2069,7 +2062,15 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		buttonRow.removeAll();
 
-		buttonRow.add(styledLabel("Spend " + cost + "?", FontManager.getRunescapeSmallFont(), Color.WHITE), BorderLayout.WEST);
+
+		if (plugin.isBossRegion(regionId))
+		{
+			buttonRow.add(styledLabel("Spend Boss Token?", FontManager.getRunescapeSmallFont(), Color.WHITE), BorderLayout.NORTH);
+		}
+		else
+		{
+			buttonRow.add(styledLabel("Spend " + cost + " points?", FontManager.getRunescapeSmallFont(), Color.WHITE), BorderLayout.NORTH);
+		}
 
 		JPanel choices = styledPanel(new GridLayout(1, 2, 4, 0), ColorScheme.DARKER_GRAY_COLOR);
 
@@ -2101,7 +2102,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		choices.add(yes);
 		choices.add(no);
-		buttonRow.add(choices, BorderLayout.EAST);
+		buttonRow.add(choices, BorderLayout.CENTER);
 
 		buttonRow.revalidate();
 		buttonRow.repaint();
