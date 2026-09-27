@@ -55,6 +55,10 @@ public class PlayerLoginResponse
 	 */
 	private String message;
 
+	/** Set by the api client, not the server. */
+	private transient ApiOutcome outcome;
+	private transient long retryAfterMs;
+
 	/**
 	 * The player's data
 	 */

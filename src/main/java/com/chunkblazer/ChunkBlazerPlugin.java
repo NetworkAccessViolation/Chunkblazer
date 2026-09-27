@@ -91,10 +91,12 @@ import net.runelite.client.util.Filepath;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
+import com.chunkblazer.api.ApiOutcome;
 import com.chunkblazer.api.ChunkBlazerApiClient;
 import com.chunkblazer.api.EligibilitySnapshot;
 import com.chunkblazer.api.PlayerLoginResponse;
 import com.chunkblazer.api.PlayerSyncRequest;
+import com.chunkblazer.api.ServerBackoff;
 import com.chunkblazer.modules.TaskModuleManager;
 import com.chunkblazer.verification.VarPlayerVerificationService;
 
@@ -291,6 +293,10 @@ public class ChunkBlazerPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
+		// @Singleton survives disable/enable.
+		serverBackoff.reset();
+		syncRejectedKey = null;
+		registrationClosedRsn = null;
 
 		// Start verification service (registers for VarPlayer events)
 		varPlayerService.startUp();
@@ -522,6 +528,14 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	private volatile boolean serverLoginDone = false;
 
+	private final ServerBackoff serverBackoff = new ServerBackoff();
+
+	// Key the server refused on sync (401). Sync halts until the key changes.
+	private volatile String syncRejectedKey;
+
+	// RSN refused by closed registration. Skipped by the periodic login retry.
+	private volatile String registrationClosedRsn;
+
 	// A recovery key the player pasted, being validated on the CURRENT login attempt.
 	// It is only a candidate: it is never written over the stored key until the server
 	// confirms it authenticates THIS account (login response authed_by_key), so a wrong
@@ -583,8 +597,12 @@ public class ChunkBlazerPlugin extends Plugin
 			if (finalSync != null && config.apiEnabled())
 			{
 				apiClient.syncPlayerState(finalSync)
-					.thenAccept(resp -> log.info("Logout sync: success={}",
-						resp != null && resp.isSuccess()));
+					.thenAccept(resp ->
+					{
+						log.info("Logout sync: success={}", resp != null && resp.isSuccess());
+						recordServerOutcome(resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome(),
+							resp == null ? 0 : resp.getRetryAfterMs());
+					});
 			}
 			else if (!serverStateMerged)
 			{
@@ -615,6 +633,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// Real logout — reset the dedupe flag so the NEXT LOGGED_IN
 			// (which is a fresh game session) re-runs loginToServer.
 			serverLoginDone = false;
+			syncRejectedKey = null;
 			// Re-determine mode-lock from scratch next login: the cached verdict is
 			// per-account, and a different account may log in next.
 			modeLockConfirmed = false;
@@ -2639,6 +2658,7 @@ public class ChunkBlazerPlugin extends Plugin
 			return;
 		}
 		configManager.setConfiguration(CONFIG_GROUP, "serverSyncEnabled", true);
+		serverBackoff.reset();
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
 			loginToServer();
@@ -2693,6 +2713,15 @@ public class ChunkBlazerPlugin extends Plugin
 		apiClient.login(rsn, fullHashRsn(rsn))
 			.thenAccept(resp ->
 			{
+				ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
+				recordServerOutcome(outcome, resp == null ? 0 : resp.getRetryAfterMs());
+				if (outcome == ApiOutcome.REGISTRATION_CLOSED && !rsn.equals(registrationClosedRsn))
+				{
+					registrationClosedRsn = rsn;
+					log.info("[CHUNKBLAZER] server registration is closed; {} will play offline this session", rsn);
+					addPluginChatMessage("New ChunkBlazer sign-ups are closed right now, so this account "
+						+ "isn't syncing. You can keep playing, and your progress is saved locally.");
+				}
 				// Only mark complete on a real OK / created response. Offline
 				// or error responses leave the flag false so we retry next
 				// LOGGED_IN tick instead of pretending we're done.
@@ -2780,6 +2809,7 @@ public class ChunkBlazerPlugin extends Plugin
 			{
 				// Expected when the server is unreachable or sync is mid-toggle; not an error.
 				log.debug("login request failed: {}", e.toString());
+				recordServerOutcome(ApiOutcome.TRANSIENT, 0);
 				serverRollRestoreResolved = true;
 				clientThread.invokeLater(this::loadActiveTasks);
 				return null;
@@ -3954,6 +3984,46 @@ public class ChunkBlazerPlugin extends Plugin
 	}
 
 	/**
+	 * Feed a login/sync result into the backoff. Key and registration refusals
+	 * have their own halts, so they skip it.
+	 */
+	private void recordServerOutcome(ApiOutcome outcome, long retryAfterMs)
+	{
+		if (outcome == null)
+		{
+			return;
+		}
+		if (outcome == ApiOutcome.SUCCESS)
+		{
+			if (serverBackoff.recordSuccess())
+			{
+				addPluginChatMessage("Reconnected to the ChunkBlazer server. Your progress is syncing again.");
+			}
+			return;
+		}
+		if (outcome == ApiOutcome.AUTH_REJECTED || outcome == ApiOutcome.REGISTRATION_CLOSED)
+		{
+			return;
+		}
+		if (serverBackoff.recordFailure(outcome, retryAfterMs, System.currentTimeMillis()))
+		{
+			addPluginChatMessage("Can't reach the ChunkBlazer server right now. Your progress is saved "
+				+ "locally and will sync once it's back.");
+		}
+	}
+
+	/** Periodic login retry; skips an RSN refused by closed registration. Client thread. */
+	private void retryServerLogin()
+	{
+		String rsn = getPlayerName();
+		if (rsn != null && rsn.equals(registrationClosedRsn))
+		{
+			return;
+		}
+		loginToServer();
+	}
+
+	/**
 	 * Periodic save-state sync. Runs on the executor thread; client state is
 	 * read by hopping to the client thread first.
 	 */
@@ -3967,13 +4037,17 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return;
 		}
+		if (!serverBackoff.isReady(System.currentTimeMillis()))
+		{
+			return;
+		}
 		if (!serverLoginDone)
 		{
 			// Self-heal a server login that never completed (plugin enabled while already
 			// in-game, or the server was down on the first attempt) rather than waiting for a
 			// fresh LOGGED_IN event. loginToServer reads the player name, so hop to the client
 			// thread; it no-ops if the name isn't ready yet and this retries next interval.
-			clientThread.invoke(this::loginToServer);
+			clientThread.invoke(this::retryServerLogin);
 			return;
 		}
 		if (!isAccountStateAvailable())
@@ -3989,6 +4063,21 @@ public class ChunkBlazerPlugin extends Plugin
 			// account's real server record. Skip; the next tick retries.
 			return;
 		}
+		String rejectedKey = syncRejectedKey;
+		if (rejectedKey != null)
+		{
+			if (rejectedKey.equals(apiClient.currentApiKey()))
+			{
+				// A newly pasted key gets validated by re-login.
+				String pasted = config.apiKey() == null ? "" : config.apiKey().trim();
+				if (!pasted.isEmpty() && !pasted.equals(rejectedKey))
+				{
+					serverLoginDone = false;
+				}
+				return;
+			}
+			syncRejectedKey = null;
+		}
 		clientThread.invoke(() ->
 		{
 			PlayerSyncRequest req = buildSyncRequest();
@@ -3997,9 +4086,21 @@ public class ChunkBlazerPlugin extends Plugin
 				return;
 			}
 			boolean declaredReset = req.isIntentionalReset();
+			String sentKey = apiClient.currentApiKey();
 			apiClient.syncPlayerState(req)
 				.thenAccept(resp ->
 				{
+					ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
+					recordServerOutcome(outcome, resp == null ? 0 : resp.getRetryAfterMs());
+					if (outcome == ApiOutcome.AUTH_REJECTED && syncRejectedKey == null)
+					{
+						syncRejectedKey = sentKey;
+						log.warn("[CHUNKBLAZER] server rejected this account's sync key; sync paused "
+							+ "until a different key is supplied");
+						addPluginChatMessage("The server didn't accept this account's sync key, so syncing "
+							+ "is paused. Your progress is still saved locally. Paste this account's key "
+							+ "into Sync recovery key in the ChunkBlazer settings to resume.");
+					}
 					// Only retire the reset declaration once the server has actually
 					// accepted it. Clearing it on send would strand a reset behind one
 					// dropped request: the retry would arrive without the flag, be

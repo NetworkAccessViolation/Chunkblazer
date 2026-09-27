@@ -78,6 +78,10 @@ public class PlayerSyncResponse
 	/** Server timestamp */
 	private long serverTimestamp;
 
+	/** Set by the api client, not the server. */
+	private transient ApiOutcome outcome;
+	private transient long retryAfterMs;
+
 	@Data
 	@Builder
 	@NoArgsConstructor
