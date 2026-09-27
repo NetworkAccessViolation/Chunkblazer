@@ -47,3 +47,4 @@ logs/
 .bat/setup-chunkblazer.bat
 .bat/sync-to-runelite.bat
 .bat/update-runelite.bat
+.bat.zip
