@@ -1,7 +1,12 @@
 package com.chunkblazer.modules;
 
+import com.chunkblazer.NuzlockeChunk;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.RaidChallenge;
+import com.chunkblazer.ShippedSeed;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import net.runelite.api.GameState;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Hitsplat;
 import net.runelite.api.Player;
@@ -12,8 +17,11 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
 import net.runelite.api.events.ActorDeath;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.NpcDespawned;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
@@ -22,6 +30,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -1302,6 +1311,166 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 		assertFalse(t.isCompleted(), "counted deaths outside the room window must not credit");
 	}
 
+	// ── encounter lifecycle across repeat kills in one instance ─────────────
+
+	private static final int MITHRIL_BATTLEAXE = 1369, TRAINING_SWORD = 9703;
+
+	@Test
+	void gearSwapBetweenKills()
+	{
+		NuzlockeTask axe = addTask("axe", c -> {
+			c.setDefeatNpcIds(Arrays.asList(ICE_DEMON));
+			c.setRequiredEquippedIds(Arrays.asList(MITHRIL_BATTLEAXE));
+		});
+		NuzlockeTask sword = addTask("sword", c -> {
+			c.setDefeatNpcIds(Arrays.asList(ICE_DEMON));
+			c.setRequiredEquippedIds(Arrays.asList(TRAINING_SWORD));
+		});
+		setEquipment(slot(WEAPON, MITHRIL_BATTLEAXE));
+		encounterKill(ICE_DEMON);
+		fireHit(ICE_DEMON); // a splat landing after the death event
+		fireTick();
+		setEquipment(slot(WEAPON, TRAINING_SWORD));
+		fireDespawn(ICE_DEMON);
+		respawn(ICE_DEMON);
+		encounterKill(ICE_DEMON);
+		assertTrue(axe.isCompleted());
+		assertTrue(sword.isCompleted(), "the second kill in the same instance must count");
+	}
+
+	@Test
+	void deadDespawnEndsEncounter()
+	{
+		NuzlockeTask t = addTask("sword", c -> {
+			c.setDefeatNpcIds(Arrays.asList(ICE_DEMON));
+			c.setRequiredEquippedIds(Arrays.asList(TRAINING_SWORD));
+		});
+		setEquipment(slot(WEAPON, MITHRIL_BATTLEAXE));
+		fireHit(ICE_DEMON);
+		fireTick(); // violated
+		lenient().when(npc(ICE_DEMON).isDead()).thenReturn(true);
+		fireDespawn(ICE_DEMON); // died, but the death event never reached us
+		respawn(ICE_DEMON);
+		setEquipment(slot(WEAPON, TRAINING_SWORD));
+		encounterKill(ICE_DEMON);
+		assertTrue(t.isCompleted());
+	}
+
+	@Test
+	void aliveDespawnKeepsViolation()
+	{
+		NuzlockeTask t = addTask("sword", c -> {
+			c.setDefeatNpcIds(Arrays.asList(ICE_DEMON));
+			c.setRequiredEquippedIds(Arrays.asList(TRAINING_SWORD));
+		});
+		setEquipment(slot(WEAPON, MITHRIL_BATTLEAXE));
+		fireHit(ICE_DEMON);
+		fireTick(); // violated
+		fireDespawn(ICE_DEMON); // alive (Zulrah-style dive): same fight continues
+		respawn(ICE_DEMON);
+		setEquipment(slot(WEAPON, TRAINING_SWORD));
+		fireHit(ICE_DEMON);
+		fireTick();
+		fireDeath(ICE_DEMON);
+		assertFalse(t.isCompleted(), "a violation must survive a mid-fight despawn");
+	}
+
+	@Test
+	void failureRetoldNextVisit()
+	{
+		lenient().when(config.showChatFailed()).thenReturn(true);
+		addTask("sword", c -> {
+			c.setDefeatNpcIds(Arrays.asList(ICE_DEMON));
+			c.setRequiredEquippedIds(Arrays.asList(TRAINING_SWORD));
+		});
+		setEquipment(slot(WEAPON, MITHRIL_BATTLEAXE));
+		encounterKill(ICE_DEMON);
+		respawn(ICE_DEMON);
+		encounterKill(ICE_DEMON);
+		assertEquals(1, failuresAnnounced("sword"), "once per visit, not per kill");
+		fireGameState(GameState.LOADING);
+		fireGameState(GameState.LOGGED_IN);
+		respawn(ICE_DEMON);
+		encounterKill(ICE_DEMON);
+		assertEquals(2, failuresAnnounced("sword"), "a new visit tells the player again");
+	}
+
+	/**
+	 * Ryan's 2026-09-26 session against the REAL shipped Brutus tasks: Ground Beef with
+	 * the battleaxe, swap to the training sword, Training Arc on the next kill in the
+	 * same instance. Brutus flips ids mid-fight and takes a splat after dying.
+	 */
+	@Test
+	void brutusReplay() throws Exception
+	{
+		lenient().when(config.showChatFailed()).thenReturn(true);
+		NuzlockeTask beef = shippedTask("brutus_mithril_battleaxe");
+		NuzlockeTask arc = shippedTask("brutus_training_weapon");
+		NuzlockeTask dairy = shippedTask("brutus_bronze_armor");
+		module.addActiveTask(beef);
+		module.addActiveTask(arc);
+		module.addActiveTask(dairy);
+		fireGameState(GameState.LOADING); // enter the instance
+		fireGameState(GameState.LOGGED_IN);
+
+		setEquipment(slot(WEAPON, MITHRIL_BATTLEAXE));
+		brutusFight();
+		assertTrue(beef.isCompleted(), "Ground Beef");
+		assertFalse(arc.isCompleted());
+
+		setEquipment(slot(WEAPON, TRAINING_SWORD));
+		fireDespawn(BRUTUS);
+		respawn(BRUTUS);
+		brutusFight();
+		assertTrue(arc.isCompleted(), "Training Arc on the next kill, same instance");
+		assertFalse(dairy.isCompleted(), "no bronze armour worn");
+		assertEquals(1, failuresAnnounced("Legendairy"), "told once, not every kill");
+		assertEquals(1, failuresAnnounced("Training Arc"), "told for the battleaxe kill only");
+		assertEquals(0, failuresAnnounced("Ground Beef"));
+	}
+
+	private static final int BRUTUS = 15626, BRUTUS_CHARGING = 15627;
+
+	/** Hit, several ticks, a mid-fight id change, the kill, then a late splat. */
+	private void brutusFight()
+	{
+		NPC brutus = npc(BRUTUS);
+		fireHit(BRUTUS);
+		fireTick();
+		lenient().when(brutus.getId()).thenReturn(BRUTUS_CHARGING);
+		fireTick();
+		lenient().when(brutus.getId()).thenReturn(BRUTUS);
+		fireTick();
+		fireDeath(BRUTUS);
+		fireHit(BRUTUS);
+		fireTick();
+	}
+
+	private NuzlockeTask shippedTask(String id) throws Exception
+	{
+		String json = ShippedSeed.fileContent("Misthalin_Tasks.json");
+		assertNotNull(json, "Misthalin_Tasks.json missing from the bundled seed");
+		java.lang.reflect.Type type = new TypeToken<Map<String, java.util.List<NuzlockeChunk>>>()
+		{
+		}.getType();
+		Map<String, java.util.List<NuzlockeChunk>> data = new Gson().fromJson(json, type);
+		for (java.util.List<NuzlockeChunk> chunks : data.values())
+		{
+			for (NuzlockeChunk chunk : chunks)
+			{
+				for (NuzlockeTask t : chunk.getTasks())
+				{
+					if (id.equals(t.getTaskId()))
+					{
+						assertNotNull(t.getChallenge(), id + " has no challenge block");
+						return t;
+					}
+				}
+			}
+		}
+		throw new AssertionError(id + " not in the shipped catalog");
+	}
+
 	// ── helpers ──────────────────────────────────────────────────────────────
 
 	/** Force a task's fight window open — the room check needs a live scene we can't mock. */
@@ -1368,6 +1537,35 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 		ActorDeath e = mock(ActorDeath.class);
 		lenient().when(e.getActor()).thenReturn(target);
 		module.onActorDeath(e);
+	}
+
+	/** The next spawn of this id is a new NPC object, as in the client. */
+	private void respawn(int npcId)
+	{
+		npcs.remove(npcId);
+	}
+
+	private void fireDespawn(int npcId)
+	{
+		module.onNpcDespawned(new NpcDespawned(npc(npcId)));
+	}
+
+	private void fireGameState(GameState state)
+	{
+		GameStateChanged e = new GameStateChanged();
+		e.setGameState(state);
+		module.onGameStateChanged(e);
+	}
+
+	/** How many "Challenge Failed" lines were queued for this task name. */
+	private long failuresAnnounced(String name)
+	{
+		ArgumentCaptor<QueuedMessage> msgs = ArgumentCaptor.forClass(QueuedMessage.class);
+		verify(chatMessageManager, atLeast(0)).queue(msgs.capture());
+		return msgs.getAllValues().stream()
+			.filter(m -> m.getValue() != null && m.getValue().contains("Challenge Failed")
+				&& m.getValue().contains(">" + name + "<"))
+			.count();
 	}
 
 	private void fireTick()

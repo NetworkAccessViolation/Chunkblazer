@@ -32,6 +32,7 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -142,6 +143,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		final Set<Integer> obtainedGroups = new HashSet<>();       // obtain_all: group indices completed this window
 		final Map<Integer, Integer> obtainSnapshot = new HashMap<>(); // item id -> last-seen inventory count
 		boolean encounterActive;  // defeat_npc: true from first hit on the target until it dies
+		NPC encounterNpc;         // defeat_npc: the NPC whose first hit opened the encounter
 		int encounterStartTick = -1; // max_defeat_ticks: tick the current encounter opened (-1 = none)
 		boolean arenaHpGateLatched; // arena_hp_gate: the watched NPC has hit the HP threshold this attempt
 		int defeatCount;          // defeat_count: counted kills so far this fight window
@@ -152,6 +154,11 @@ public class RaidChallengeModule extends AbstractTaskModule
 	}
 
 	private final Map<String, State> states = new ConcurrentHashMap<>();
+
+	// Target NPCs that have died but not yet despawned. A hitsplat landing on one after
+	// its ActorDeath must not open a new encounter: that stale encounter would sample the
+	// gear worn between kills and fail the next fight (Brutus, 2026-09-26).
+	private final Set<NPC> deadTargets = Collections.newSetFromMap(new IdentityHashMap<>());
 
 	// ── ToA Wardens enrage detection ─────────────────────────────────────────
 	// There is NO varbit for the Wardens enrage/"final lightning" phase (confirmed
@@ -228,6 +235,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	{
 		eventBus.unregister(this);
 		states.clear();
+		deadTargets.clear();
 		failureAnnouncedThisRaid.clear();
 		wasInRaid = false;
 		pendingVengeanceKill = null;
@@ -309,6 +317,12 @@ public class RaidChallengeModule extends AbstractTaskModule
 			{
 				resetAttempt(s);
 				s.windowOpen = false;
+			}
+			deadTargets.clear();
+			// Outside a raid, each new visit may say again why a challenge failed.
+			if (!wasInRaid)
+			{
+				failureAnnouncedThisRaid.clear();
 			}
 			// The ToB entry banner won't replay on the next login, so forget the mode
 			// (callers fail-open on UNKNOWN rather than punish a relog).
@@ -550,7 +564,8 @@ public class RaidChallengeModule extends AbstractTaskModule
 		{
 			return; // not our splat (someone else's / non-player source)
 		}
-		int npcId = ((NPC) e.getActor()).getId();
+		NPC hitNpc = (NPC) e.getActor();
+		int npcId = hitNpc.getId();
 
 		// (b) First hit on a defeat_npc target opens its encounter BEFORE the style check
 		// below, so the opening hit is already subject to the weapon/style/no-run rules
@@ -559,13 +574,14 @@ public class RaidChallengeModule extends AbstractTaskModule
 		{
 			RaidChallenge ch = task.getChallenge();
 			State s = states.get(task.getTaskId());
-			if (ch == null || s == null || s.encounterActive
+			if (ch == null || s == null || s.encounterActive || deadTargets.contains(hitNpc)
 				|| ch.getDefeatNpcIds() == null || !ch.getDefeatNpcIds().contains(npcId))
 			{
 				continue;
 			}
 			resetAttempt(s);          // fresh fight — clear any stale violation/flags
 			s.encounterActive = true;
+			s.encounterNpc = hitNpc;
 			s.encounterStartTick = client.getTickCount();
 			rcDebug("{} encounter START (npc={})", task.getTaskId(), npcId);
 		}
@@ -801,7 +817,8 @@ public class RaidChallengeModule extends AbstractTaskModule
 		{
 			return;
 		}
-		int id = ((NPC) e.getActor()).getId();
+		NPC dead = (NPC) e.getActor();
+		int id = dead.getId();
 		for (NuzlockeTask task : new HashSet<>(activeTasks))
 		{
 			RaidChallenge ch = task.getChallenge();
@@ -809,6 +826,10 @@ public class RaidChallengeModule extends AbstractTaskModule
 			if (ch == null || s == null)
 			{
 				continue;
+			}
+			if (ch.getDefeatNpcIds() != null && ch.getDefeatNpcIds().contains(id))
+			{
+				deadTargets.add(dead);
 			}
 			if (s.windowOpen && !s.violated
 				&& ch.getNoNpcDeathIds() != null && ch.getNoNpcDeathIds().contains(id))
@@ -971,11 +992,30 @@ public class RaidChallengeModule extends AbstractTaskModule
 	@Subscribe
 	public void onNpcDespawned(NpcDespawned e)
 	{
-		if (finalWarden != null && e.getNpc() == finalWarden)
+		NPC npc = e.getNpc();
+		if (finalWarden != null && npc == finalWarden)
 		{
 			finalWarden = null;
 			wardenEnraged = false;
 			wardenLowestRatio = Integer.MAX_VALUE;
+		}
+		boolean died = deadTargets.remove(npc) || npc.isDead();
+		if (!died)
+		{
+			return; // e.g. Zulrah diving: the fight goes on
+		}
+		// A dead target leaving the scene ends any encounter it opened, so nothing
+		// carries into the next spawn even if its death event was missed.
+		for (NuzlockeTask task : new HashSet<>(activeTasks))
+		{
+			RaidChallenge ch = task.getChallenge();
+			State s = states.get(task.getTaskId());
+			if (ch != null && s != null && s.encounterActive && s.encounterNpc == npc
+				&& ch.getDefeatSimultaneous() == null)
+			{
+				rcDebug("{} encounter closed: target despawned dead", task.getTaskId());
+				resetAttempt(s);
+			}
 		}
 	}
 
@@ -1596,6 +1636,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		s.obtainedGroups.clear();
 		s.obtainSnapshot.clear();
 		s.encounterActive = false;
+		s.encounterNpc = null;
 		s.encounterStartTick = -1;
 		s.arenaHpGateLatched = false;
 		s.defeatCount = 0;
