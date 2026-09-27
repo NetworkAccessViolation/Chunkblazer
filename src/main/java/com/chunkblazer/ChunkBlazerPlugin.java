@@ -3983,6 +3983,21 @@ public class ChunkBlazerPlugin extends Plugin
 		});
 	}
 
+	/** Per-account index into completedTasks: targets before it have been sent. */
+	private static final String TARGETS_SENT_KEY = "targetsSentThrough";
+
+	/** The next batch of rolled targets to send, or null when every one is already sent. */
+	private CompletedTargets.Batch nextTargetsBatch(List<String> completed)
+	{
+		int sent = acInt(TARGETS_SENT_KEY, 0);
+		if (completed == null || sent == completed.size())
+		{
+			return null; // steady state: skip parsing taskProgressData
+		}
+		return CompletedTargets.next(completed, sent,
+			CompletedTargets.parseTargets(acStr("taskProgressData", "")));
+	}
+
 	/**
 	 * Feed a login/sync result into the backoff. Key and registration refusals
 	 * have their own halts, so they skip it.
@@ -4087,6 +4102,11 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			boolean declaredReset = req.isIntentionalReset();
 			String sentKey = apiClient.currentApiKey();
+			CompletedTargets.Batch targets = nextTargetsBatch(req.getCompletedTasks());
+			if (targets != null)
+			{
+				req.setCompletedTargets(targets.targets);
+			}
 			apiClient.syncPlayerState(req)
 				.thenAccept(resp ->
 				{
@@ -4106,6 +4126,10 @@ public class ChunkBlazerPlugin extends Plugin
 					// dropped request: the retry would arrive without the flag, be
 					// refused as a destructive drop, and the next login's union would
 					// restore everything the player asked to clear.
+					if (resp != null && resp.isSuccess() && targets != null)
+					{
+						setAccountState(TARGETS_SENT_KEY, targets.sentThrough);
+					}
 					if (resp != null && resp.isSuccess() && declaredReset)
 					{
 						pendingIntentionalReset = false;
@@ -4176,7 +4200,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 		}
 
-		List<String> completed = new ArrayList<>(getCompletedTaskIds());
+		List<String> completed = getCompletedTaskIdsOrdered();
 
 		GameMode mode = getGameMode(); // authoritative: locked mode wins over the raw dropdown
 		String modeName = (mode != null && isModeLocked()) ? mode.name() : null;
@@ -4198,6 +4222,7 @@ public class ChunkBlazerPlugin extends Plugin
 			.clientPoints(acInt("totalPoints", 0))
 			.pointsSpent(acInt("pointsSpent", 0))
 			.completedTasks(completed)
+			.completedOrdered(true)
 			.bossCompletions(new ArrayList<>(getCompletedBossKeys()))
 			// The roll + reveal state, verbatim, so it survives a profile switch or
 			// reinstall instead of being regenerated wholesale on the next login.
@@ -5542,6 +5567,24 @@ public class ChunkBlazerPlugin extends Plugin
 			.map(String::trim)
 			.filter(s -> !s.isEmpty())
 			.collect(Collectors.toSet());
+	}
+
+	/** Completed task IDs in the order they were completed (the stored CSV order), deduplicated. */
+	private List<String> getCompletedTaskIdsOrdered()
+	{
+		String completed = acStr("completedTasks", "");
+		Set<String> ordered = new LinkedHashSet<>();
+		if (completed != null)
+		{
+			for (String id : completed.split(","))
+			{
+				if (!id.trim().isEmpty())
+				{
+					ordered.add(id.trim());
+				}
+			}
+		}
+		return new ArrayList<>(ordered);
 	}
 
 	/**

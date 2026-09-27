@@ -86,8 +86,14 @@ public class PlayerSyncRequest
 	 */
 	private int pointsSpent;
 
-	/** All task IDs the player has completed (overwrite-sync on server). */
+	/** All task IDs the player has completed, in completion order (overwrite-sync on server). */
 	private List<String> completedTasks;
+
+	/** Tells the server {@link #completedTasks} is in completion order (older clients sent hash order). */
+	private boolean completedOrdered;
+
+	/** Rolled target quantity per completed task (targets above 1), each sent once in batches. */
+	private Map<String, Integer> completedTargets;
 
 	/**
 	 * The per-region task roll, sent verbatim as the plugin's config string
