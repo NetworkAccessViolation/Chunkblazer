@@ -27,6 +27,8 @@
 package com.chunkblazer.api;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -107,6 +109,46 @@ public class ChunkBlazerApiClient
 		httpClient.newCall(req).enqueue(cb);
 	}
 
+	/** The key authenticated calls send. Never null. */
+	public String currentApiKey()
+	{
+		String key = (playerApiKey != null && !playerApiKey.isEmpty()) ? playerApiKey : config.apiKey();
+		return key == null ? "" : key;
+	}
+
+	/** The {@code error} field of our JSON error body, or null. */
+	static String errorCode(Gson gson, String body)
+	{
+		try
+		{
+			JsonObject obj = gson.fromJson(body, JsonObject.class);
+			JsonElement err = obj == null ? null : obj.get("error");
+			return err != null && err.isJsonPrimitive() ? err.getAsString() : null;
+		}
+		catch (RuntimeException e)
+		{
+			return null;
+		}
+	}
+
+	/** Retry-After (seconds form only) in ms, else 0. */
+	static long parseRetryAfterMs(String header)
+	{
+		if (header == null)
+		{
+			return 0;
+		}
+		try
+		{
+			long seconds = Long.parseLong(header.trim());
+			return seconds > 0 ? seconds * 1000L : 0;
+		}
+		catch (NumberFormatException e)
+		{
+			return 0;
+		}
+	}
+
 	// ==================== Player Account Endpoints ====================
 
 	/**
@@ -156,12 +198,13 @@ public class ChunkBlazerApiClient
 			public void onFailure(Call call, IOException e)
 			{
 				log.error("Login request failed: {}", e.getMessage());
-				future.complete(PlayerLoginResponse.offline());
+				future.complete(offlineLogin(ApiOutcome.TRANSIENT, 0));
 			}
 
 			@Override
-			public void onResponse(Call call, Response response) throws IOException
+			public void onResponse(Call call, Response response)
 			{
+				// Every path must complete the future, or the login chain hangs.
 				try (response)
 				{
 					String body = response.body() != null ? response.body().string() : "";
@@ -169,6 +212,13 @@ public class ChunkBlazerApiClient
 					if (response.isSuccessful())
 					{
 						PlayerLoginResponse loginResponse = gson.fromJson(body, PlayerLoginResponse.class);
+						if (loginResponse == null)
+						{
+							log.warn("Login returned an empty body");
+							future.complete(offlineLogin(ApiOutcome.TRANSIENT, 0));
+							return;
+						}
+						loginResponse.setOutcome(ApiOutcome.SUCCESS);
 
 						// Store the API key if this is a new registration
 						if (loginResponse.getApiKey() != null)
@@ -181,8 +231,15 @@ public class ChunkBlazerApiClient
 					else
 					{
 						log.warn("Login returned error {}: {}", response.code(), body);
-						future.complete(PlayerLoginResponse.offline());
+						future.complete(offlineLogin(
+							ApiOutcome.classify(response.code(), errorCode(gson, body)),
+							parseRetryAfterMs(response.header("Retry-After"))));
 					}
+				}
+				catch (IOException | RuntimeException e)
+				{
+					log.warn("Login response unreadable: {}", e.toString());
+					future.complete(offlineLogin(ApiOutcome.TRANSIENT, 0));
 				}
 			}
 		});
@@ -809,11 +866,11 @@ public class ChunkBlazerApiClient
 			public void onFailure(Call call, IOException e)
 			{
 				log.error("Player sync failed: {}", e.getMessage());
-				future.complete(new PlayerSyncResponse());
+				future.complete(failedSync(ApiOutcome.TRANSIENT, 0));
 			}
 
 			@Override
-			public void onResponse(Call call, Response response) throws IOException
+			public void onResponse(Call call, Response response)
 			{
 				try (response)
 				{
@@ -822,16 +879,47 @@ public class ChunkBlazerApiClient
 					if (response.isSuccessful())
 					{
 						PlayerSyncResponse syncResponse = gson.fromJson(body, PlayerSyncResponse.class);
+						if (syncResponse == null)
+						{
+							log.warn("Player sync returned an empty body");
+							future.complete(failedSync(ApiOutcome.TRANSIENT, 0));
+							return;
+						}
+						syncResponse.setOutcome(ApiOutcome.SUCCESS);
 						future.complete(syncResponse);
 					}
 					else
 					{
-						future.complete(new PlayerSyncResponse());
+						log.warn("Player sync returned error {}: {}", response.code(), body);
+						future.complete(failedSync(
+							ApiOutcome.classify(response.code(), errorCode(gson, body)),
+							parseRetryAfterMs(response.header("Retry-After"))));
 					}
+				}
+				catch (IOException | RuntimeException e)
+				{
+					log.warn("Player sync response unreadable: {}", e.toString());
+					future.complete(failedSync(ApiOutcome.TRANSIENT, 0));
 				}
 			}
 		});
 
 		return future;
+	}
+
+	private static PlayerLoginResponse offlineLogin(ApiOutcome outcome, long retryAfterMs)
+	{
+		PlayerLoginResponse r = PlayerLoginResponse.offline();
+		r.setOutcome(outcome);
+		r.setRetryAfterMs(retryAfterMs);
+		return r;
+	}
+
+	private static PlayerSyncResponse failedSync(ApiOutcome outcome, long retryAfterMs)
+	{
+		PlayerSyncResponse r = new PlayerSyncResponse();
+		r.setOutcome(outcome);
+		r.setRetryAfterMs(retryAfterMs);
+		return r;
 	}
 }
