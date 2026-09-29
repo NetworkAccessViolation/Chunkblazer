@@ -72,7 +72,6 @@ import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.FocusChanged;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
-import net.runelite.api.widgets.ComponentID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.input.KeyManager;
 import lombok.Setter;
@@ -846,9 +845,9 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// Check if this is a minimap-related menu
 		int componentId = event.getActionParam1();
-		if (componentId != ComponentID.FIXED_VIEWPORT_MINIMAP_DRAW_AREA &&
-			componentId != ComponentID.RESIZABLE_VIEWPORT_MINIMAP_DRAW_AREA &&
-			componentId != ComponentID.RESIZABLE_VIEWPORT_BOTTOM_LINE_MINIMAP_DRAW_AREA)
+		if (componentId != InterfaceID.Toplevel.MINIMAP &&
+			componentId != InterfaceID.ToplevelOsrsStretch.MINIMAP &&
+			componentId != InterfaceID.ToplevelPreEoc.MINIMAP)
 		{
 			return;
 		}
@@ -4253,17 +4252,42 @@ public class ChunkBlazerPlugin extends Plugin
 		return "Unknown";
 	}
 
+	/** A fresh, mutable copy of the unlocked region IDs. */
 	public Set<String> getUnlockedRegionIds()
 	{
-		String chunkList = acStr("unlockedChunks", "12850");
-		if (chunkList == null || chunkList.isEmpty())
+		return new HashSet<>(unlockedRegionIdsView());
+	}
+
+	// Parsed unlockedChunks, rebuilt only when the stored string changes. Overlays
+	// read it every frame, so re-splitting the CSV on each call was wasted work.
+	private final Object unlockedViewLock = new Object();
+	private String unlockedViewRaw;
+	private Set<String> unlockedView = Collections.emptySet();
+
+	/** Read-only unlocked region IDs, cached until unlockedChunks changes. */
+	Set<String> unlockedRegionIdsView()
+	{
+		String raw = acStr("unlockedChunks", "12850");
+		synchronized (unlockedViewLock)
 		{
-			return new HashSet<>();
+			if (!java.util.Objects.equals(raw, unlockedViewRaw))
+			{
+				Set<String> parsed = new HashSet<>();
+				if (raw != null)
+				{
+					for (String s : raw.split(","))
+					{
+						if (!s.trim().isEmpty())
+						{
+							parsed.add(s.trim());
+						}
+					}
+				}
+				unlockedView = Collections.unmodifiableSet(parsed);
+				unlockedViewRaw = raw;
+			}
+			return unlockedView;
 		}
-		return Arrays.stream(chunkList.split(","))
-			.map(String::trim)
-			.filter(s -> !s.isEmpty())
-			.collect(Collectors.toSet());
 	}
 
 	public boolean isRegionUnlocked(int regionId)
@@ -4276,7 +4300,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return true;
 		}
-		Set<String> unlocked = getUnlockedRegionIds();
+		Set<String> unlocked = unlockedRegionIdsView();
 		if (unlocked.contains(String.valueOf(regionId)))
 		{
 			return true;
@@ -5366,7 +5390,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// cacophony and needless load.
 		if (config.playTaskCompletionSound() && soundManager != null)
 		{
-			soundManager.playRandomSoundForArea(getTaskArea(batch.get(0)));
+			playAreaSoundAsync(getTaskArea(batch.get(0)));
 		}
 
 		// The expensive part, ONCE regardless of batch size.
@@ -6644,7 +6668,7 @@ public class ChunkBlazerPlugin extends Plugin
 	public Set<Integer> getNeighborRegionIds()
 	{
 		Set<Integer> neighbors = new HashSet<>();
-		Set<String> unlocked = getUnlockedRegionIds();
+		Set<String> unlocked = unlockedRegionIdsView();
 
 		for (String regionIdStr : unlocked)
 		{
@@ -7057,7 +7081,20 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return;
 		}
-		soundManager.playRandomSoundForArea(area);
+		playAreaSoundAsync(area);
+	}
+
+	/**
+	 * Plays an area sound off the client thread: picking the clip stats and reads
+	 * cached audio files, and the Hub forbids disk I/O on the client thread.
+	 */
+	private void playAreaSoundAsync(String area)
+	{
+		TaskCompletionSoundManager sm = soundManager;
+		if (sm != null)
+		{
+			executorService.execute(() -> sm.playRandomSoundForArea(area));
+		}
 	}
 
 	/**

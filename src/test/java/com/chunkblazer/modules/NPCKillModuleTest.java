@@ -1,7 +1,7 @@
 package com.chunkblazer.modules;
 
 import net.runelite.api.GameState;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
@@ -1013,7 +1013,7 @@ class NPCKillModuleTest extends AbstractTaskModuleTest
 		Item weapon = mock(Item.class);
 		lenient().when(weapon.getId()).thenReturn(1333);
 		lenient().when(equipment.getItems()).thenReturn(new Item[]{weapon});
-		when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(equipment);
+		when(client.getItemContainer(InventoryID.WORN)).thenReturn(equipment);
 
 		HitsplatApplied hit = mock(HitsplatApplied.class);
 		when(hit.getActor()).thenReturn(mugger);
@@ -1025,7 +1025,7 @@ class NPCKillModuleTest extends AbstractTaskModuleTest
 		// Unequip everything before the killing blow. (lenient: the fix rejects
 		// at the mid-fight taint check BEFORE re-reading equipment, so this
 		// stub going unused is itself evidence the gate fired early.)
-		lenient().when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(null);
+		lenient().when(client.getItemContainer(InventoryID.WORN)).thenReturn(null);
 
 		killAndDrain(mugger);
 		assertEquals(0, task.getCurrentProgress(),

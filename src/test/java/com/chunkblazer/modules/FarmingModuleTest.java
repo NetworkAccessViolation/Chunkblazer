@@ -1,7 +1,7 @@
 package com.chunkblazer.modules;
 
 import net.runelite.api.ChatMessageType;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
@@ -123,7 +123,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 
 	private void setInventory(Item... items)
 	{
-		lenient().when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		lenient().when(inventoryContainer.getItems()).thenReturn(items);
 	}
 
@@ -175,7 +175,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 		// Container event fires FIRST this tick — no XP yet, so nothing credits
 		// and the baseline must NOT move.
 		setInventory(itemOf(SWEETCORN_SEED, 2));
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 		assertEquals(0, task.getCurrentProgress());
 
 		// The XP drop lands later the same tick — the pending delta credits now.
@@ -220,7 +220,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 		// Seeds banked: container change with NO Farming XP this tick.
 		currentTick = 0;
 		setInventory();
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 		assertEquals(0, task.getCurrentProgress());
 
 		farmingModule.onGameTick(new GameTick());
@@ -270,7 +270,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 		// Plant tick: sapling consumed, ZERO Farming XP, only the SPAM
 		// confirmation message (message-after-item order).
 		setInventory();
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 		assertEquals(0, task.getCurrentProgress(), "item change alone must not credit");
 
 		farmingModule.onChatMessage(plantMessage(ChatMessageType.SPAM,
@@ -297,7 +297,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 
 		// ...so the container change later the same tick credits.
 		setInventory();
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 
 		assertEquals(1, task.getCurrentProgress());
 		assertTrue(task.isCompleted());
@@ -338,7 +338,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 			"You rake the patch clear of weeds."));
 
 		setInventory();
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 
 		assertEquals(0, task.getCurrentProgress());
 	}
@@ -366,7 +366,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 		// Tick 12: 3 seeds consumed, no marker anywhere this tick.
 		currentTick = 12;
 		setInventory(itemOf(ONION_SEED, 19));
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 		assertEquals(0, task.getCurrentProgress(), "no marker yet — must not credit");
 		farmingModule.onGameTick(new GameTick());
 
@@ -398,7 +398,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 
 		currentTick = 0;
 		setInventory(itemOf(ONION_SEED, 19));
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 		for (int t = 0; t <= 6; t++)
 		{
 			currentTick = t;
@@ -426,7 +426,7 @@ class FarmingModuleTest extends AbstractTaskModuleTest
 
 		currentTick = 1;
 		setInventory(itemOf(GUAM_SEED, 18));
-		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+		farmingModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 
 		currentTick = 3;
 		farmingModule.onChatMessage(plantMessage(ChatMessageType.SPAM,

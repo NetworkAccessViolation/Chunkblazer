@@ -38,7 +38,7 @@ import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Hitsplat;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
@@ -57,6 +57,7 @@ import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
@@ -81,7 +82,7 @@ public class NPCKillModule extends AbstractTaskModule
 	private static final String SLAYER_TYPE = "SLAYER";
 
 	// Slayer task VarPlayer IDs (from RuneLite's SlayerPlugin)
-	private static final int SLAYER_TASK_COUNT_VARP = 394;  // VarPlayerID.SLAYER_COUNT
+	private static final int SLAYER_TASK_COUNT_VARP = VarPlayerID.SLAYER_COUNT;
 
 	// On-task slayer kills award Slayer XP; off-task kills award none. So a Slayer
 	// XP gain in the same tick window as a kill means the dead NPC was the player's
@@ -160,7 +161,7 @@ public class NPCKillModule extends AbstractTaskModule
 	// the constraint never once blocked a cannon. Those dead constraints have been
 	// removed from the task JSON; the rule now lives here and covers EVERY restricted
 	// task automatically rather than the 35 that happened to be authored with it.
-	private static final int CANNONBALL_VARP = 3;
+	private static final int CANNONBALL_VARP = VarPlayerID.ROCKTHROWER;
 	private int previousCannonballs = -1;
 	private int lastCannonFiredTick = -1;
 
@@ -1662,7 +1663,7 @@ public class NPCKillModule extends AbstractTaskModule
 	private List<Integer> getEquipmentIds()
 	{
 		List<Integer> ids = new ArrayList<>();
-		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 
 		if (equipment == null)
 		{
@@ -1688,7 +1689,7 @@ public class NPCKillModule extends AbstractTaskModule
 	 */
 	private int getItemAtSlot(int slotIndex)
 	{
-		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return -1;

@@ -38,6 +38,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
@@ -72,13 +73,31 @@ public class CombatAchievementModule extends AbstractTaskModule
 
 	/**
 	 * The 21 VarPlayers packing CA task completion, in task-id order (index 0..20).
-	 * Raw ids (not gameval constants) so this compiles against any runelite-api
-	 * version. Grows by one entry each time Jagex crosses a 32-task boundary — the
-	 * bounds check in {@link #isCaComplete(int)} keeps an out-of-range id safe.
+	 * Grows by one entry each time Jagex crosses a 32-task boundary — the bounds
+	 * check in {@link #isCaComplete(int)} keeps an out-of-range id safe.
 	 */
 	private static final int[] CA_TASK_COMPLETED_VARPS = {
-		3116, 3117, 3118, 3119, 3120, 3121, 3122, 3123, 3124, 3125, 3126, 3127, 3128,
-		3387, 3718, 3773, 3774, 4204, 4496, 4721, 5673
+		VarPlayerID.CA_TASK_COMPLETED_0,
+		VarPlayerID.CA_TASK_COMPLETED_1,
+		VarPlayerID.CA_TASK_COMPLETED_2,
+		VarPlayerID.CA_TASK_COMPLETED_3,
+		VarPlayerID.CA_TASK_COMPLETED_4,
+		VarPlayerID.CA_TASK_COMPLETED_5,
+		VarPlayerID.CA_TASK_COMPLETED_6,
+		VarPlayerID.CA_TASK_COMPLETED_7,
+		VarPlayerID.CA_TASK_COMPLETED_8,
+		VarPlayerID.CA_TASK_COMPLETED_9,
+		VarPlayerID.CA_TASK_COMPLETED_10,
+		VarPlayerID.CA_TASK_COMPLETED_11,
+		VarPlayerID.CA_TASK_COMPLETED_12,
+		VarPlayerID.CA_TASK_COMPLETED_13,
+		VarPlayerID.CA_TASK_COMPLETED_14,
+		VarPlayerID.CA_TASK_COMPLETED_15,
+		VarPlayerID.CA_TASK_COMPLETED_16,
+		VarPlayerID.CA_TASK_COMPLETED_17,
+		VarPlayerID.CA_TASK_COMPLETED_18,
+		VarPlayerID.CA_TASK_COMPLETED_19,
+		VarPlayerID.CA_TASK_COMPLETED_20
 	};
 
 	@Inject

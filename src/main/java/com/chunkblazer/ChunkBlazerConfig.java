@@ -36,6 +36,10 @@ import net.runelite.client.config.Keybind;
 @ConfigGroup("chunkblazer")
 public interface ChunkBlazerConfig extends Config
 {
+	/** Plugin Hub's required wording for a 3rd-party-server toggle. */
+	String SERVER_SYNC_WARNING = "This feature submits your IP address to a 3rd-party server "
+		+ "not controlled or verified by RuneLite developers";
+
 	@ConfigItem(
 		keyName = "unlockedChunks",
 		name = "Unlocked Regions",
@@ -247,6 +251,7 @@ public interface ChunkBlazerConfig extends Config
 		name = "Enable Server Sync",
 		description = "Save your progress to chunkblazer.com for cross-device saves and leaderboards. "
 			+ "Nothing is sent until you enable it.",
+		warning = SERVER_SYNC_WARNING,
 		position = 1
 	)
 	default boolean apiEnabled()
@@ -282,18 +287,6 @@ public interface ChunkBlazerConfig extends Config
 		position = 0
 	)
 	default boolean showTaskCards()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "showOverlay",
-		name = "Show Task Overlay",
-		description = "Show the current task overlay on screen",
-		section = displaySection,
-		position = 1
-	)
-	default boolean showOverlay()
 	{
 		return true;
 	}

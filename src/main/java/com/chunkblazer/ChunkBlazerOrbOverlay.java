@@ -34,7 +34,7 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import net.runelite.api.Client;
-import net.runelite.api.widgets.ComponentID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -105,7 +105,7 @@ public class ChunkBlazerOrbOverlay extends Overlay
 
 		drawOrb(graphics, bossTokenOrb, x, y, String.valueOf(plugin.getBossTokens()));
 		drawOrb(graphics, chunksOrb, x + bossTokenOrb.getWidth() + ORB_GAP, y,
-			String.valueOf(plugin.getUnlockedRegionIds().size()));
+			String.valueOf(plugin.unlockedRegionIdsView().size()));
 
 		return null;
 	}
@@ -134,14 +134,14 @@ public class ChunkBlazerOrbOverlay extends Overlay
 
 	private Rectangle minimapBounds()
 	{
-		Widget w = client.getWidget(ComponentID.RESIZABLE_VIEWPORT_MINIMAP_DRAW_AREA);
+		Widget w = client.getWidget(InterfaceID.ToplevelOsrsStretch.MINIMAP);
 		if (w == null || w.isHidden())
 		{
-			w = client.getWidget(ComponentID.FIXED_VIEWPORT_MINIMAP_DRAW_AREA);
+			w = client.getWidget(InterfaceID.Toplevel.MINIMAP);
 		}
 		if (w == null || w.isHidden())
 		{
-			w = client.getWidget(ComponentID.RESIZABLE_VIEWPORT_BOTTOM_LINE_MINIMAP_DRAW_AREA);
+			w = client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP);
 		}
 		if (w == null || w.isHidden())
 		{

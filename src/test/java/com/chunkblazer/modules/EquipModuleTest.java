@@ -1,6 +1,6 @@
 package com.chunkblazer.modules;
 
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.chat.ChatMessageManager;
@@ -105,7 +105,7 @@ class EquipModuleTest extends AbstractTaskModuleTest
 			arr[i] = it;
 		}
 		lenient().when(equipmentContainer.getItems()).thenReturn(arr);
-		lenient().when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(equipmentContainer);
+		lenient().when(client.getItemContainer(InventoryID.WORN)).thenReturn(equipmentContainer);
 	}
 
 	@Test
@@ -133,7 +133,7 @@ class EquipModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Equip Bronze Sword", "equip_sword", "EQUIP", 1, Arrays.asList(1277));
 
-		when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(equipmentContainer);
+		when(client.getItemContainer(InventoryID.WORN)).thenReturn(equipmentContainer);
 		when(equipmentContainer.getItems()).thenReturn(new Item[0]);
 
 		equipModule.addActiveTask(task);
@@ -146,7 +146,7 @@ class EquipModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Equip Bronze Sword", "equip_sword", "EQUIP", 1, Arrays.asList(1277));
 
-		when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(equipmentContainer);
+		when(client.getItemContainer(InventoryID.WORN)).thenReturn(equipmentContainer);
 		when(equipmentContainer.getItems()).thenReturn(new Item[0]);
 
 		equipModule.addActiveTask(task);

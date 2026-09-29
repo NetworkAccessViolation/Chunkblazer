@@ -139,7 +139,7 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		int yRegionMax = ((worldMapPosition.getY() + heightInTiles / 2) & REGION_TRUNCATE) + REGION_SIZE;
 		int regionPixelSize = (int) Math.ceil(REGION_SIZE * pixelsPerTile);
 
-		Set<String> unlockedRegions = plugin.getUnlockedRegionIds();
+		Set<String> unlockedRegions = plugin.unlockedRegionIdsView();
 		Set<Integer> neighborRegions = plugin.getNeighborRegionIds();
 		int currentRegionId = plugin.getCurrentRegionId();
 

@@ -42,7 +42,7 @@ import net.runelite.api.Perspective;
 import net.runelite.api.Point;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.widgets.ComponentID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
@@ -103,14 +103,14 @@ public class ChunkBlazerMinimapOverlay extends Overlay
 			return null;
 		}
 
-		Widget minimapWidget = client.getWidget(ComponentID.RESIZABLE_VIEWPORT_MINIMAP_DRAW_AREA);
+		Widget minimapWidget = client.getWidget(InterfaceID.ToplevelOsrsStretch.MINIMAP);
 		if (minimapWidget == null || minimapWidget.isHidden())
 		{
-			minimapWidget = client.getWidget(ComponentID.FIXED_VIEWPORT_MINIMAP_DRAW_AREA);
+			minimapWidget = client.getWidget(InterfaceID.Toplevel.MINIMAP);
 		}
 		if (minimapWidget == null || minimapWidget.isHidden())
 		{
-			minimapWidget = client.getWidget(ComponentID.RESIZABLE_VIEWPORT_BOTTOM_LINE_MINIMAP_DRAW_AREA);
+			minimapWidget = client.getWidget(InterfaceID.ToplevelPreEoc.MINIMAP);
 		}
 		if (minimapWidget == null || minimapWidget.isHidden())
 		{

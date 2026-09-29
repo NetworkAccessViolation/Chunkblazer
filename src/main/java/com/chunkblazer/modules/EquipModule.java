@@ -36,7 +36,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Player;
@@ -217,7 +217,7 @@ public class EquipModule extends AbstractTaskModule
 	{
 		previousEquipment.clear();
 
-		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment != null)
 		{
 			Item[] items = equipment.getItems();
@@ -241,7 +241,7 @@ public class EquipModule extends AbstractTaskModule
 	{
 		inventoryItemIds.clear();
 
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory != null)
 		{
 			for (Item item : inventory.getItems())
@@ -435,7 +435,7 @@ public class EquipModule extends AbstractTaskModule
 	 */
 	private int findSlotForItem(int itemId)
 	{
-		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 		if (equipment == null)
 		{
 			return -1;
@@ -593,7 +593,7 @@ public class EquipModule extends AbstractTaskModule
 	private List<Integer> getEquippedItemIds()
 	{
 		List<Integer> ids = new ArrayList<>();
-		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer equipment = client.getItemContainer(InventoryID.WORN);
 
 		if (equipment == null)
 		{
@@ -671,7 +671,7 @@ public class EquipModule extends AbstractTaskModule
 		}
 
 		// Only track equipment changes
-		if (containerId != InventoryID.EQUIPMENT.getId())
+		if (containerId != InventoryID.WORN)
 		{
 			return;
 		}
@@ -831,7 +831,7 @@ public class EquipModule extends AbstractTaskModule
 	 */
 	private String generateInventoryHash()
 	{
-		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inventory = client.getItemContainer(InventoryID.INV);
 		if (inventory == null)
 		{
 			return "empty";

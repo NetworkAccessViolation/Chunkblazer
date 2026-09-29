@@ -36,7 +36,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
@@ -362,7 +362,7 @@ public class FarmingModule extends AbstractTaskModule
 		{
 			return;
 		}
-		if (event.getContainerId() != InventoryID.INVENTORY.getId())
+		if (event.getContainerId() != InventoryID.INV)
 		{
 			return;
 		}
@@ -575,7 +575,7 @@ public class FarmingModule extends AbstractTaskModule
 	 */
 	private int countInInventory(int itemId)
 	{
-		ItemContainer container = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer container = client.getItemContainer(InventoryID.INV);
 		if (container == null)
 		{
 			return 0;

@@ -1,7 +1,7 @@
 package com.chunkblazer.modules;
 
 import com.google.gson.Gson;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
@@ -188,7 +188,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Obtain Logs", "obtain_logs", "OBTAIN", 5, Arrays.asList(1511));
 
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 
 		obtainModule.addActiveTask(task);
@@ -201,7 +201,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Obtain Logs", "obtain_logs", "OBTAIN", 5, Arrays.asList(1511));
 
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 
 		obtainModule.addActiveTask(task);
@@ -229,7 +229,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Obtain 10 Logs", "obtain_logs", "OBTAIN", 10, Arrays.asList(1511));
 
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 
 		obtainModule.addActiveTask(task);
@@ -275,7 +275,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 		task.setTargetQuantity(5);
 
 		// Empty inventory at task assignment time → snapshot {315: 0}.
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 		obtainModule.addActiveTask(task);
 
@@ -320,7 +320,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 		// Build the mock items BEFORE the thenReturn call — stubbing a new
 		// mock inside another stubbing trips UnfinishedStubbingException.
 		Item[] threeHelms = {itemOf(3385), itemOf(3385), itemOf(3385)};
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(threeHelms);
 
 		obtainModule.addActiveTask(task);
@@ -418,7 +418,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 
 		// COLD START: logged in, but nothing has synced — no inventory container
 		// and the skill table still reads zero.
-		lenient().when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(null);
+		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(null);
 		lenient().when(client.getSkillExperience(Skill.RUNECRAFT)).thenReturn(0);
 
 		obtainModule.addActiveTask(task);
@@ -429,7 +429,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 		lenient().when(runes.getId()).thenReturn(563);
 		lenient().when(runes.getQuantity()).thenReturn(28);
 		lenient().when(inventoryContainer.getItems()).thenReturn(new Item[]{runes});
-		lenient().when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		lenient().when(client.getSkillExperience(Skill.RUNECRAFT)).thenReturn(284838);
 
 		// The deferred seed now runs against a synced client: snapshot records the
@@ -438,7 +438,7 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 
 		obtainModule.onStatChanged(new StatChanged(Skill.RUNECRAFT, 284838, 60, 60));
 		obtainModule.onItemContainerChanged(
-			new ItemContainerChanged(InventoryID.INVENTORY.getId(), inventoryContainer));
+			new ItemContainerChanged(InventoryID.INV, inventoryContainer));
 
 		assertEquals(0, task.getCurrentProgress(),
 			"holding runes at login must not count as crafting them");

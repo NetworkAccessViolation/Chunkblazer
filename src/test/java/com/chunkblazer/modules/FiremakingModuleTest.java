@@ -1,6 +1,6 @@
 package com.chunkblazer.modules;
 
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
@@ -113,7 +113,7 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Burn Normal Logs", "burn_logs", "FIREMAKING", 10, Arrays.asList(1511));
 
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 		when(client.getSkillExperience(Skill.FIREMAKING)).thenReturn(1000);
 
@@ -127,7 +127,7 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 	{
 		NuzlockeTask task = createTaskWithItems("Burn Normal Logs", "burn_logs", "FIREMAKING", 10, Arrays.asList(1511));
 
-		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 		when(client.getSkillExperience(Skill.FIREMAKING)).thenReturn(1000);
 
@@ -193,7 +193,7 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 	private void fireInventoryChanged(ItemContainer container)
 	{
 		firemakingModule.onItemContainerChanged(
-			new ItemContainerChanged(InventoryID.INVENTORY.getId(), container));
+			new ItemContainerChanged(InventoryID.INV, container));
 	}
 
 	/** Start a "burn N logs" task with a starting inventory of that log. */
@@ -207,7 +207,7 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 		lenient().when(client.getTickCount()).thenAnswer(inv -> currentTick);
 		lenient().when(client.getSkillExperience(Skill.FIREMAKING)).thenReturn(firemakingXp);
 		lenient().when(inventoryContainer.getItems()).thenReturn(startingInventory);
-		lenient().when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventoryContainer);
+		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 
 		firemakingModule.addActiveTask(task);
 		return task;

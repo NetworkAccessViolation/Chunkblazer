@@ -798,7 +798,16 @@ public class ChunkBlazerPanel extends PluginPanel
 		enable.setAlignmentX(LEFT_ALIGNMENT);
 		enable.setFocusPainted(false);
 		enable.setToolTipText("Sync your progress to chunkblazer.com");
-		enable.addActionListener(e -> plugin.enableServerSync());
+		// Same confirmation RuneLite shows for the config toggle's warning.
+		enable.addActionListener(e ->
+		{
+			int ok = JOptionPane.showConfirmDialog(this, ChunkBlazerConfig.SERVER_SYNC_WARNING,
+				"Enable Server Sync", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+			if (ok == JOptionPane.OK_OPTION)
+			{
+				plugin.enableServerSync();
+			}
+		});
 		panel.add(enable);
 
 		panel.add(Box.createVerticalStrut(4));

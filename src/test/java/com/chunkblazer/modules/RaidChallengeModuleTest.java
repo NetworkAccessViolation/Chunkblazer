@@ -11,7 +11,7 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.Hitsplat;
 import net.runelite.api.Player;
 import net.runelite.api.Skill;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
@@ -687,7 +687,7 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 			c.setMaxGearValue(10_000_000L);
 		});
 		setEquipment(slot(WEAPON, 1)); // one item, cheap
-		when(itemManager.getItemPrice(1)).thenReturn(5_000_000);
+		when(itemManager.getItemPrice(1)).thenReturn(5_000_000L);
 		encounterKill(OLM_HEAD);
 		assertTrue(t.isCompleted(), "gear under the cap completes a max_gear_value task");
 	}
@@ -700,7 +700,7 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 			c.setMaxGearValue(10_000_000L);
 		});
 		setEquipment(slot(WEAPON, 1));
-		when(itemManager.getItemPrice(1)).thenReturn(50_000_000); // over the cap
+		when(itemManager.getItemPrice(1)).thenReturn(50_000_000L); // over the cap
 		encounterKill(OLM_HEAD);
 		assertFalse(t.isCompleted(), "gear over the cap fails a max_gear_value task");
 	}
@@ -713,7 +713,7 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 			c.setMinGearValue(50_000_000L);
 		});
 		setEquipment(slot(WEAPON, 1));
-		when(itemManager.getItemPrice(1)).thenReturn(80_000_000); // above the floor
+		when(itemManager.getItemPrice(1)).thenReturn(80_000_000L); // above the floor
 		encounterKill(OLM_HEAD);
 		assertTrue(t.isCompleted(), "gear above the floor completes a min_gear_value task");
 	}
@@ -726,7 +726,7 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 			c.setMinGearValue(50_000_000L);
 		});
 		setEquipment(slot(WEAPON, 1));
-		when(itemManager.getItemPrice(1)).thenReturn(1_000_000); // below the floor
+		when(itemManager.getItemPrice(1)).thenReturn(1_000_000L); // below the floor
 		encounterKill(OLM_HEAD);
 		assertFalse(t.isCompleted(), "gear below the floor fails a min_gear_value task");
 	}
@@ -1600,7 +1600,7 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 			lenient().when(eq.getItem(si[0])).thenReturn(it);
 		}
 		lenient().when(eq.getItems()).thenReturn(arr);
-		lenient().when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(eq);
+		lenient().when(client.getItemContainer(InventoryID.WORN)).thenReturn(eq);
 	}
 
 	/** Stub an equipped item's Prayer bonus (from its equipment stats) for equippedPrayerBonus(). */
@@ -1657,7 +1657,7 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 			arr[i] = it;
 		}
 		lenient().when(inv.getItems()).thenReturn(arr);
-		lenient().when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inv);
+		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(inv);
 	}
 
 	/** Stub client.getNpcs() with the given ids, all alive (isDead=false). */

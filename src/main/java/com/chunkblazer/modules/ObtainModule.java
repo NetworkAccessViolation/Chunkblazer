@@ -38,7 +38,7 @@ import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
@@ -268,7 +268,7 @@ public class ObtainModule extends AbstractTaskModule
 			clientThread.invokeLater(() ->
 			{
 				if (client.getGameState() != GameState.LOGGED_IN
-					|| client.getItemContainer(InventoryID.INVENTORY) == null
+					|| client.getItemContainer(InventoryID.INV) == null
 					// Hitpoints XP is never 0 on a real account (a fresh level 3 has
 					// 1154), so this is a cheap probe for "the skill table has synced".
 					|| client.getSkillExperience(Skill.HITPOINTS) <= 0)
@@ -448,12 +448,12 @@ public class ObtainModule extends AbstractTaskModule
 	 */
 	private int getItemCount(int itemId)
 	{
-		return countIn(InventoryID.INVENTORY, itemId)
+		return countIn(InventoryID.INV, itemId)
 			+ countIn(InventoryID.BANK, itemId)
-			+ countIn(InventoryID.EQUIPMENT, itemId);
+			+ countIn(InventoryID.WORN, itemId);
 	}
 
-	private int countIn(InventoryID containerId, int itemId)
+	private int countIn(int containerId, int itemId)
 	{
 		ItemContainer container = client.getItemContainer(containerId);
 		if (container == null)
@@ -609,7 +609,7 @@ public class ObtainModule extends AbstractTaskModule
 			for (Integer variantId : slot.variantIds)
 			{
 				int prev = snapshot.getOrDefault(variantId, 0);
-				int curr = countIn(InventoryID.INVENTORY, variantId);
+				int curr = countIn(InventoryID.INV, variantId);
 				nextSnapshot.put(variantId, curr);
 				prevSum += prev;
 				currSum += curr;
@@ -683,7 +683,7 @@ public class ObtainModule extends AbstractTaskModule
 		{
 			for (Integer variantId : slot.variantIds)
 			{
-				snap.put(variantId, countIn(InventoryID.INVENTORY, variantId));
+				snap.put(variantId, countIn(InventoryID.INV, variantId));
 			}
 		}
 		return snap;
@@ -728,9 +728,9 @@ public class ObtainModule extends AbstractTaskModule
 		}
 
 		int containerId = event.getContainerId();
-		boolean isRelevant = containerId == InventoryID.INVENTORY.getId()
-			|| containerId == InventoryID.BANK.getId()
-			|| containerId == InventoryID.EQUIPMENT.getId();
+		boolean isRelevant = containerId == InventoryID.INV
+			|| containerId == InventoryID.BANK
+			|| containerId == InventoryID.WORN;
 
 		if (!isRelevant)
 		{
@@ -755,7 +755,7 @@ public class ObtainModule extends AbstractTaskModule
 		// tick, leave the snapshot alone: either onStatChanged will credit it when
 		// the XP arrives later this same tick, or it was a non-skilling change
 		// (banking/GE/pickup) that the end-of-tick slide in onGameTick rolls past.
-		if (containerId == InventoryID.INVENTORY.getId())
+		if (containerId == InventoryID.INV)
 		{
 			for (NuzlockeTask task : new HashSet<>(activeTasks))
 			{

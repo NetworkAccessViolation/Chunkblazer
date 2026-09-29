@@ -43,7 +43,7 @@ import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
-import net.runelite.api.InventoryID;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
@@ -61,6 +61,8 @@ import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.NpcChanged;
 import net.runelite.api.events.NpcDespawned;
 import net.runelite.api.events.NpcSpawned;
+import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
@@ -109,8 +111,8 @@ public class RaidChallengeModule extends AbstractTaskModule
 	private static final boolean RAID_DEBUG = false;
 
 	// ToA defaults, overridable per-task in the challenge block.
-	private static final int DEFAULT_RAID_LEVEL_VARBIT = 14380;
-	private static final int DEFAULT_RUN_VARP = 173;
+	private static final int DEFAULT_RAID_LEVEL_VARBIT = VarbitID.TOA_CLIENT_RAID_LEVEL;
+	private static final int DEFAULT_RUN_VARP = VarPlayerID.OPTION_RUN;
 	private static final int[] DEFAULT_PARTY_VARBITS = {14346, 14347, 14348, 14349, 14350, 14351, 14352, 14353};
 
 	private static final String COLOR_BLUE = "3366ff";        // [ChunkBlazer] branding
@@ -693,12 +695,12 @@ public class RaidChallengeModule extends AbstractTaskModule
 	// old stab-only check, so tasks can now gate on any style via JSON
 	// (required_attack_style). New weapon families are added to WEAPON_STYLES; an
 	// unmapped type resolves to UNKNOWN and is treated leniently (passes).
-	private static final int EQUIPPED_WEAPON_TYPE_VARBIT = 357;
-	private static final int ATTACK_STYLE_VARP = 43;
+	private static final int EQUIPPED_WEAPON_TYPE_VARBIT = VarbitID.COMBAT_WEAPON_CATEGORY;
+	private static final int ATTACK_STYLE_VARP = VarPlayerID.COM_MODE;
 	/** Bitmap varbit: 1 bit per active prayer (overheads at 12=magic/13=missiles/14=melee). */
-	private static final int ACTIVE_PRAYERS_VARBIT = 4101;
+	private static final int ACTIVE_PRAYERS_VARBIT = VarbitID.PRAYER_ALLACTIVE;
 	/** 1 while Vengeance is armed; flips to 0 the tick it rebounds (you took a hit). */
-	private static final int VENGEANCE_REBOUND_VARBIT = 2450;
+	private static final int VENGEANCE_REBOUND_VARBIT = VarbitID.VENGEANCE_REBOUND;
 
 	enum CombatStyle
 	{
@@ -934,7 +936,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged e)
 	{
-		if (activeTasks.isEmpty() || e.getItemContainer() != client.getItemContainer(InventoryID.INVENTORY))
+		if (activeTasks.isEmpty() || e.getItemContainer() != client.getItemContainer(InventoryID.INV))
 		{
 			return;
 		}
@@ -1589,7 +1591,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	private Map<Integer, Integer> inventoryCounts()
 	{
 		Map<Integer, Integer> counts = new HashMap<>();
-		ItemContainer inv = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inv = client.getItemContainer(InventoryID.INV);
 		if (inv != null)
 		{
 			for (Item it : inv.getItems())
@@ -1781,7 +1783,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 
 	private int equippedId(int slot)
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return -1;
@@ -1793,7 +1795,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	/** True if the given item id is currently worn in any equipment slot. */
 	private boolean isEquipped(int itemId)
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return false;
@@ -1810,7 +1812,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 
 	private long equippedGearValue()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return 0;
@@ -1829,7 +1831,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	/** Summed Prayer bonus of every equipped item (from its equipment stats). */
 	private int equippedPrayerBonus()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return 0;
@@ -1853,7 +1855,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	/** Summed Crush defence bonus of every equipped item (from its equipment stats). */
 	private int equippedCrushDefence()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return 0;
@@ -1876,7 +1878,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 
 	private int equippedRangedDefence()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return 0;
@@ -1900,7 +1902,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	/** The highest of the five summed equipped defence bonuses (stab/slash/crush/magic/ranged). */
 	private int equippedMaxDefenceBonus()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.EQUIPMENT);
+		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return 0;
@@ -1929,7 +1931,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 	/** Free (empty) inventory slots, 0-28. */
 	private int freeInventorySlots()
 	{
-		ItemContainer inv = client.getItemContainer(InventoryID.INVENTORY);
+		ItemContainer inv = client.getItemContainer(InventoryID.INV);
 		if (inv == null)
 		{
 			return 28;
