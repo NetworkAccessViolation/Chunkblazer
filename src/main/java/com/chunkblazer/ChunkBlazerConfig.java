@@ -393,6 +393,17 @@ public interface ChunkBlazerConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "showMinimapOrbs",
+		name = "Show Minimap Orbs",
+		description = "Show the Boss Token and unlocked chunks minimap orbs",
+		section = displaySection,
+		position = 6
+	)
+	default boolean showMinimapOrbs()
+	{
+		return true;
+	}
 	// NOTE: the locked-chunk GPU greyscale settings moved into the standalone
 	// "ChunkBlazer GPU" plugin's own config (group "chunkblazergpu") when that
 	// plugin was split out of this repo. That plugin reads our unlockedChunks

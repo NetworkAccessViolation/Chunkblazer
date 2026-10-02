@@ -144,7 +144,7 @@ public class ChunkBlazerPlugin extends Plugin
 	private ChunkBlazerSceneOverlay sceneOverlay;
 
 	@Inject
-	private ChunkBlazerOrbOverlay orbOverlay;
+	private ChunkBlazerOrbWidget orbWidget;
 
 	@Inject
 	private ChunkBlazerBossTokenOverlay bossTokenOverlay;
@@ -443,9 +443,9 @@ public class ChunkBlazerPlugin extends Plugin
 		overlayManager.add(taskCardOverlay);
 		mouseManager.registerMouseListener(taskCardInput);
 
-		overlayManager.add(orbOverlay);
 		overlayManager.add(bossTokenOverlay);
 
+		clientThread.invoke(orbWidget::startUp);
 		// Load or assign a task if player is logged in
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
@@ -477,10 +477,10 @@ public class ChunkBlazerPlugin extends Plugin
 		worldMapUnlockKeyPressed = false;
 		overlayManager.remove(minimapOverlay);
 		overlayManager.remove(sceneOverlay);
-		overlayManager.remove(orbOverlay);
 		overlayManager.remove(bossTokenOverlay);
 		overlayManager.remove(taskCompletionAnimationOverlay);
 		overlayManager.remove(taskCardOverlay);
+		clientThread.invoke(orbWidget::shutDown);
 		mouseManager.unregisterMouseListener(taskCardInput);
 		// Drop cards WITHOUT revealing: the pending set is durable, so they are still
 		// waiting on the next startup. Revealing here would flip them for free.

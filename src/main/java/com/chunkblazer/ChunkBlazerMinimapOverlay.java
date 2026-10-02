@@ -33,6 +33,7 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.Stroke;
+import java.awt.geom.Ellipse2D;
 import java.util.Set;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -213,10 +214,11 @@ public class ChunkBlazerMinimapOverlay extends Overlay
 		final int sceneSize = Constants.SCENE_SIZE;
 		final int baseX = client.getBaseX();
 		final int baseY = client.getBaseY();
-
+		Ellipse2D ellipse = new Ellipse2D.Float();
+		ellipse.setFrame(minimapBounds);
 		final Shape prevClip = graphics.getClip();
 		final Stroke prevStroke = graphics.getStroke();
-		graphics.setClip(minimapBounds);
+		graphics.setClip(ellipse);
 		graphics.setStroke(BORDER_STROKE);
 
 		for (int sx = 0; sx <= sceneSize; sx++)
@@ -241,6 +243,7 @@ public class ChunkBlazerMinimapOverlay extends Overlay
 				}
 			}
 		}
+
 
 		graphics.setStroke(prevStroke);
 		graphics.setClip(prevClip);
