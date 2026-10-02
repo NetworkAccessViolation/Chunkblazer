@@ -30,7 +30,6 @@ import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.FontID;
-import net.runelite.api.SpritePixels;
 import net.runelite.api.events.PostClientTick;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
@@ -69,14 +68,6 @@ public class ChunkBlazerOrbWidget
 		this.eventBus = eventBus;
 		this.plugin = plugin;
 		this.config = config;
-
-		eventBus.register(this);
-		BufferedImage bossTokenOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "boss_token_icon.png");
-		BufferedImage chunksOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "chunks_icon.png");
-		SpritePixels bossTokenOrbSprite = ImageUtil.getImageSpritePixels(bossTokenOrbIcon, client);
-		SpritePixels chunksOrbSprite = ImageUtil.getImageSpritePixels(chunksOrbIcon, client);
-		client.getSpriteOverrides().put(bossTokenOrbSpriteID, bossTokenOrbSprite);
-		client.getSpriteOverrides().put(chunksOrbSpriteID, chunksOrbSprite);
 	}
 
 	@Subscribe
@@ -93,13 +84,13 @@ public class ChunkBlazerOrbWidget
 	@Subscribe
 	public void onPostClientTick(PostClientTick event)
 	{
-		clientThread.invoke(this::updateOrbs);
+		updateOrbs();
 	}
 
 	@Subscribe
 	private void onConfigChanged(ConfigChanged ev)
 	{
-		if (ev.getKey().equals("showMinimapOrbs"))
+		if ("chunkblazer".equals(ev.getGroup()) && "showMinimapOrbs".equals(ev.getKey()))
 		{
 			clientThread.invoke(this::addOrbWidgets);
 		}
@@ -237,10 +228,17 @@ public class ChunkBlazerOrbWidget
 		{
 			return;
 		}
-		bossTokenText.setText(String.valueOf(plugin.getBossTokens()));
-		bossTokenText.revalidate();
-		chunksText.setText(String.valueOf(plugin.unlockedRegionIdsView().size()));
-		chunksText.revalidate();
+		setTextIfChanged(bossTokenText, String.valueOf(plugin.getBossTokens()));
+		setTextIfChanged(chunksText, String.valueOf(plugin.unlockedRegionIdsView().size()));
+	}
+
+	private static void setTextIfChanged(Widget widget, String text)
+	{
+		if (!text.equals(widget.getText()))
+		{
+			widget.setText(text);
+			widget.revalidate();
+		}
 	}
 
 	private void cleanup()
@@ -265,12 +263,20 @@ public class ChunkBlazerOrbWidget
 
 	public void shutDown()
 	{
-		cleanup();
 		eventBus.unregister(this);
+		cleanup();
+		bossTokenOrb = bossTokenText = chunksOrb = chunksText = wikiWidget = null;
+		client.getSpriteOverrides().remove(bossTokenOrbSpriteID);
+		client.getSpriteOverrides().remove(chunksOrbSpriteID);
 	}
 
+	// Registered here, not in the constructor: plugins are injected at client load even when disabled
 	public void startUp()
 	{
+		BufferedImage bossTokenOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "boss_token_icon.png");
+		BufferedImage chunksOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "chunks_icon.png");
+		client.getSpriteOverrides().put(bossTokenOrbSpriteID, ImageUtil.getImageSpritePixels(bossTokenOrbIcon, client));
+		client.getSpriteOverrides().put(chunksOrbSpriteID, ImageUtil.getImageSpritePixels(chunksOrbIcon, client));
 		eventBus.register(this);
 		addOrbWidgets();
 	}

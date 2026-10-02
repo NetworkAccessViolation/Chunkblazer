@@ -3848,6 +3848,32 @@ public class ChunkBlazerPlugin extends Plugin
 		return sb.toString();
 	}
 
+	/**
+	 * Adopts the server's mode lock when we have none (e.g. a new machine) or a
+	 * different one. The server wins a mismatch: Competitive is only kept locally
+	 * once the server confirms it, and Casual locks are always mirrored, so a
+	 * mismatch means the mode was changed server-side on purpose (a manual fix).
+	 */
+	void adoptServerModeLock(PlayerLoginResponse response, String rsn)
+	{
+		GameMode serverMode = response.isModeLocked() ? response.getGameMode() : null;
+		if (serverMode == null)
+		{
+			return;
+		}
+		boolean locked = isModeLocked();
+		if (locked && getGameMode() == serverMode)
+		{
+			return;
+		}
+		setAccountState("accountModeHash", hashRsn(rsn) + ":" + serverMode.name());
+		setAccountState("gameMode", serverMode);
+		if (locked)
+		{
+			addPluginChatMessage("Your game mode was changed to " + serverMode.getName() + ".");
+		}
+	}
+
 	private void hydrateFromLoginResponse(PlayerLoginResponse response)
 	{
 		if (response == null || !response.isSuccess())
@@ -3871,15 +3897,8 @@ public class ChunkBlazerPlugin extends Plugin
 			// merge steps below union this account's RSProfile state with its server record.
 
 			// 1. Mode lock reconciliation, both directions.
-			if (response.isModeLocked() && response.getGameMode() != null && !isModeLocked())
-			{
-				// Server has a lock we don't — adopt it (e.g. fresh install on a new machine).
-				GameMode serverMode = response.getGameMode();
-				String modeKey = hashRsn(rsn) + ":" + serverMode.name();
-				setAccountState("accountModeHash", modeKey);
-				setAccountState("gameMode", serverMode);
-			}
-			else if (isModeLocked() && !response.isModeLocked())
+			adoptServerModeLock(response, rsn);
+			if (isModeLocked() && !response.isModeLocked())
 			{
 				// Locked locally but the server isn't. Re-push so a genuine lock
 				// whose mirror was dropped can catch up. But Competitive (NUZLOCKE)
