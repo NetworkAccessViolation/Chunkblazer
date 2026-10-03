@@ -115,6 +115,10 @@ import com.chunkblazer.verification.VarPlayerVerificationService;
 )
 public class ChunkBlazerPlugin extends Plugin
 {
+	// Shown on the Plugin Hub (runelite-plugin.properties) and sent to the server.
+	// Bump it there and in build.gradle too; PluginVersionTest catches a mismatch.
+	public static final String VERSION = "1.0.3";
+
 	// --- Injected Dependencies ---
 	@Inject
 	private Client client;
@@ -4437,7 +4441,7 @@ public class ChunkBlazerPlugin extends Plugin
 			.unrevealedTasks(acStr("unrevealedTasks", ""))
 			.intentionalReset(pendingIntentionalReset)
 			.timestamp(System.currentTimeMillis())
-			.clientVersion("1.0.0")
+			.clientVersion(VERSION)
 			.build();
 	}
 
@@ -4873,36 +4877,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// The roll then caches itself on the TargetNpc / RequiredItem /
 			// RequiredObject so module code that calls getRequiredQuantity()
 			// later in this session gets the same value.
-			targetQty = 1;
-			if (task.getTargetNpc() != null)
-			{
-				task.getTargetNpc().clearRolledQuantity();
-				targetQty = task.getTargetNpc().getRequiredQuantity();
-			}
-			else if (task.getRequiredItems() != null && !task.getRequiredItems().isEmpty())
-			{
-				// Sum across all required items so a multi-item task (e.g. the
-				// Forestry Set, 4 items × qty 1) shows 1/4 in the panel — same
-				// total the modules use when summing per-item required. Clear
-				// every item's cache, not just the first — the sum uses all of
-				// them.
-				int sum = 0;
-				for (RequiredItem item : task.getRequiredItems())
-				{
-					item.clearRolledQuantity();
-					sum += item.getRequiredQuantity();
-				}
-				targetQty = sum > 0 ? sum : 1;
-			}
-			else if (task.getRequiredObjects() != null && !task.getRequiredObjects().isEmpty())
-			{
-				// Rooftop laps / chest steals: quantity comes from the
-				// required_object block (e.g. [1, 20] rolls a random target).
-				// Use the first object's roll — matches the first-item pattern
-				// above. RequiredObject.getRequiredQuantity caches the roll.
-				task.getRequiredObjects().get(0).clearRolledQuantity();
-				targetQty = task.getRequiredObjects().get(0).getRequiredQuantity();
-			}
+			targetQty = rollTargetQuantity(task);
 			// Save the rolled target quantity
 			saveTaskProgress(task.getTaskId(), savedProgress, targetQty);
 		}
@@ -4910,6 +4885,66 @@ public class ChunkBlazerPlugin extends Plugin
 		task.setTargetQuantity(targetQty);
 		task.setCurrentProgress(savedProgress);
 		task.setCompleted(false);
+	}
+
+	/**
+	 * Roll a task's target quantity fresh (clearing any cached roll first) and cache it
+	 * on the task's npc / item / object definition. Callers save the result.
+	 */
+	private int rollTargetQuantity(NuzlockeTask task)
+	{
+		int targetQty = 1;
+		if (task.getTargetNpc() != null)
+		{
+			task.getTargetNpc().clearRolledQuantity();
+			targetQty = task.getTargetNpc().getRequiredQuantity();
+		}
+		else if (task.getRequiredItems() != null && !task.getRequiredItems().isEmpty())
+		{
+			// Sum across all required items so a multi-item task (e.g. the
+			// Forestry Set, 4 items × qty 1) shows 1/4 in the panel — same
+			// total the modules use when summing per-item required. Clear
+			// every item's cache, not just the first — the sum uses all of
+			// them.
+			int sum = 0;
+			for (RequiredItem item : task.getRequiredItems())
+			{
+				item.clearRolledQuantity();
+				sum += item.getRequiredQuantity();
+			}
+			targetQty = sum > 0 ? sum : 1;
+		}
+		else if (task.getRequiredObjects() != null && !task.getRequiredObjects().isEmpty())
+		{
+			// Rooftop laps / chest steals: quantity comes from the
+			// required_object block (e.g. [1, 20] rolls a random target).
+			// Use the first object's roll — matches the first-item pattern
+			// above. RequiredObject.getRequiredQuantity caches the roll.
+			task.getRequiredObjects().get(0).clearRolledQuantity();
+			targetQty = task.getRequiredObjects().get(0).getRequiredQuantity();
+		}
+		return targetQty;
+	}
+
+	/**
+	 * The amount a task asks for, deciding and saving it now if it isn't yet, so a
+	 * face-down card shows the same number the task gets when it's revealed.
+	 */
+	public int getTaskTargetQuantity(String taskId)
+	{
+		int saved = loadTaskProgressAndTarget(taskId)[1];
+		if (saved > 0)
+		{
+			return saved;
+		}
+		NuzlockeTask task = findTaskById(taskId);
+		if (task == null)
+		{
+			return 1;
+		}
+		int target = rollTargetQuantity(task);
+		saveTaskProgress(taskId, 0, target);
+		return target;
 	}
 
 	private NuzlockeTask findTaskById(String taskId)

@@ -103,6 +103,7 @@ public class TaskCardOverlay extends Overlay
 	private static final Color TEXT = new Color(255, 255, 255);
 	/** The "how to complete" blurb under the task name — a touch dimmer than the title. */
 	private static final Color DESC_TEXT = new Color(205, 205, 205);
+	private static final Color QUANTITY_TEXT = new Color(255, 200, 60);
 	private static final Color TEXT_SHADOW = new Color(0, 0, 0, 190);
 	private static final Color PROMPT = new Color(235, 235, 235, 225);
 	private static final Color CARD_SHADOW = new Color(0, 0, 0, 110);
@@ -154,6 +155,8 @@ public class TaskCardOverlay extends Overlay
 		final String taskName;
 		final String description;
 		final TaskCardTier tier;
+		/** How many the task asks for; shown on the face when more than 1. */
+		final int quantity;
 		Rectangle bounds = new Rectangle();
 		/** Wall-clock ms the turn began, or -1 while still face down. */
 		long flipStart = -1;
@@ -162,12 +165,13 @@ public class TaskCardOverlay extends Overlay
 		/** Set once the task has been handed to the plugin, so it happens exactly once. */
 		boolean activated;
 
-		Card(String taskId, String taskName, String description, TaskCardTier tier)
+		Card(String taskId, String taskName, String description, TaskCardTier tier, int quantity)
 		{
 			this.taskId = taskId;
 			this.taskName = taskName;
 			this.description = description;
 			this.tier = tier;
+			this.quantity = quantity;
 		}
 
 		boolean isFaceDown()
@@ -440,7 +444,8 @@ public class TaskCardOverlay extends Overlay
 				plugin.revealTaskCard(taskId);
 				continue;
 			}
-			cards.add(new Card(taskId, task.getName(), task.getDescription(), TaskCardTier.fromTask(task)));
+			cards.add(new Card(taskId, task.getName(), task.getDescription(), TaskCardTier.fromTask(task),
+				plugin.getTaskTargetQuantity(taskId)));
 		}
 	}
 
@@ -716,12 +721,16 @@ public class TaskCardOverlay extends Overlay
 			? wrap(card.description.trim(), fm, textWidth)
 			: new ArrayList<>();
 
+		// "Quantity: 23" sits under the name; a single-item task doesn't need it.
+		String quantityLine = card.quantity > 1 ? "Quantity: " + card.quantity : null;
+		int quantityLines = quantityLine == null ? 0 : 1;
+
 		int panelHeight = (int) Math.round(b.height * (hasArt ? BODY_HEIGHT_FRACTION : 0.8));
-		int maxLines = Math.max(1, panelHeight / lineHeight);
+		int maxLines = Math.max(1 + quantityLines, panelHeight / lineHeight);
 
 		// Name: keep it all when there's no description; otherwise leave room for a
 		// gap + at least one description line.
-		int nameCap = descLines.isEmpty() ? maxLines : Math.max(1, maxLines - 2);
+		int nameCap = Math.max(1, (descLines.isEmpty() ? maxLines : maxLines - 2) - quantityLines);
 		if (nameLines.size() > nameCap)
 		{
 			nameLines = new ArrayList<>(nameLines.subList(0, nameCap));
@@ -729,7 +738,7 @@ public class TaskCardOverlay extends Overlay
 		}
 
 		int gap = descLines.isEmpty() ? 0 : 1; // one blank line between title and blurb
-		int descCap = Math.max(0, maxLines - nameLines.size() - gap);
+		int descCap = Math.max(0, maxLines - nameLines.size() - quantityLines - gap);
 		if (!descLines.isEmpty())
 		{
 			if (descCap == 0)
@@ -744,7 +753,7 @@ public class TaskCardOverlay extends Overlay
 			}
 		}
 
-		int totalLines = nameLines.size() + gap + descLines.size();
+		int totalLines = nameLines.size() + quantityLines + gap + descLines.size();
 		double centreFraction = hasArt ? BODY_CENTRE_FRACTION : 0.5;
 		int bodyCentreY = b.y + (int) Math.round(b.height * centreFraction);
 		int cx = b.x + b.width / 2;
@@ -753,6 +762,11 @@ public class TaskCardOverlay extends Overlay
 		for (String line : nameLines)
 		{
 			drawCentered(graphics, line, cx, y, TEXT);
+			y += lineHeight;
+		}
+		if (quantityLine != null)
+		{
+			drawCentered(graphics, quantityLine, cx, y, QUANTITY_TEXT);
 			y += lineHeight;
 		}
 		y += gap * lineHeight;

@@ -38,6 +38,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import com.chunkblazer.ChunkBlazerConfig;
+import com.chunkblazer.ChunkBlazerPlugin;
 import com.chunkblazer.GameMode;
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -56,7 +57,7 @@ import okhttp3.Response;
 public class ChunkBlazerApiClient
 {
 	private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
-	private static final String CLIENT_VERSION = "1.0.0";
+	private static final String CLIENT_VERSION = ChunkBlazerPlugin.VERSION;
 
 	private final OkHttpClient httpClient;
 	private final Gson gson;
