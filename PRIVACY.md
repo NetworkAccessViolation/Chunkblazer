@@ -33,6 +33,7 @@ Sent **only while "Enable Server Verification" is ON** in the plugin settings:
 | Your IP address | Sent automatically with every web request, as with any website. Used only for ordinary server logs and abuse prevention |
 | Your current world and map region | Powers "players online" and region-based features |
 | Progress events: NPC kills, XP / skill changes, items obtained or equipped, task completions | Verifies task completions server-side and updates your save |
+| Hardcore Ironman death: where it happened, what killed you, and your total level | Shown publicly in the "HC Deaths" feed on chunkblazer.com |
 | Your unlocked chunks, points, tasks and game mode | Saves and restores your account state |
 
 ChunkBlazer does **not** collect your password, bank contents, private messages,

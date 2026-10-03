@@ -667,6 +667,46 @@ public class ChunkBlazerApiClient
 	/**
 	 * Report an NPC kill to the server for verification.
 	 */
+	/**
+	 * Report that this account lost hardcore status. Completes true once the server
+	 * has it (a repeat is a harmless no-op there), false on any failure so the
+	 * caller can keep it and retry.
+	 */
+	public CompletableFuture<Boolean> reportHcimDeath(HcimDeathReport report)
+	{
+		CompletableFuture<Boolean> future = new CompletableFuture<>();
+		if (!config.apiEnabled())
+		{
+			future.complete(false);
+			return future;
+		}
+		Request httpRequest = new Request.Builder()
+			.url(config.apiBaseUrl() + "/api/player/death")
+			.addHeader("X-API-Key", currentApiKey())
+			.addHeader("Content-Type", "application/json")
+			.post(RequestBody.create(JSON, gson.toJson(report)))
+			.build();
+		enqueueGated(httpRequest, new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.warn("HCIM death report failed: {}", e.getMessage());
+				future.complete(false);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response)
+			{
+				try (response)
+				{
+					future.complete(response.isSuccessful());
+				}
+			}
+		});
+		return future;
+	}
+
 	public CompletableFuture<TaskVerificationResponse> reportNpcKill(NpcKillReport report)
 	{
 		if (!config.apiEnabled())

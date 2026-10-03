@@ -864,6 +864,8 @@ public class ChunkBlazerPanel extends PluginPanel
 			+ "  • Your current world and map region\n"
 			+ "  • Progress events: NPC kills, XP/skill changes, items\n"
 			+ "    obtained or equipped, and task completions\n"
+			+ "  • If you're a Hardcore Ironman and lose that status: where\n"
+			+ "    it happened and what killed you (shown on chunkblazer.com)\n"
 			+ "\n"
 			+ "WHAT IT IS USED FOR:\n"
 			+ "  • Saving your unlocked chunks, tasks, points and game mode\n"

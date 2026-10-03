@@ -308,7 +308,7 @@ class PointsBalanceTest
 		}
 	}
 
-	private void ownsChunks(int count)
+	private void ownsChunks(int count) throws Exception
 	{
 		StringBuilder ids = new StringBuilder();
 		for (int i = 0; i < count; i++)
@@ -318,6 +318,7 @@ class PointsBalanceTest
 				ids.append(',');
 			}
 			ids.append(12800 + i);
+			paidChunk(12800 + i);
 		}
 		lenient().when(config.unlockedChunks()).thenReturn(ids.toString());
 	}
@@ -327,14 +328,26 @@ class PointsBalanceTest
 	 * {@code paid} payable chunks, mirroring a real account: the starter is in the
 	 * unlocked set but was never sold, so only the paid chunks drive the curve.
 	 */
-	private void ownsStartChunkPlusPaid(int paid)
+	private void ownsStartChunkPlusPaid(int paid) throws Exception
 	{
 		StringBuilder ids = new StringBuilder("12850"); // DEFAULT_START_REGION
 		for (int i = 0; i < paid; i++)
 		{
 			ids.append(',').append(12800 + i);
+			paidChunk(12800 + i);
 		}
 		lenient().when(config.unlockedChunks()).thenReturn(ids.toString());
+	}
+
+	/** Registers a catalog task chunk (default cost, so it counts toward the paid rank). */
+	@SuppressWarnings("unchecked")
+	private void paidChunk(int regionId) throws Exception
+	{
+		NuzlockeChunk c = new NuzlockeChunk();
+		setField(c, "regionIds", java.util.Arrays.asList(regionId));
+		Field f = ChunkBlazerPlugin.class.getDeclaredField("chunksByRegionId");
+		f.setAccessible(true);
+		((Map<Integer, NuzlockeChunk>) f.get(plugin)).put(regionId, c);
 	}
 
 	/** No per-account write to this key landed in the RSProfile store this test. */

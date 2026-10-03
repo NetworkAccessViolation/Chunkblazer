@@ -67,11 +67,13 @@ import net.runelite.api.ChatMessageType;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.FocusChanged;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.input.KeyManager;
 import lombok.Setter;
@@ -93,6 +95,7 @@ import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import com.chunkblazer.api.ApiOutcome;
 import com.chunkblazer.api.ChunkBlazerApiClient;
 import com.chunkblazer.api.EligibilitySnapshot;
+import com.chunkblazer.api.HcimDeathReport;
 import com.chunkblazer.api.PlayerLoginResponse;
 import com.chunkblazer.api.PlayerSyncRequest;
 import com.chunkblazer.api.ServerBackoff;
@@ -576,6 +579,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		else if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
+			hcimDeathWatcher.reset();
 			// Last-chance sync before localPlayer becomes inaccessible. Build the
 			// request right here (still on the event-bus thread, client state
 			// still readable) and fire-and-forget the HTTP call.
@@ -2792,6 +2796,7 @@ public class ChunkBlazerPlugin extends Plugin
 						persistApiKey(apiClient.getPlayerApiKey());
 					}
 					pendingPastedKey = null;
+					clientThread.invoke(this::sendPendingHcimDeath);
 					// A Competitive lock the player asked for while sync was off:
 					// now that we're logged in (api_key is set), start it. beginNuzlockeLock
 					// handles the eligibility check + verification handshake from here.
@@ -3047,9 +3052,86 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 	}
 
+	// --- Hardcore Ironman deaths (the site's "HC Deaths" feed) ---
+
+	private static final String PENDING_DEATH_KEY = "pendingHcimDeath";
+	private final HcimDeathWatcher hcimDeathWatcher = new HcimDeathWatcher();
+	private String deathKiller;
+	private long deathKillerAt;
+
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		if (event.getVarbitId() == VarbitID.IRONMAN && hcimDeathWatcher.onAccountType(event.getValue()))
+		{
+			onHardcoreLost();
+		}
+	}
+
+	private void onHardcoreLost()
+	{
+		Player me = client.getLocalPlayer();
+		// The status can drop before or after the death animation, so take whichever killer is fresh.
+		String killer = System.currentTimeMillis() - deathKillerAt < 30_000 ? deathKiller : findKiller();
+		HcimDeathReport report = HcimDeathReport.builder()
+			.regionId(me == null ? 0 : WorldPoint.fromLocalInstance(client, me.getLocalLocation()).getRegionID())
+			.killer(killer)
+			.totalLevel(client.getTotalLevel())
+			.build();
+		log.info("[CHUNKBLAZER] hardcore status lost in region {} (killer: {})", report.getRegionId(), killer);
+		// Stored until the server confirms, so a dropped report retries on the next login.
+		setAccountState(PENDING_DEATH_KEY, gson.toJson(report));
+		sendPendingHcimDeath();
+	}
+
+	/** The NPC fighting the local player right now, or null. */
+	private String findKiller()
+	{
+		Player me = client.getLocalPlayer();
+		if (me == null)
+		{
+			return null;
+		}
+		if (me.getInteracting() instanceof NPC)
+		{
+			return me.getInteracting().getName();
+		}
+		for (NPC npc : client.getNpcs())
+		{
+			if (npc.getInteracting() == me)
+			{
+				return npc.getName();
+			}
+		}
+		return null;
+	}
+
+	private void sendPendingHcimDeath()
+	{
+		String json = acStr(PENDING_DEATH_KEY, "");
+		if (json.isEmpty() || !config.apiEnabled() || apiClient == null)
+		{
+			return;
+		}
+		apiClient.reportHcimDeath(gson.fromJson(json, HcimDeathReport.class))
+			.thenAccept(ok ->
+			{
+				if (ok)
+				{
+					clientThread.invoke(() -> setAccountState(PENDING_DEATH_KEY, ""));
+				}
+			});
+	}
+
 	@Subscribe
 	public void onActorDeath(ActorDeath event)
 	{
+		if (event.getActor() == client.getLocalPlayer())
+		{
+			deathKiller = findKiller();
+			deathKillerAt = System.currentTimeMillis();
+			return;
+		}
 		if (!(event.getActor() instanceof NPC))
 		{
 			return;
@@ -6881,7 +6963,18 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 		}
 
+		// Free chunks open their 4 grid neighbours, which can land on a region that is
+		// in neither the task catalog nor the free list (open ocean, map edges). Those
+		// have no tasks and were being sold at the full curve price (Chunk Fil A,
+		// 2026-10-03), so only known regions are ever offered.
+		neighbors.removeIf(id -> !isKnownRegion(id));
 		return neighbors;
+	}
+
+	/** True if the region is a task chunk (any type) or a Free_Chunks.json chunk. */
+	boolean isKnownRegion(int regionId)
+	{
+		return chunksByRegionId.containsKey(regionId) || freeUnlockableRegionIds.contains(regionId);
 	}
 
 	public String getRegionName(int regionId)
@@ -6964,8 +7057,7 @@ public class ChunkBlazerPlugin extends Plugin
 			NuzlockeChunk c = chunksByRegionId.get(id);
 			if (c == null)
 			{
-				seenChunks.add(id); // unknown region: treat as its own single-region chunk
-				continue;
+				continue; // unknown region: never sold now, so an old purchase doesn't raise the price
 			}
 			if (c.isCharter() || c.isBoss() || c.getUnlockCostValue() == 0)
 			{

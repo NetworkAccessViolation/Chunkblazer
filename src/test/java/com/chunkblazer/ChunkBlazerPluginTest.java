@@ -228,6 +228,7 @@ class ChunkBlazerPluginTest
 		java.lang.reflect.Method load = plugin.getClass().getDeclaredMethod("loadFreeChunks");
 		load.setAccessible(true);
 		load.invoke(plugin);
+		knownChunks(11577, 11832, 11575, 11320); // task chunks, not loaded in this test
 
 		// Troll Arena (11576) unlocked -> its JSON neighbours become unlockable.
 		when(config.unlockedChunks()).thenReturn("11576");
@@ -240,16 +241,18 @@ class ChunkBlazerPluginTest
 	}
 
 	@Test
-	void freeChunkAlwaysOffersCardinals() throws Exception
+	void freeChunkOffersOnlyKnownCardinals() throws Exception
 	{
-		// Invariant: a free chunk ALWAYS opens its 4 cardinal neighbours, even
-		// when its Free_Chunks.json entry has no neighbor_ids (derived from the
-		// region grid: ±1 = N/S, ±256 = E/W).
+		// A free chunk with no neighbor_ids opens its 4 grid neighbours (±1 = N/S,
+		// ±256 = E/W), but only the ones that are real chunks. An unknown one (open
+		// ocean) was being sold at full price (Chunk Fil A, 2026-10-03).
 		freeUnlockableRegionIds().add(FREE_REGION); // no neighbours registered
+		knownChunks(FREE_REGION + 1, FREE_REGION - 1, FREE_REGION + 256);
 		when(config.unlockedChunks()).thenReturn(String.valueOf(FREE_REGION));
 		Set<Integer> neighbors = plugin.getNeighborRegionIds();
-		assertTrue(neighbors.containsAll(Arrays.asList(
-			FREE_REGION + 1, FREE_REGION - 1, FREE_REGION + 256, FREE_REGION - 256)));
+		assertTrue(neighbors.containsAll(Arrays.asList(FREE_REGION + 1, FREE_REGION - 1, FREE_REGION + 256)));
+		assertFalse(neighbors.contains(FREE_REGION - 256));
+		assertFalse(plugin.isUnlockableRegion(FREE_REGION - 256));
 	}
 
 	// --- Prifddinas: real city regions in instance coordinates (regionY 94-95) ---
@@ -276,8 +279,9 @@ class ChunkBlazerPluginTest
 	}
 
 	@Test
-	void prifCityUnlockableOnceAnyGateChunkUnlocked()
+	void prifCityUnlockableOnceAnyGateChunkUnlocked() throws Exception
 	{
+		knownChunks(12894, 12895, 13150, 13151);
 		// Unlocking one surrounding Tirannwn gate chunk (8757) bridges all four
 		// city chunks into the unlockable (yellow) set.
 		when(config.unlockedChunks()).thenReturn("8757");
@@ -287,8 +291,9 @@ class ChunkBlazerPluginTest
 	}
 
 	@Test
-	void prifCityChunkNotReofferedOnceUnlocked()
+	void prifCityChunkNotReofferedOnceUnlocked() throws Exception
 	{
+		knownChunks(12894, 12895, 13150, 13151);
 		when(config.unlockedChunks()).thenReturn("8757,12894");
 		Set<Integer> neighbors = plugin.getNeighborRegionIds();
 		assertFalse(neighbors.contains(12894));
@@ -368,6 +373,27 @@ class ChunkBlazerPluginTest
 		Field f = findField(plugin.getClass(), "chunksByRegionId");
 		f.setAccessible(true);
 		return (Map<Integer, NuzlockeChunk>) f.get(plugin);
+	}
+
+	@Test
+	void boughtUnknownRegionDoesNotRaisePrice() throws Exception
+	{
+		// 4 paid chunks plus an ocean region bought before the fix: the next unlock
+		// is the 5th paid chunk (1 point), not the 6th (2 points).
+		knownChunks(12801, 12802, 12803, 12804, 12805);
+		when(config.unlockedChunks()).thenReturn("12850,12801,12802,12803,12804,15157");
+		assertEquals(1, plugin.getRegionUnlockCost(12805));
+	}
+
+	/** Registers plain single-region task chunks, as the real catalog would. */
+	private void knownChunks(int... regionIds) throws Exception
+	{
+		for (int id : regionIds)
+		{
+			NuzlockeChunk c = new NuzlockeChunk();
+			setField(c, "regionIds", Arrays.asList(id));
+			chunksByRegionId().put(id, c);
+		}
 	}
 
 	@SuppressWarnings("unchecked")
