@@ -580,6 +580,8 @@ public class ChunkBlazerPlugin extends Plugin
 		else if (event.getGameState() == GameState.LOGIN_SCREEN)
 		{
 			hcimDeathWatcher.reset();
+			syncChoiceNoticeShown = false;
+			modeChoiceNoticeShown = false;
 			// Last-chance sync before localPlayer becomes inaccessible. Build the
 			// request right here (still on the event-bus thread, client state
 			// still readable) and fire-and-forget the HTTP call.
@@ -806,6 +808,13 @@ public class ChunkBlazerPlugin extends Plugin
 			syncChoiceNoticeShown = true;
 			addPluginChatMessage("Open the ChunkBlazer panel and choose Enable Sync or Play offline "
 				+ "to get your starting tasks.");
+		}
+		// Then the mode, once per login, until one is locked. canRollMissing also means a
+		// server lock (new device) has already been adopted, so this can't misfire.
+		else if (!modeChoiceNoticeShown && player.getName() != null && canRollMissing() && !isModeLocked())
+		{
+			modeChoiceNoticeShown = true;
+			addPluginChatMessage(SELECT_MODE_MESSAGE);
 		}
 
 		WorldPoint wp = player.getWorldLocation();
@@ -3396,7 +3405,10 @@ public class ChunkBlazerPlugin extends Plugin
 					}
 					else
 					{
-						addPluginChatMessage("Account verified! You're all set.");
+						// Players read "all set" as done and never picked a mode, so point them at it.
+						clientThread.invoke(() -> addPluginChatMessage(isModeLocked()
+							? "Account verified! You're all set."
+							: "Account verified! " + SELECT_MODE_MESSAGE));
 					}
 				}
 				else
@@ -3516,6 +3528,11 @@ public class ChunkBlazerPlugin extends Plugin
 
 	// One "choose sync or offline" chat nudge per session.
 	private boolean syncChoiceNoticeShown;
+
+	// One "select your game mode" chat reminder per session while no mode is locked.
+	private boolean modeChoiceNoticeShown;
+	static final String SELECT_MODE_MESSAGE = "Please select your game mode in the ChunkBlazer panel! "
+		+ "Competitive is only available on a fresh level 3 account.";
 
 	/**
 	 * Whether an unlocked region with no roll may be rolled now: only once we know the
