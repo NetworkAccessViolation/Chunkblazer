@@ -82,4 +82,4 @@ retrieve them.
 Your account, unlocked chunks, tasks, points, and leaderboard rank are viewable
 at **https://chunkblazer.com**.
 
-Questions? Join the [ChunkBlazer Discord](https://discord.gg/D8DYP45DV8).
+Questions? Join the [ChunkBlazer Discord](https://discord.com/invite/2AmVDYBBE4).

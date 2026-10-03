@@ -1652,7 +1652,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		discordButton.setPreferredSize(new Dimension(70, 18));
 		discordButton.setMargin(new Insets(0, 2, 0, 2));
 		discordButton.setToolTipText("Join the ChunkBlazer Discord");
-		discordButton.addActionListener(e -> openLink("https://discord.gg/D8DYP45DV8"));
+		discordButton.addActionListener(e -> openLink("https://discord.com/invite/2AmVDYBBE4"));
 		titleRow.add(discordButton, BorderLayout.EAST);
 
 		headerPanel.add(titleRow);

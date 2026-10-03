@@ -38,6 +38,7 @@ import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -45,6 +46,7 @@ import net.runelite.api.Skill;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
@@ -147,6 +149,9 @@ public class ObtainModule extends AbstractTaskModule
 	// caught the former). Cleared at the end of every tick in onGameTick.
 	private final Set<Skill> skillsXpGainedThisTick = ConcurrentHashMap.newKeySet();
 
+	// Cooking tasks already credited this tick (see the +1 cap in creditSkillingDelta).
+	private final Set<String> cookedThisTick = ConcurrentHashMap.newKeySet();
+
 
 	@Inject
 	public ObtainModule()
@@ -185,6 +190,7 @@ public class ObtainModule extends AbstractTaskModule
 		watchedItemIds.clear();
 		inventoryHeldSnapshot.clear();
 		previousXp.clear();
+		cookedThisTick.clear();
 	}
 
 	@Override
@@ -582,9 +588,18 @@ public class ObtainModule extends AbstractTaskModule
 			// rather than risk crediting bank-stocked items as a "delta from 0".
 			return;
 		}
+		// Nothing is cooked, smithed, fletched or crafted with the bank open, so items
+		// arriving then were withdrawn. Without this, a withdrawal in the same tick as a
+		// skilling XP drop counted as production. Roll the snapshot past them instead.
+		if (isBankOpen())
+		{
+			inventoryHeldSnapshot.put(task.getTaskId(), snapshotInventoryCounts(slots));
+			return;
+		}
 
 		int totalDelta = 0;
 		int totalRequired = 0;
+		int lastGainedId = -1;
 		StringBuilder details = new StringBuilder();
 		Map<Integer, Integer> nextSnapshot = new HashMap<>();
 		// Per-slot delta = the PRODUCTION this tick (how much the inventory rose),
@@ -616,6 +631,7 @@ public class ObtainModule extends AbstractTaskModule
 				if (curr > prev)
 				{
 					int variantGain = curr - prev;
+					lastGainedId = variantId;
 					if (slotGains.length() > 0)
 					{
 						slotGains.append(", ");
@@ -637,6 +653,22 @@ public class ObtainModule extends AbstractTaskModule
 		// Always slide the snapshot forward, even on no delta — keeps the gate
 		// honest if inventory dropped between drops (e.g. banked ores).
 		inventoryHeldSnapshot.put(task.getTaskId(), nextSnapshot);
+
+		// Cooking makes at most one item per tick (make-all at a range, wine, 1-tick
+		// karambwans), so anything more in one tick arrived some other way, such as a
+		// shop, trade or pickup landing in the same tick as the XP.
+		if (skill == Skill.COOKING && totalDelta > 0)
+		{
+			if (!cookedThisTick.add(task.getTaskId()))
+			{
+				return;
+			}
+			if (totalDelta > 1)
+			{
+				totalDelta = 1;
+				details = new StringBuilder("+1 ").append(getItemName(lastGainedId));
+			}
+		}
 
 		if (totalDelta == 0)
 		{
@@ -669,6 +701,12 @@ public class ObtainModule extends AbstractTaskModule
 			activeTasks.remove(task);
 			rebuildWatchedItems();
 		}
+	}
+
+	private boolean isBankOpen()
+	{
+		Widget bank = client.getWidget(InterfaceID.Bankmain.UNIVERSE);
+		return bank != null && !bank.isHidden();
 	}
 
 	/**
@@ -715,6 +753,7 @@ public class ObtainModule extends AbstractTaskModule
 			}
 		}
 		skillsXpGainedThisTick.clear();
+		cookedThisTick.clear();
 
 
 	}

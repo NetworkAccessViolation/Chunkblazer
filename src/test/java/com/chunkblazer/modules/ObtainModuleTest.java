@@ -5,8 +5,11 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.game.ItemManager;
 import com.chunkblazer.NuzlockeTask;
@@ -246,54 +249,80 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 	}
 
 	/**
-	 * Mike's bug #27: a single-slot COOKING task with a {@code quantity} range
-	 * (Cook some Shrimp, range [5, 25]) was completing after a single cooked
-	 * shrimp landed in the inventory. After one cook the progress should be
-	 * 1/N and the task should NOT be marked complete.
-	 *
-	 * <p>This test pins the rolled quantity to 5 (the minimum of the range)
-	 * so it's deterministic, then drives ObtainModule through the
-	 * skilling-delta path: snapshot empty inventory at addActiveTask time,
-	 * one cooked shrimp shows up alongside a Cooking XP drop, expect +1
-	 * progress and not-yet-complete.
+	 * A bank withdrawal in the same tick as a skilling XP drop isn't production:
+	 * the last batch made counts, the stack withdrawn right after it doesn't.
+	 * Fletching, because it has no per-tick cap to hide the bug.
 	 */
 	@Test
-	void testCookShrimp_DoesNotCompleteAfterOneCook()
+	void bankWithdrawSameTickNotCredited()
+	{
+		NuzlockeTask task = skillingTask("FLETCHING", Skill.FLETCHING, ARROW_SHAFT, 500);
+		Item[] afterFletch = {item(ARROW_SHAFT, 15)};
+		Item[] afterWithdraw = {item(ARROW_SHAFT, 315)};
+
+		when(inventoryContainer.getItems()).thenReturn(afterFletch);
+		obtainModule.onStatChanged(new StatChanged(Skill.FLETCHING, 5, 1, 1));
+		assertEquals(15, task.getCurrentProgress());
+
+		// Same tick: the bank is open and 300 more come out of it.
+		when(client.getWidget(InterfaceID.Bankmain.UNIVERSE)).thenReturn(mock(Widget.class));
+		when(inventoryContainer.getItems()).thenReturn(afterWithdraw);
+		obtainModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.INV, inventoryContainer));
+
+		assertEquals(15, task.getCurrentProgress());
+	}
+
+	/**
+	 * Cooking never makes more than one item per tick, so a bigger rise in a tick
+	 * with Cooking XP (a shop buy, trade or pickup landing alongside it) counts as
+	 * one. The next tick's cook still counts normally.
+	 */
+	@Test
+	void cookingCappedAtOnePerTick()
+	{
+		NuzlockeTask task = skillingTask("COOKING", Skill.COOKING, COOKED_FOOD, 50);
+		Item[] tickOne = {item(COOKED_FOOD, 5)};
+		Item[] tickTwo = {item(COOKED_FOOD, 6)};
+
+		when(inventoryContainer.getItems()).thenReturn(tickOne);
+		obtainModule.onStatChanged(new StatChanged(Skill.COOKING, 30, 1, 1));
+		assertEquals(1, task.getCurrentProgress());
+		assertFalse(task.isCompleted()); // bug #27: one cook used to finish a ranged task
+
+		obtainModule.onGameTick(new GameTick());
+		when(inventoryContainer.getItems()).thenReturn(tickTwo);
+		obtainModule.onStatChanged(new StatChanged(Skill.COOKING, 60, 1, 1));
+		assertEquals(2, task.getCurrentProgress());
+	}
+
+	// Any cooked food behaves the same; this is a lobster.
+	private static final int COOKED_FOOD = 379;
+	private static final int ARROW_SHAFT = 52;
+
+	/** An active skilling task with an empty inventory and its skill's XP baseline seeded. */
+	private NuzlockeTask skillingTask(String completionType, Skill skill, int itemId, int quantity)
 	{
 		NuzlockeTask task = new NuzlockeTask();
-		task.setName("Cook some Shrimp");
-		task.setTaskId("cook_shrimp");
-		task.setCompletionType("COOKING");
-		task.setCurrentProgress(0);
-		task.setCompleted(false);
+		task.setTaskId("test_" + completionType.toLowerCase());
+		task.setCompletionType(completionType);
+		RequiredItem required = new RequiredItem();
+		required.setItemIds(Arrays.asList(itemId));
+		required.setRolledQuantity(quantity);
+		task.setRequiredItems(Collections.singletonList(required));
 
-		RequiredItem shrimp = new RequiredItem();
-		shrimp.setItemIds(Arrays.asList(315)); // cooked Shrimps
-		shrimp.setQuantityRange(Arrays.asList(5, 25));
-		shrimp.setRolledQuantity(5);
-		task.setRequiredItems(Collections.singletonList(shrimp));
-		task.setTargetQuantity(5);
-
-		// Empty inventory at task assignment time → snapshot {315: 0}.
 		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
 		obtainModule.addActiveTask(task);
+		obtainModule.onStatChanged(new StatChanged(skill, 0, 1, 1));
+		return task;
+	}
 
-		// Seed the previousXp baseline — onStatChanged ignores the first
-		// sighting per skill so it can detect a delta on subsequent fires.
-		obtainModule.onStatChanged(new StatChanged(Skill.COOKING, 0, 1, 1));
-
-		// Player cooks one Shrimp: 1 cooked shrimp now in inventory and a
-		// Cooking XP drop fires this same tick.
-		Item cooked = mock(Item.class);
-		when(cooked.getId()).thenReturn(315);
-		when(cooked.getQuantity()).thenReturn(1);
-		when(inventoryContainer.getItems()).thenReturn(new Item[]{cooked});
-
-		obtainModule.onStatChanged(new StatChanged(Skill.COOKING, 30, 1, 1));
-
-		assertEquals(1, task.getCurrentProgress(), "After 1 cook, progress should be 1/5");
-		assertFalse(task.isCompleted(), "Task should NOT be complete after only 1 of 5 shrimp");
+	private Item item(int itemId, int quantity)
+	{
+		Item item = mock(Item.class);
+		when(item.getId()).thenReturn(itemId);
+		when(item.getQuantity()).thenReturn(quantity);
+		return item;
 	}
 
 	/**
