@@ -136,6 +136,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JButton showKeyButton;
 	private JButton resetAccountButton;
 	private JPanel syncPromptPanel;
+	private WrappingTextLabel syncChoiceHint;
+	private JButton playOfflineButton;
 	private JPanel currentTaskPanel;
 	private JPanel activeTasksContentPanel; // Inner panel for active tasks
 	private JScrollPane activeTasksScrollPane;
@@ -793,6 +795,16 @@ public class ChunkBlazerPanel extends PluginPanel
 		comp.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(comp);
 
+		// Shown until the player picks: a new device for an existing account must not
+		// deal Lumbridge before it knows whether the server already has a roll.
+		panel.add(Box.createVerticalStrut(3));
+		WrappingTextLabel hint = new WrappingTextLabel(
+			"Your starting tasks are dealt once you choose Enable Sync or Play offline.",
+			FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
+		hint.setAlignmentX(LEFT_ALIGNMENT);
+		syncChoiceHint = hint;
+		panel.add(hint);
+
 		panel.add(Box.createVerticalStrut(6));
 		JButton enable = new JButton("Enable Sync");
 		enable.setAlignmentX(LEFT_ALIGNMENT);
@@ -809,6 +821,14 @@ public class ChunkBlazerPanel extends PluginPanel
 			}
 		});
 		panel.add(enable);
+
+		panel.add(Box.createVerticalStrut(4));
+		playOfflineButton = new JButton("Play offline");
+		playOfflineButton.setAlignmentX(LEFT_ALIGNMENT);
+		playOfflineButton.setFocusPainted(false);
+		playOfflineButton.setToolTipText("Keep progress on this computer only. You can enable sync later.");
+		playOfflineButton.addActionListener(e -> plugin.choosePlayOffline());
+		panel.add(playOfflineButton);
 
 		panel.add(Box.createVerticalStrut(4));
 		JLabel info = styledLabel("Read how your data is used", FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR);
@@ -2949,6 +2969,12 @@ public class ChunkBlazerPanel extends PluginPanel
 			if (syncPromptPanel != null)
 			{
 				syncPromptPanel.setVisible(!syncOn);
+			}
+			boolean choosing = !syncOn && !plugin.isPlayOffline();
+			if (syncChoiceHint != null)
+			{
+				syncChoiceHint.setVisible(choosing);
+				playOfflineButton.setVisible(choosing);
 			}
 			if (dataNoticeRow != null)
 			{

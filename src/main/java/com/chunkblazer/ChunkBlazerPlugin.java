@@ -796,6 +796,14 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 		}
 
+		// Starting tasks wait on the sync choice (canRollMissing); say so once per session.
+		if (!syncChoiceNoticeShown && !config.apiEnabled() && !canRollMissing())
+		{
+			syncChoiceNoticeShown = true;
+			addPluginChatMessage("Open the ChunkBlazer panel and choose Enable Sync or Play offline "
+				+ "to get your starting tasks.");
+		}
+
 		WorldPoint wp = player.getWorldLocation();
 		int currentRegionId = wp.getRegionID();
 
@@ -1133,8 +1141,8 @@ public class ChunkBlazerPlugin extends Plugin
 		// real reroll if the server is unreachable, and it also poisons the reveal-card
 		// set. Wait for the restore; loadActiveTasks then rolls any genuine gap once the
 		// roll-restore has resolved (server had none / is offline / truly new account).
-		boolean startRollAllowed = !config.apiEnabled() || serverRollRestoreResolved;
-		if (startRollAllowed && getRolledTasksForRegion(DEFAULT_START_REGION).isEmpty())
+		// With sync off it also waits for the player to choose Play offline (canRollMissing).
+		if (canRollMissing() && getRolledTasksForRegion(DEFAULT_START_REGION).isEmpty())
 		{
 			NuzlockeChunk chunk = chunksByRegionId.get(DEFAULT_START_REGION);
 			if (chunk != null && chunk.getTasks() != null && !chunk.getTasks().isEmpty())
@@ -3063,9 +3071,17 @@ public class ChunkBlazerPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if ("chunkblazer".equals(event.getGroup()) && "serverSyncEnabled".equals(event.getKey()) && panel != null)
+		if ("chunkblazer".equals(event.getGroup()) && "serverSyncEnabled".equals(event.getKey()))
 		{
-			panel.updatePanel();
+			// Turning sync off is choosing to play offline.
+			if ("false".equals(event.getNewValue()))
+			{
+				configManager.setConfiguration(CONFIG_GROUP, PLAY_OFFLINE_KEY, true);
+			}
+			if (panel != null)
+			{
+				panel.updatePanel();
+			}
 		}
 	}
 
@@ -3412,6 +3428,47 @@ public class ChunkBlazerPlugin extends Plugin
 	// for an empty region: doing so races the async restore and re-rolls the account (the
 	// reset-then-reroll bug). Reset on logout so every session waits for its own restore.
 	private volatile boolean serverRollRestoreResolved;
+
+	// Profile-level, like the sync toggle: set when the player picks Play offline or turns sync off.
+	private static final String PLAY_OFFLINE_KEY = "playOffline";
+
+	// One "choose sync or offline" chat nudge per session.
+	private boolean syncChoiceNoticeShown;
+
+	/**
+	 * Whether an unlocked region with no roll may be rolled now: only once we know the
+	 * server has nothing for it. That means sync is on and this login's restore resolved,
+	 * or the player chose to play offline. Rolling before then dealt a fresh Lumbridge on
+	 * a returning player's new device (ChunkDragoon, 2026-10-02). An account that
+	 * already has a roll has been playing offline, which counts as the choice.
+	 */
+	boolean canRollMissing()
+	{
+		if (config.apiEnabled())
+		{
+			return serverRollRestoreResolved;
+		}
+		return isPlayOffline() || !acStr("regionRolledTasks", "").isEmpty();
+	}
+
+	public boolean isPlayOffline()
+	{
+		return "true".equals(configManager.getConfiguration(CONFIG_GROUP, PLAY_OFFLINE_KEY));
+	}
+
+	/** From the panel's sync prompt: play without sync, and deal the starting tasks that waited on it. */
+	public void choosePlayOffline()
+	{
+		configManager.setConfiguration(CONFIG_GROUP, PLAY_OFFLINE_KEY, true);
+		clientThread.invoke(() ->
+		{
+			loadActiveTasks();
+			if (panel != null)
+			{
+				panel.updatePanel();
+			}
+		});
+	}
 
 	private static final String CONFIG_GROUP = "chunkblazer";
 
@@ -3773,11 +3830,21 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// The face-down card set is client-updatable (revealing a card is a live local
 		// change), so restore the server's copy only on a fresh load — an empty local
-		// set — and otherwise keep the live reveal state.
-		if (acStr("unrevealedTasks", "").isEmpty())
+		// set — and otherwise keep the live reveal state. Either way, drop cards whose
+		// task isn't in the reconciled roll: a new device that started with sync off
+		// rolled and carded Lumbridge before this restore replaced that roll, and
+		// flipping those cards activated tasks the account never rolled (ChunkDragoon,
+		// 2026-10-02).
+		String localCards = acStr("unrevealedTasks", "");
+		String cards = localCards;
+		if (cards.isEmpty())
 		{
-			String serverUnrevealed = pdata.getUnrevealedTasks();
-			setAccountState("unrevealedTasks", serverUnrevealed == null ? "" : serverUnrevealed);
+			cards = pdata.getUnrevealedTasks() == null ? "" : pdata.getUnrevealedTasks();
+		}
+		String kept = keepRolledCards(cards, reconciled);
+		if (!kept.equals(localCards))
+		{
+			setAccountState("unrevealedTasks", kept);
 		}
 
 		// Track the server's roll ETag (cleared on reset via MIGRATION_KEYS) so a later
@@ -3785,6 +3852,29 @@ public class ChunkBlazerPlugin extends Plugin
 		// unlocked a chunk. The reconcile above is always safe on its own; this is the
 		// change signal Kalin's model hangs on.
 		setAccountState("rollVersion", pdata.getRollVersion());
+	}
+
+	/** The cards (CSV) whose task is in some region's roll, in their original order. */
+	static String keepRolledCards(String cards, Map<String, String> roll)
+	{
+		Set<String> rolled = new HashSet<>();
+		for (String tasks : roll.values())
+		{
+			for (String t : tasks.split(","))
+			{
+				rolled.add(t.trim());
+			}
+		}
+		Set<String> kept = new LinkedHashSet<>();
+		for (String t : cards.split(","))
+		{
+			String id = t.trim();
+			if (rolled.contains(id))
+			{
+				kept.add(id);
+			}
+		}
+		return String.join(",", kept);
 	}
 
 	/**
@@ -4397,7 +4487,7 @@ public class ChunkBlazerPlugin extends Plugin
 		Set<String> rolledTaskIds = getRolledTasksForRegion(regionId);
 
 		// If no tasks rolled yet for this region, roll them now
-		if (rolledTaskIds.isEmpty() && isRegionUnlocked(regionId))
+		if (rolledTaskIds.isEmpty() && isRegionUnlocked(regionId) && canRollMissing())
 		{
 			rolledTaskIds = rollTasksForRegion(regionId);
 		}
@@ -4518,7 +4608,7 @@ public class ChunkBlazerPlugin extends Plugin
 				// and permanently replace the account's real roll (the reset-then-reroll
 				// bug). Once the restore resolves — roll restored, or the server had none /
 				// is unreachable — this fires normally as the graceful reconstruction.
-				boolean rerollAllowed = !config.apiEnabled() || serverRollRestoreResolved;
+				boolean rerollAllowed = canRollMissing();
 				if (rolledTaskIds.isEmpty() && !isFreeUnlockableRegion(regionId) && rerollAllowed)
 				{
 					rolledTaskIds = rollTasksForRegion(regionId, false, false);
@@ -4765,7 +4855,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 				// Get or roll the tasks for this region
 				Set<String> rolledTaskIds = getRolledTasksForRegion(regionId);
-				if (rolledTaskIds.isEmpty())
+				if (rolledTaskIds.isEmpty() && canRollMissing())
 				{
 					// First time seeing this region - roll 4-5 tasks
 					rolledTaskIds = rollTasksForRegion(regionId);
@@ -5125,8 +5215,10 @@ public class ChunkBlazerPlugin extends Plugin
 		// satisfied one through the batched path or add it active and register it
 		// (registerActiveTask runs the module's retroactive check). Same indexing and
 		// retroactive behaviour as a normal roll, at O(1) per flip.
+		// A card whose task left the roll (replaced by the server's) just goes away.
 		NuzlockeTask task = findTaskById(taskId);
-		if (task != null && !task.isLocked()
+		boolean rolled = !keepRolledCards(taskId, parseRollBlob(acStr("regionRolledTasks", ""))).isEmpty();
+		if (task != null && rolled && !task.isLocked()
 			&& !getCompletedTaskIds().contains(taskId) && !isTaskActive(taskId))
 		{
 			initializeTask(task);
