@@ -196,6 +196,10 @@ public class PlayerLoginResponse
 		@SerializedName("roll_version")
 		private long rollVersion;
 
+		/** Backed-up partial progress per task, same format as taskProgressData. */
+		@SerializedName("task_progress")
+		private String taskProgress = "";
+
 		/**
 		 * Whether this player has completed RSN ownership verification via the
 		 * in-game chat handshake. If false, the plugin should kick off the

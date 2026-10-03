@@ -108,6 +108,12 @@ public class PlayerSyncRequest
 	private String unrevealedTasks;
 
 	/**
+	 * Partial progress per task ("taskId:progress:target,..."), backed up so a crash
+	 * or a second device doesn't lose it. The server keeps the higher value per task.
+	 */
+	private String taskProgress;
+
+	/**
 	 * Boss/raid keys the player has completed at least once (e.g. "toa"). Additive
 	 * on the server (never a wholesale replace); it recomputes earned Boss Tokens
 	 * from the union. See docs/BOSS-CHUNKS.md.

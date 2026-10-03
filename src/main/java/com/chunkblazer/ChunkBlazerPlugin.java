@@ -43,6 +43,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -3957,6 +3958,83 @@ public class ChunkBlazerPlugin extends Plugin
 		setAccountState("rollVersion", pdata.getRollVersion());
 	}
 
+	/**
+	 * Merge the server's backup of partial task progress into the local copy, so
+	 * progress lost to a crash, power-off or a new device comes back. Must run before
+	 * the post-hydrate loadActiveTasks, which re-reads progress from config.
+	 */
+	private void mergeTaskProgressFromServer(PlayerLoginResponse.PlayerData pdata)
+	{
+		String local = acStr("taskProgressData", "");
+		String merged = mergeProgressBlobs(local, pdata.getTaskProgress());
+		if (!merged.equals(local))
+		{
+			setAccountState("taskProgressData", merged);
+			log.info("[CHUNKBLAZER] restored task progress from the server backup");
+		}
+	}
+
+	/**
+	 * Combine two "taskId:progress:target" blobs: per task the higher progress wins, and
+	 * the local target is kept when there is one (it's the one the player is looking at).
+	 */
+	static String mergeProgressBlobs(String local, String server)
+	{
+		Map<String, int[]> merged = new LinkedHashMap<>(parseProgressBlob(local));
+		for (Map.Entry<String, int[]> e : parseProgressBlob(server).entrySet())
+		{
+			int[] mine = merged.get(e.getKey());
+			if (mine == null)
+			{
+				merged.put(e.getKey(), e.getValue());
+				continue;
+			}
+			mine[0] = Math.max(mine[0], e.getValue()[0]);
+			if (mine[1] <= 0)
+			{
+				mine[1] = e.getValue()[1];
+			}
+		}
+		StringBuilder sb = new StringBuilder();
+		for (Map.Entry<String, int[]> e : merged.entrySet())
+		{
+			if (sb.length() > 0)
+			{
+				sb.append(',');
+			}
+			sb.append(e.getKey()).append(':').append(e.getValue()[0]).append(':').append(e.getValue()[1]);
+		}
+		return sb.toString();
+	}
+
+	private static Map<String, int[]> parseProgressBlob(String blob)
+	{
+		Map<String, int[]> out = new LinkedHashMap<>();
+		if (blob == null || blob.isEmpty())
+		{
+			return out;
+		}
+		for (String entry : blob.split(","))
+		{
+			String[] parts = entry.split(":");
+			if (parts.length < 2 || parts[0].isEmpty())
+			{
+				continue;
+			}
+			try
+			{
+				int progress = Integer.parseInt(parts[1]);
+				int target = parts.length >= 3 ? Integer.parseInt(parts[2]) : 0;
+				out.put(parts[0], new int[]{progress, target});
+			}
+			catch (NumberFormatException ignored)
+			{
+				// skip a malformed entry
+			}
+		}
+		return out;
+	}
+
 	/** The cards (CSV) whose task is in some region's roll, in their original order. */
 	static String keepRolledCards(String cards, Map<String, String> roll)
 	{
@@ -4141,6 +4219,7 @@ public class ChunkBlazerPlugin extends Plugin
 			mergeUnlockedRegionsFromServer(pdata);
 			mergeCompletedTasksFromServer(pdata);
 			restoreRollStateFromServer(pdata);
+			mergeTaskProgressFromServer(pdata);
 			// The server-roll restore is now resolved (either the stored roll was written
 			// back, or the server had none). The loadActiveTasks() below may now reconstruct
 			// a roll for any region the server genuinely had none for, without racing this.
@@ -4439,6 +4518,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// reinstall instead of being regenerated wholesale on the next login.
 			.regionRolledTasks(acStr("regionRolledTasks", ""))
 			.unrevealedTasks(acStr("unrevealedTasks", ""))
+			.taskProgress(acStr("taskProgressData", ""))
 			.intentionalReset(pendingIntentionalReset)
 			.timestamp(System.currentTimeMillis())
 			.clientVersion(VERSION)
@@ -6387,15 +6467,21 @@ public class ChunkBlazerPlugin extends Plugin
 
 	private void flushConfigToDisk()
 	{
-		try
+		// sendConfig writes to disk and, for players signed into a RuneLite account,
+		// waits on an upload, so it must never run on the client thread. RuneLite's own
+		// 5-minute save runs on this same executor.
+		executorService.execute(() ->
 		{
-			configManager.sendConfig();
-		}
-		catch (Exception e)
-		{
-			// Never let a persistence hiccup break the unlock/completion flow.
-			log.warn("Failed to flush ChunkBlazer config to disk", e);
-		}
+			try
+			{
+				configManager.sendConfig();
+			}
+			catch (Exception e)
+			{
+				// Never let a persistence hiccup break the unlock/completion flow.
+				log.warn("Failed to flush ChunkBlazer config to disk", e);
+			}
+		});
 	}
 
 	private void addPoints(int points)
