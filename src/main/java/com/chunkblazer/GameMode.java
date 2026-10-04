@@ -34,7 +34,7 @@ import lombok.RequiredArgsConstructor;
 public enum GameMode
 {
 	CASUAL("Casual", "Start anywhere. Play on any account. Featured on the casual leaderboard."),
-	NUZLOCKE("Competitive", "Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.");
+	NUZLOCKE("Competitive", "Featured on the main page of the leaderboard and website. Requires new Ironman, Hardcore Ironman, or Ultimate Ironman account with combat level 9 or lower and no skills above level 3.");
 
 	private final String name;
 	private final String description;

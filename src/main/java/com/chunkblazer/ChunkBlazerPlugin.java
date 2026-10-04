@@ -3539,7 +3539,7 @@ public class ChunkBlazerPlugin extends Plugin
 	// One "select your game mode" chat reminder per session while no mode is locked.
 	private boolean modeChoiceNoticeShown;
 	static final String SELECT_MODE_MESSAGE = "Please select your game mode in the ChunkBlazer panel! "
-		+ "Competitive is only available on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.";
+		+ "Competitive mode requires a new Ironman, Hardcore Ironman, or Ultimate Ironman account with combat level 9 or lower and no skill above level 3.";
 
 	/**
 	 * Whether an unlocked region with no roll may be rolled now: only once we know the
