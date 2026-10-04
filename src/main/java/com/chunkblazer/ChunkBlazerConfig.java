@@ -394,6 +394,66 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showSelectedTaskOverlay",
+		name = "Show Selected Task On Screen",
+		description = "Pin the selected task and its progress bar to the game screen",
+		section = displaySection,
+		position = 6
+	)
+	default boolean showSelectedTaskOverlay()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "highlightTaskTargets",
+		name = "Highlight Task Targets",
+		description = "Outline NPCs and objects that one of your active tasks needs",
+		section = displaySection,
+		position = 7
+	)
+	default boolean highlightTaskTargets()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "taskHighlightColor",
+		name = "Task Highlight Colour",
+		description = "Outline colour for task NPCs and objects",
+		section = displaySection,
+		position = 8
+	)
+	default java.awt.Color taskHighlightColor()
+	{
+		return new java.awt.Color(255, 140, 0);
+	}
+
+	@ConfigItem(
+		keyName = "taskHighlightUnavailableColor",
+		name = "Task Highlight (No Level)",
+		description = "Outline colour when you don't have the level for any of that target's tasks",
+		section = displaySection,
+		position = 9
+	)
+	default java.awt.Color taskHighlightUnavailableColor()
+	{
+		return new java.awt.Color(255, 60, 60);
+	}
+
+	@ConfigItem(
+		keyName = "taskRightClickMenu",
+		name = "Tasks Right-Click Menu",
+		description = "Add a Tasks submenu when right-clicking NPCs and objects your tasks need",
+		section = displaySection,
+		position = 10
+	)
+	default boolean taskRightClickMenu()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "showMinimapOrbs",
 		name = "Show Minimap Orbs",
 		description = "Show the Boss Token and unlocked chunks minimap orbs",

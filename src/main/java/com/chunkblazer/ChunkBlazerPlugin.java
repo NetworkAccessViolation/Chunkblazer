@@ -201,6 +201,18 @@ public class ChunkBlazerPlugin extends Plugin
 	private TaskCardOverlay taskCardOverlay;
 
 	@Inject
+	private SelectedTaskOverlay selectedTaskOverlay;
+
+	@Inject
+	private TaskTargetHighlighter taskTargetHighlighter;
+
+	@Inject
+	private SelectedTaskOverlayInput selectedTaskOverlayInput;
+
+	@Inject
+	private net.runelite.client.eventbus.EventBus eventBus;
+
+	@Inject
 	private TaskCardInput taskCardInput;
 
 	// True while the configured world-map unlock key is held. Set by
@@ -459,6 +471,10 @@ public class ChunkBlazerPlugin extends Plugin
 		mouseManager.registerMouseListener(taskCardInput);
 
 		overlayManager.add(bossTokenOverlay);
+		overlayManager.add(selectedTaskOverlay);
+		overlayManager.add(taskTargetHighlighter);
+		eventBus.register(taskTargetHighlighter);
+		mouseManager.registerMouseListener(selectedTaskOverlayInput);
 
 		overlayManager.add(taskOverlay);
 
@@ -495,6 +511,11 @@ public class ChunkBlazerPlugin extends Plugin
 		overlayManager.remove(minimapOverlay);
 		overlayManager.remove(sceneOverlay);
 		overlayManager.remove(bossTokenOverlay);
+		overlayManager.remove(selectedTaskOverlay);
+		eventBus.unregister(taskTargetHighlighter);
+		mouseManager.unregisterMouseListener(selectedTaskOverlayInput);
+		overlayManager.remove(taskTargetHighlighter);
+		taskTargetHighlighter.reset();
 		overlayManager.remove(taskCompletionAnimationOverlay);
 		overlayManager.remove(taskCardOverlay);
 		overlayManager.remove(taskOverlay);
@@ -5654,6 +5675,76 @@ public class ChunkBlazerPlugin extends Plugin
 	public NuzlockeTask getTaskById(String taskId)
 	{
 		return findTaskById(taskId);
+	}
+
+	/**
+	 * The task selected in the side panel, as the LIVE instance the modules update.
+	 * Looks in activeTasks / globalTasks rather than getTaskById: a taskID can exist
+	 * in several chunks, and the index returns whichever copy loaded first, which may
+	 * be an untracked copy stuck at 0/1.
+	 */
+	public NuzlockeTask getSelectedTask()
+	{
+		if (panel == null)
+		{
+			return null;
+		}
+		NuzlockeTask selected = panel.getSelectedTask();
+		if (selected == null || selected.getTaskId() == null)
+		{
+			return selected;
+		}
+		String id = selected.getTaskId();
+		for (NuzlockeTask task : activeTasks)
+		{
+			if (id.equals(task.getTaskId()))
+			{
+				return task;
+			}
+		}
+		for (NuzlockeTask task : globalTasks)
+		{
+			if (id.equals(task.getTaskId()))
+			{
+				return task;
+			}
+		}
+		return selected;
+	}
+
+	/**
+	 * Called from the in-game "Tasks" right-click submenu: select (and pin) a task.
+	 * When the panel's "Only tasks I have the level for" filter is on, a task the
+	 * player lacks the level for is listed but not selected.
+	 */
+	public void selectTaskFromGame(NuzlockeTask task)
+	{
+		if (panel == null || task == null)
+		{
+			return;
+		}
+		if (panel.isLevelFilterOn() && !meetsLevelRequirement(task))
+		{
+			addPluginChatMessage("You need level " + task.getLevelRequirement() + " "
+				+ NuzlockeTask.displayCategory(task.getCategory()) + " for " + task.getName()
+				+ ". Turn off \"Only tasks I have the level for\" to track it anyway.");
+			return;
+		}
+		javax.swing.SwingUtilities.invokeLater(() -> panel.selectTask(task));
+	}
+
+	/** Called from the overlay's right-click menu. */
+	public void clearSelectedTask()
+	{
+		if (panel == null)
+		{
+			return;
+		}
+		javax.swing.SwingUtilities.invokeLater(() ->
+		{
+			panel.clearSelectedTask();
+			panel.updateActiveTasksDisplay();
+		});
 	}
 
 	public Set<String> getRolledTasksForRegion(int regionId)

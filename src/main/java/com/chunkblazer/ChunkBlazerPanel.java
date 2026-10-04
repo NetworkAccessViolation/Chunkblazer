@@ -222,7 +222,13 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JCheckBox activeTasksBossOnlyCheck;
 	private boolean activeTasksBossOnly = false;
 	private JCheckBox activeTasksLevelCheck;
-	private boolean activeTasksLevelOnly = false;
+	private volatile boolean activeTasksLevelOnly = false;
+
+	/** Whether "Only tasks I have the level for" is ticked. */
+	public boolean isLevelFilterOn()
+	{
+		return activeTasksLevelOnly;
+	}
 	private JComboBox<String> completedTasksTierCombo;
 	private int completedTasksSelectedTier = 0;
 
@@ -234,7 +240,7 @@ public class ChunkBlazerPanel extends PluginPanel
 	private String activeTasksSelectedRegion = "All";
 	private String activeTasksSelectedArea = "All";
 	private boolean isRefreshingActiveFilters = false;
-	private NuzlockeTask selectedTask = null;
+	private volatile NuzlockeTask selectedTask = null;
 	// Tracks the region ID the bottom task list was last rendered for. When the player
 	// changes region (e.g. climbing a ladder) the list shows a different region's tasks,
 	// so a saved viewport position is meaningless — we scroll to top instead.
@@ -2264,7 +2270,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		selectedTaskPanel.add(selectedTaskName);
 
 		selectedTaskPanel.setVisible(false); // Hidden until a task is selected
-		taskPanel.add(selectedTaskPanel);
+		// taskPanel.add(selectedTaskPanel); // shown on the game screen instead now
 		taskPanel.add(Box.createVerticalStrut(4));
 
 		// === HEADER ROW WITH TOGGLE ===
@@ -2609,6 +2615,11 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			isRefreshingActiveFilters = false;
 		}
+	}
+
+	public NuzlockeTask getSelectedTask()
+	{
+		return selectedTask;
 	}
 
 	/**
