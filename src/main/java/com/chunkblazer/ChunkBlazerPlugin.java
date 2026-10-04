@@ -66,6 +66,7 @@ import net.runelite.api.events.ActorDeath;
 import net.runelite.api.events.HitsplatApplied;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
@@ -2375,6 +2376,7 @@ public class ChunkBlazerPlugin extends Plugin
 			.questPoints(client.getVarpValue(VarPlayerID.QP))
 			.totalLevel(client.getTotalLevel())
 			.skills(skills)
+			.accountType(client.getVarbitValue(VarbitID.IRONMAN))
 			.build();
 	}
 
@@ -3537,7 +3539,7 @@ public class ChunkBlazerPlugin extends Plugin
 	// One "select your game mode" chat reminder per session while no mode is locked.
 	private boolean modeChoiceNoticeShown;
 	static final String SELECT_MODE_MESSAGE = "Please select your game mode in the ChunkBlazer panel! "
-		+ "Competitive is only available on a fresh level 3 account.";
+		+ "Competitive is only available on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.";
 
 	/**
 	 * Whether an unlocked region with no roll may be rolled now: only once we know the
@@ -5475,6 +5477,68 @@ public class ChunkBlazerPlugin extends Plugin
 	}
 
 	/** True if a task with this id is already in the active list. */
+	/** For the panel: is this task in the player's active list right now? */
+	public boolean isTaskInActiveList(String taskId)
+	{
+		return isTaskActive(taskId);
+	}
+
+	/** For the panel: has the player completed this task? */
+	public boolean isTaskCompleted(String taskId)
+	{
+		return getCompletedTaskIds().contains(taskId);
+	}
+
+	// Real (unboosted) skill levels, kept current from StatChanged, for the panel's level filter.
+	private final Map<Skill, Integer> realLevels = new ConcurrentHashMap<>();
+
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		Integer old = realLevels.put(event.getSkill(), event.getLevel());
+		if (old != null && old != event.getLevel())
+		{
+			scheduleTaskDisplayRefresh(); // a level-up can make a task doable
+		}
+	}
+
+	/**
+	 * Whether the player has the skill level a task asks for. True when the task names no
+	 * skill or level, or the player's level isn't known yet, so nothing is hidden by mistake.
+	 */
+	public boolean meetsLevelRequirement(NuzlockeTask task)
+	{
+		Skill skill = skillForCategory(task.getCategory());
+		if (skill == null || task.getLevelRequirement() <= 1)
+		{
+			return true;
+		}
+		Integer have = realLevels.get(skill);
+		return have == null || have >= task.getLevelRequirement();
+	}
+
+	/** The skill a task category names ("Mining", "Runecrafting"), or null for Combat, Quest, etc. */
+	static Skill skillForCategory(String category)
+	{
+		if (category == null)
+		{
+			return null;
+		}
+		String name = category.trim().toUpperCase();
+		if (name.equals("RUNECRAFTING"))
+		{
+			name = "RUNECRAFT";
+		}
+		try
+		{
+			return Skill.valueOf(name);
+		}
+		catch (IllegalArgumentException e)
+		{
+			return null;
+		}
+	}
+
 	private boolean isTaskActive(String taskId)
 	{
 		for (NuzlockeTask t : activeTasks)

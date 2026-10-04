@@ -221,6 +221,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	// chunks (raids / bosses unlocked with Boss Tokens).
 	private JCheckBox activeTasksBossOnlyCheck;
 	private boolean activeTasksBossOnly = false;
+	private JCheckBox activeTasksLevelCheck;
+	private boolean activeTasksLevelOnly = false;
 	private JComboBox<String> completedTasksTierCombo;
 	private int completedTasksSelectedTier = 0;
 
@@ -790,7 +792,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		panel.add(Box.createVerticalStrut(3));
 		WrappingTextLabel comp = new WrappingTextLabel(
-			"Note that Competitive mode requires a fresh level 3 account.",
+			"Note that Competitive mode requires a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.",
 			FontManager.getRunescapeSmallFont(), new Color(255, 190, 60), TASK_TEXT_WRAP_WIDTH);
 		comp.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(comp);
@@ -2170,7 +2172,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		modePanel.add(Box.createVerticalStrut(5));
 
 		nuzlockeRadio = new JRadioButton("Competitive");
-		nuzlockeRadio.setToolTipText("Featured on the main page of the leaderboard and website. You must start on a fresh level 3 account.");
+		nuzlockeRadio.setToolTipText("Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.");
 		nuzlockeRadio.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		nuzlockeRadio.setForeground(Color.WHITE);
 		nuzlockeRadio.setAlignmentX(LEFT_ALIGNMENT);
@@ -2178,7 +2180,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		modePanel.add(nuzlockeRadio);
 
 		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
-			+ "Featured on the main page of the leaderboard and website. You must start on a fresh level 3 account."
+			+ "Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account."
 			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 		modePanel.add(Box.createVerticalStrut(10));
 
@@ -2444,6 +2446,23 @@ public class ChunkBlazerPanel extends PluginPanel
 			}
 		});
 		activeTasksFilterPanel.add(activeTasksBossOnlyCheck);
+
+		// Level filter: hide tasks whose skill level the player doesn't have yet.
+		activeTasksLevelCheck = new JCheckBox("Only tasks I have the level for");
+		activeTasksLevelCheck.setFont(FontManager.getRunescapeSmallFont());
+		activeTasksLevelCheck.setForeground(Color.LIGHT_GRAY);
+		activeTasksLevelCheck.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		activeTasksLevelCheck.setToolTipText("Hide tasks that need a higher skill level than you have");
+		activeTasksLevelCheck.setAlignmentX(LEFT_ALIGNMENT);
+		activeTasksLevelCheck.addActionListener(e ->
+		{
+			if (!isRefreshingFilters)
+			{
+				activeTasksLevelOnly = activeTasksLevelCheck.isSelected();
+				updateActiveTasksDisplay();
+			}
+		});
+		activeTasksFilterPanel.add(activeTasksLevelCheck);
 		activeTasksFilterPanel.add(Box.createVerticalStrut(4));
 
 		taskPanel.add(activeTasksFilterPanel);
@@ -3195,6 +3214,10 @@ public class ChunkBlazerPanel extends PluginPanel
 				}
 				// Boss-chunk-only filter.
 				if (activeTasksBossOnly && !plugin.isBossTask(task))
+				{
+					return false;
+				}
+				if (activeTasksLevelOnly && !plugin.meetsLevelRequirement(task))
 				{
 					return false;
 				}
@@ -4032,9 +4055,9 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			for (NuzlockeTask task : tasks)
 			{
-				if (!plugin.isTaskAssigned(task.getTaskId()))
+				if (plugin.isTaskInActiveList(task.getTaskId()))
 				{
-					availableCount++;
+					availableCount++; // matches the highlighted cards below
 				}
 			}
 		}
@@ -4138,31 +4161,26 @@ public class ChunkBlazerPanel extends PluginPanel
 
 	private JPanel createTaskListItem(NuzlockeTask task)
 	{
-		// Determine task status
-		boolean isAssigned = plugin.isTaskAssigned(task.getTaskId());
-		boolean isActive = plugin.getActiveTask() != null &&
-			task.getTaskId().equals(plugin.getActiveTask().getTaskId());
+		// Highlight what's in the player's active list; dim everything else in this chunk
+		// (finished, still a face-down card, or retired) so the doable ones stand out.
+		boolean isActive = plugin.isTaskInActiveList(task.getTaskId());
+		boolean isDone = !isActive && plugin.isTaskCompleted(task.getTaskId());
+		boolean isFaceDown = !isActive && !isDone && plugin.getUnrevealedTaskIds().contains(task.getTaskId());
 
-		// Shared navy card; brighter + flame border when active, dimmed when already done.
+		// Tier colour carries the points; state is carried by brightness and, for
+		// active tasks, the flame border, so both read at once.
 		Color cardFill;
 		Color cardBorder;
-		// Tier colour carries the points; state is carried by brightness and, for
-		// the active task, the flame border — so both read at once.
 		int tierPts = task.getBasePoints();
 		if (isActive)
 		{
 			cardFill = lighten(tierFill(tierPts), 0.12f);
 			cardBorder = FLAME;
 		}
-		else if (isAssigned)
+		else
 		{
 			cardFill = dim(tierFill(tierPts), 0.40f);
 			cardBorder = dim(tierBorder(tierPts), 0.35f);
-		}
-		else
-		{
-			cardFill = tierFill(tierPts);
-			cardBorder = tierBorder(tierPts);
 		}
 		JPanel itemPanel = createCardPanel(cardFill, cardBorder);
 		itemPanel.setLayout(new BoxLayout(itemPanel, BoxLayout.Y_AXIS));
@@ -4178,17 +4196,13 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			textColor = new Color(100, 255, 100); // Bright green for active
 		}
-		else if (isAssigned)
-		{
-			textColor = Color.GRAY; // Gray for already assigned
-		}
 		else if (task.isLocked())
 		{
 			textColor = Color.DARK_GRAY;
 		}
 		else
 		{
-			textColor = Color.WHITE; // Available
+			textColor = Color.GRAY; // done, face-down, or otherwise not in the active list
 		}
 
 		// Task name (wrapped via WrappingTextLabel).
@@ -4210,18 +4224,24 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			infoPanel.add(styledLabel("ACTIVE", FontManager.getRunescapeSmallFont(), new Color(100, 255, 100)));
 		}
-		else if (isAssigned)
+		else if (isDone)
 		{
 			infoPanel.add(styledLabel("DONE", FontManager.getRunescapeSmallFont(), Color.GRAY));
+		}
+		else if (isFaceDown)
+		{
+			infoPanel.add(styledLabel("CARD", FontManager.getRunescapeSmallFont(), Color.GRAY));
 		}
 
 		if (task.getLevelRequirement() > 1)
 		{
-			infoPanel.add(styledLabel("Lv" + task.getLevelRequirement(), FontManager.getRunescapeSmallFont(), Color.ORANGE));
+			// Red when the player doesn't have the level yet.
+			Color lvColor = plugin.meetsLevelRequirement(task) ? Color.ORANGE : new Color(255, 90, 90);
+			infoPanel.add(styledLabel("Lv" + task.getLevelRequirement(), FontManager.getRunescapeSmallFont(), lvColor));
 		}
 
 		infoPanel.add(styledLabel(task.getBasePoints() + "pt",
-			FontManager.getRunescapeSmallFont(), isAssigned ? Color.GRAY : new Color(100, 200, 100)));
+			FontManager.getRunescapeSmallFont(), isActive ? new Color(100, 200, 100) : Color.GRAY));
 
 		itemPanel.add(infoPanel);
 
