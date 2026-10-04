@@ -162,6 +162,9 @@ public class ChunkBlazerPlugin extends Plugin
 	private TaskCompletionAnimationOverlay taskCompletionAnimationOverlay;
 
 	@Inject
+	private ChunkBlazerTaskOverlay taskOverlay;
+
+	@Inject
 	private TaskModuleManager taskModuleManager;
 
 	@Inject
@@ -207,6 +210,9 @@ public class ChunkBlazerPlugin extends Plugin
 	private boolean worldMapUnlockKeyPressed;
 
 	// --- Plugin State ---
+
+	@Getter @Setter
+	private NuzlockeTask selectedTask = null; // Selected task from the sidepanel
 
 	@Getter
 	private NuzlockeTask activeTask; // Legacy single task for backward compatibility
@@ -454,6 +460,8 @@ public class ChunkBlazerPlugin extends Plugin
 
 		overlayManager.add(bossTokenOverlay);
 
+		overlayManager.add(taskOverlay);
+
 		clientThread.invoke(orbWidget::startUp);
 		// Load or assign a task if player is logged in
 		if (client.getGameState() == GameState.LOGGED_IN)
@@ -489,6 +497,7 @@ public class ChunkBlazerPlugin extends Plugin
 		overlayManager.remove(bossTokenOverlay);
 		overlayManager.remove(taskCompletionAnimationOverlay);
 		overlayManager.remove(taskCardOverlay);
+		overlayManager.remove(taskOverlay);
 		clientThread.invoke(orbWidget::shutDown);
 		mouseManager.unregisterMouseListener(taskCardInput);
 		// Drop cards WITHOUT revealing: the pending set is durable, so they are still

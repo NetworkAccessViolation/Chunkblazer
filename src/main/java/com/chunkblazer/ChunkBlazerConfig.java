@@ -404,6 +404,18 @@ public interface ChunkBlazerConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "showTaskOverlay",
+		name = "Show Selected Task Overlay",
+		description = "Show an overlay for the currently selected task",
+		section = displaySection,
+		position = 7
+	)
+	default boolean showTaskOverlay()
+	{
+		return false;
+	}
 	// NOTE: the locked-chunk GPU greyscale settings moved into the standalone
 	// "ChunkBlazer GPU" plugin's own config (group "chunkblazergpu") when that
 	// plugin was split out of this repo. That plugin reads our unlockedChunks
