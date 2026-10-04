@@ -765,6 +765,44 @@ class RaidChallengeModuleTest extends AbstractTaskModuleTest
 		assertTrue(toa.isCompleted(), "a ToA completion at/above the required level completes the ToA task");
 	}
 
+	/**
+	 * Strapped Sands report: the ToA raid level still read 300 after leaving an unfinished
+	 * ToA, so a Corrupted Gauntlet "count is" line completed it. ToA tasks now trigger on
+	 * "completed tombs of amascut", which only a real ToA clear prints.
+	 */
+	@Test
+	void crossRaidGuard_staleToaLevelIgnoresOtherBossKc()
+	{
+		NuzlockeTask toa = addTask("toa_strapped_sands", c -> {
+			c.setCompleteMessage("completed tombs of amascut");
+			c.setMinRaidLevel(300);
+		});
+		lenient().when(client.getVarbitValue(14380)).thenReturn(300); // left over from the abandoned raid
+
+		fireChat("Your Corrupted Gauntlet completion count is: <col=ff0000>12</col>.");
+		fireChat("Your Zulrah kill count is: <col=ff0000>40</col>.");
+
+		assertFalse(toa.isCompleted(), "another boss's kill count must not complete a ToA task");
+	}
+
+	@Test
+	void toaCompletionMessageMatchesEveryMode()
+	{
+		for (String line : Arrays.asList(
+			"Your completed Tombs of Amascut count is: <col=ff0000>2</col>.",
+			"Your completed Tombs of Amascut: Expert Mode count is: <col=ff0000>1</col>.",
+			"Your completed <col=ff0000>Tombs of Amascut: Entry Mode</col> count is: <col=ff0000>3</col>."))
+		{
+			NuzlockeTask toa = addTask("toa_defeat_300_" + line.hashCode(), c -> {
+				c.setCompleteMessage("completed tombs of amascut");
+				c.setMinRaidLevel(300);
+			});
+			when(client.getVarbitValue(14380)).thenReturn(300);
+			fireChat(line);
+			assertTrue(toa.isCompleted(), "should complete on: " + line);
+		}
+	}
+
 	// ── plumbing ─────────────────────────────────────────────────────────────
 
 	@Test

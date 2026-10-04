@@ -593,6 +593,10 @@ public class ChunkBlazerPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged event)
 	{
+		if (event.getGameState() == GameState.HOPPING || event.getGameState() == GameState.LOGIN_SCREEN)
+		{
+			bossEngagement.reset();
+		}
 		if (event.getGameState() == GameState.LOGGED_IN)
 		{
 			// Small delay to ensure client is ready
@@ -3048,9 +3052,9 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	private volatile Map<Integer, String> bossNpcKeys = java.util.Collections.emptyMap();
 
-	// Boss keys the LOCAL player has dealt damage to — so an NPC-death token grant is
+	// Bosses the LOCAL player is damaging right now — so an NPC-death token grant is
 	// "your kill", matching the chat path's safety (a teammate's kill can't mint yours).
-	private final Set<String> engagedBossKeys = ConcurrentHashMap.newKeySet();
+	private final BossEngagement bossEngagement = new BossEngagement();
 
 	/** Rebuild the npc-id -> boss-key lookup from the loaded chunks' boss_npc_ids. */
 	private void rebuildBossNpcKeys()
@@ -3083,16 +3087,13 @@ public class ChunkBlazerPlugin extends Plugin
 	@Subscribe
 	public void onHitsplatApplied(HitsplatApplied event)
 	{
-		if (!(event.getActor() instanceof NPC) || event.getHitsplat() == null
-			|| event.getHitsplat().isOthers())
+		if (!(event.getActor() instanceof NPC) || event.getHitsplat() == null)
 		{
-			return; // someone else's / non-player splat
+			return;
 		}
-		String key = bossNpcKeys.get(((NPC) event.getActor()).getId());
-		if (key != null)
-		{
-			engagedBossKeys.add(key);
-		}
+		// isMine() rules out other players' hits AND the boss's own heal splats.
+		bossEngagement.onHitsplat(bossNpcKeys.get(((NPC) event.getActor()).getId()),
+			event.getHitsplat().isMine(), event.getHitsplat().getAmount());
 	}
 
 	// --- Hardcore Ironman deaths (the site's "HC Deaths" feed) ---
@@ -3173,6 +3174,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			deathKiller = findKiller();
 			deathKillerAt = System.currentTimeMillis();
+			bossEngagement.reset();
 			return;
 		}
 		if (!(event.getActor() instanceof NPC))
@@ -3180,7 +3182,7 @@ public class ChunkBlazerPlugin extends Plugin
 			return;
 		}
 		String key = bossNpcKeys.get(((NPC) event.getActor()).getId());
-		if (key != null && engagedBossKeys.contains(key))
+		if (bossEngagement.onBossDeath(key))
 		{
 			recordBossCompletion(key);
 		}

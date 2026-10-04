@@ -69,6 +69,7 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemEquipmentStats;
 import net.runelite.client.game.ItemStats;
+import net.runelite.client.util.Text;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.RaidChallenge;
 
@@ -463,7 +464,8 @@ public class RaidChallengeModule extends AbstractTaskModule
 		{
 			return;
 		}
-		String lower = msg.toLowerCase();
+		// Match on plain text: colour tags around a name would split the phrase.
+		String lower = Text.removeTags(msg).toLowerCase();
 		for (NuzlockeTask task : new HashSet<>(activeTasks))
 		{
 			RaidChallenge ch = task.getChallenge();
