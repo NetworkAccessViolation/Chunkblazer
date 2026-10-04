@@ -20,7 +20,7 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  * On-screen box showing the task the player selected in the side panel, with a
  * progress bar that updates live. It re-reads the task every frame, so any
  * progress change made by the task modules shows up immediately.
- * Alt + drag to move it; click the X (or right-click > Deselect) to stop tracking.
+ * Alt + drag to move it; click the X (or right-click, then Deselect) to stop tracking.
  */
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
