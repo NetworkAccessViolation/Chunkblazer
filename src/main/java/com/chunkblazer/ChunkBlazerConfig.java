@@ -38,14 +38,14 @@ public interface ChunkBlazerConfig extends Config
 {
 	/** Plugin Hub's required wording for a 3rd-party-server toggle. */
 	String SERVER_SYNC_WARNING = "This feature submits your IP address to a 3rd-party server "
-		+ "not controlled or verified by RuneLite developers";
+			+ "not controlled or verified by RuneLite developers";
 
 	@ConfigItem(
-		keyName = "unlockedChunks",
-		name = "Unlocked Regions",
-		description = "Internal: the player's unlocked region IDs (managed by the plugin, not hand-editable)",
-		position = 0,
-		hidden = true
+			keyName = "unlockedChunks",
+			name = "Unlocked Regions",
+			description = "Internal: the player's unlocked region IDs (managed by the plugin, not hand-editable)",
+			position = 0,
+			hidden = true
 	)
 	default String unlockedChunks()
 	{
@@ -53,11 +53,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "gameMode",
-		name = "Game Mode",
-		description = "Current game mode (Casual or Competitive)",
-		position = 1,
-		hidden = true
+			keyName = "gameMode",
+			name = "Game Mode",
+			description = "Current game mode (Casual or Competitive)",
+			position = 1,
+			hidden = true
 	)
 	default GameMode gameMode()
 	{
@@ -65,11 +65,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "accountModeHash",
-		name = "Account Mode Hash",
-		description = "Stores the locked game mode for this account (RSN hash)",
-		position = 2,
-		hidden = true
+			keyName = "accountModeHash",
+			name = "Account Mode Hash",
+			description = "Stores the locked game mode for this account (RSN hash)",
+			position = 2,
+			hidden = true
 	)
 	default String accountModeHash()
 	{
@@ -77,11 +77,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "completedTasks",
-		name = "Completed Tasks",
-		description = "Comma-separated list of completed task IDs",
-		position = 3,
-		hidden = true
+			keyName = "completedTasks",
+			name = "Completed Tasks",
+			description = "Comma-separated list of completed task IDs",
+			position = 3,
+			hidden = true
 	)
 	default String completedTasks()
 	{
@@ -89,12 +89,12 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "pointsSpent",
-		name = "Points Spent",
-		description = "Running total of points spent unlocking chunks. Points EARNED is derived "
-			+ "from the completed task list; the spendable balance is earned minus this.",
-		position = 4,
-		hidden = true
+			keyName = "pointsSpent",
+			name = "Points Spent",
+			description = "Running total of points spent unlocking chunks. Points EARNED is derived "
+					+ "from the completed task list; the spendable balance is earned minus this.",
+			position = 4,
+			hidden = true
 	)
 	default int pointsSpent()
 	{
@@ -102,12 +102,12 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "progressionBaseline",
-		name = "Progression Baseline",
-		description = "Per-skill levels captured when this account was first seen. "
-			+ "Progression tasks only pay for levels gained after this point.",
-		position = 4,
-		hidden = true
+			keyName = "progressionBaseline",
+			name = "Progression Baseline",
+			description = "Per-skill levels captured when this account was first seen. "
+					+ "Progression tasks only pay for levels gained after this point.",
+			position = 4,
+			hidden = true
 	)
 	default String progressionBaseline()
 	{
@@ -115,11 +115,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "assignedTasks",
-		name = "Assigned Tasks",
-		description = "Comma-separated list of all tasks ever assigned (cannot be reassigned)",
-		position = 4,
-		hidden = true
+			keyName = "assignedTasks",
+			name = "Assigned Tasks",
+			description = "Comma-separated list of all tasks ever assigned (cannot be reassigned)",
+			position = 4,
+			hidden = true
 	)
 	default String assignedTasks()
 	{
@@ -127,11 +127,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "regionRolledTasks",
-		name = "Region Rolled Tasks",
-		description = "Stores the 4-5 tasks rolled per region (format: regionId:task1,task2|regionId2:task3,task4)",
-		position = 5,
-		hidden = true
+			keyName = "regionRolledTasks",
+			name = "Region Rolled Tasks",
+			description = "Stores the 4-5 tasks rolled per region (format: regionId:task1,task2|regionId2:task3,task4)",
+			position = 5,
+			hidden = true
 	)
 	default String regionRolledTasks()
 	{
@@ -139,12 +139,12 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "unrevealedTasks",
-		name = "Unrevealed Tasks",
-		description = "Rolled tasks still waiting behind a face-down card (comma-separated task IDs). "
-			+ "These are NOT active and are not tracked until the card is flipped.",
-		position = 6,
-		hidden = true
+			keyName = "unrevealedTasks",
+			name = "Unrevealed Tasks",
+			description = "Rolled tasks still waiting behind a face-down card (comma-separated task IDs). "
+					+ "These are NOT active and are not tracked until the card is flipped.",
+			position = 6,
+			hidden = true
 	)
 	default String unrevealedTasks()
 	{
@@ -152,11 +152,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "currentTaskId",
-		name = "Current Task ID",
-		description = "The currently active task ID",
-		position = 4,
-		hidden = true
+			keyName = "currentTaskId",
+			name = "Current Task ID",
+			description = "The currently active task ID",
+			position = 4,
+			hidden = true
 	)
 	default String currentTaskId()
 	{
@@ -164,11 +164,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "currentTaskQuantity",
-		name = "Current Task Quantity",
-		description = "Target quantity for current task",
-		position = 5,
-		hidden = true
+			keyName = "currentTaskQuantity",
+			name = "Current Task Quantity",
+			description = "Target quantity for current task",
+			position = 5,
+			hidden = true
 	)
 	default int currentTaskQuantity()
 	{
@@ -176,11 +176,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "currentTaskProgress",
-		name = "Current Task Progress",
-		description = "Progress towards current task",
-		position = 6,
-		hidden = true
+			keyName = "currentTaskProgress",
+			name = "Current Task Progress",
+			description = "Progress towards current task",
+			position = 6,
+			hidden = true
 	)
 	default int currentTaskProgress()
 	{
@@ -188,11 +188,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "totalPoints",
-		name = "Total Points",
-		description = "Total points earned from completed tasks",
-		position = 7,
-		hidden = true
+			keyName = "totalPoints",
+			name = "Total Points",
+			description = "Total points earned from completed tasks",
+			position = 7,
+			hidden = true
 	)
 	default int totalPoints()
 	{
@@ -200,11 +200,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "bossTokens",
-		name = "Boss Tokens",
-		description = "Secondary currency spent to unlock boss chunks. New players start with 2.",
-		position = 8,
-		hidden = true
+			keyName = "bossTokens",
+			name = "Boss Tokens",
+			description = "Secondary currency spent to unlock boss chunks. New players start with 2.",
+			position = 8,
+			hidden = true
 	)
 	default int bossTokens()
 	{
@@ -212,11 +212,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "taskProgressData",
-		name = "Task Progress Data",
-		description = "Stores progress for all active tasks (format: taskId:progress,taskId2:progress2)",
-		position = 8,
-		hidden = true
+			keyName = "taskProgressData",
+			name = "Task Progress Data",
+			description = "Stores progress for all active tasks (format: taskId:progress,taskId2:progress2)",
+			position = 8,
+			hidden = true
 	)
 	default String taskProgressData()
 	{
@@ -224,11 +224,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "apiBaseUrl",
-		name = "API Base URL",
-		description = "Base URL for the ChunkBlazer verification server",
-		position = 0,
-		hidden = true
+			keyName = "apiBaseUrl",
+			name = "API Base URL",
+			description = "Base URL for the ChunkBlazer verification server",
+			position = 0,
+			hidden = true
 	)
 	default String apiBaseUrl()
 	{
@@ -247,12 +247,12 @@ public interface ChunkBlazerConfig extends Config
 	 */
 
 	@ConfigItem(
-		keyName = "serverSyncEnabled",
-		name = "Enable Server Sync",
-		description = "Save your progress to chunkblazer.com for cross-device saves and leaderboards. "
-			+ "Nothing is sent until you enable it.",
-		warning = SERVER_SYNC_WARNING,
-		position = 1
+			keyName = "serverSyncEnabled",
+			name = "Enable Server Sync",
+			description = "Save your progress to chunkblazer.com for cross-device saves and leaderboards. "
+					+ "Nothing is sent until you enable it.",
+			warning = SERVER_SYNC_WARNING,
+			position = 1
 	)
 	default boolean apiEnabled()
 	{
@@ -260,12 +260,12 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "apiKey",
-		name = "Sync recovery key",
-		description = "Paste a saved key here to restore sync on a new device. Your key is stored per "
-			+ "account and is cleared from this box once applied. Keep it private.",
-		position = 2,
-		secret = true
+			keyName = "apiKey",
+			name = "Sync recovery key",
+			description = "Paste a saved key here to restore sync on a new device. Your key is stored per "
+					+ "account and is cleared from this box once applied. Keep it private.",
+			position = 2,
+			secret = true
 	)
 	default String apiKey()
 	{
@@ -273,18 +273,18 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Display",
-		description = "Display settings",
-		position = 2
+			name = "Display",
+			description = "Display settings",
+			position = 2
 	)
 	String displaySection = "display";
 
 	@ConfigItem(
-		keyName = "showTaskCards",
-		name = "Task Reveal Cards",
-		description = "New tasks arrive as face-down cards you flip to reveal.",
-		section = displaySection,
-		position = 0
+			keyName = "showTaskCards",
+			name = "Task Reveal Cards",
+			description = "New tasks arrive as face-down cards you flip to reveal.",
+			section = displaySection,
+			position = 0
 	)
 	default boolean showTaskCards()
 	{
@@ -292,11 +292,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showMinimapChunks",
-		name = "Show Minimap Chunks",
-		description = "Highlight chunk borders on the minimap. Click on neighbor chunks to unlock them.",
-		section = displaySection,
-		position = 2
+			keyName = "showMinimapChunks",
+			name = "Show Minimap Chunks",
+			description = "Highlight chunk borders on the minimap. Click on neighbor chunks to unlock them.",
+			section = displaySection,
+			position = 2
 	)
 	default boolean showMinimapChunks()
 	{
@@ -304,11 +304,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showSceneChunks",
-		name = "Show Chunk Borders (Scene)",
-		description = "Draw chunk/region borders on the 3D game scene. Locked chunks get a translucent grey wash. Turn this off to keep borders on the minimap/world map only.",
-		section = displaySection,
-		position = 3
+			keyName = "showSceneChunks",
+			name = "Show Chunk Borders (Scene)",
+			description = "Draw chunk/region borders on the 3D game scene. Locked chunks get a translucent grey wash. Turn this off to keep borders on the minimap/world map only.",
+			section = displaySection,
+			position = 3
 	)
 	default boolean showSceneChunks()
 	{
@@ -316,11 +316,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showWorldMapChunks",
-		name = "Show Chunk Borders (World Map)",
-		description = "Draw chunk/region borders on the world map. Independent of the scene and minimap toggles.",
-		section = displaySection,
-		position = 4
+			keyName = "showWorldMapChunks",
+			name = "Show Chunk Borders (World Map)",
+			description = "Draw chunk/region borders on the world map. Independent of the scene and minimap toggles.",
+			section = displaySection,
+			position = 4
 	)
 	default boolean showWorldMapChunks()
 	{
@@ -332,11 +332,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showTaskCompletionPopup",
-		name = "Show Task Completion Popup",
-		description = "Display a popup notification when you complete a task",
-		section = displaySection,
-		position = 2
+			keyName = "showTaskCompletionPopup",
+			name = "Show Task Completion Popup",
+			description = "Display a popup notification when you complete a task",
+			section = displaySection,
+			position = 2
 	)
 	default boolean showTaskCompletionPopup()
 	{
@@ -344,11 +344,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "playTaskCompletionSound",
-		name = "Play Task Completion Sound",
-		description = "Play a region-specific sound when you complete a task",
-		section = displaySection,
-		position = 3
+			keyName = "playTaskCompletionSound",
+			name = "Play Task Completion Sound",
+			description = "Play a region-specific sound when you complete a task",
+			section = displaySection,
+			position = 3
 	)
 	default boolean playTaskCompletionSound()
 	{
@@ -356,11 +356,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "taskCompletionSoundVolume",
-		name = "Task Sound Volume",
-		description = "Volume of the task completion sound (0 = silent, 100 = full)",
-		section = displaySection,
-		position = 4
+			keyName = "taskCompletionSoundVolume",
+			name = "Task Sound Volume",
+			description = "Volume of the task completion sound (0 = silent, 100 = full)",
+			section = displaySection,
+			position = 4
 	)
 	@Range(min = 0, max = 100)
 	default int taskCompletionSoundVolume()
@@ -370,11 +370,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "playRegionUnlockSound",
-		name = "Play Region Unlock Jingle",
-		description = "Play a region-specific jingle the first time you unlock a chunk",
-		section = displaySection,
-		position = 4
+			keyName = "playRegionUnlockSound",
+			name = "Play Region Unlock Jingle",
+			description = "Play a region-specific jingle the first time you unlock a chunk",
+			section = displaySection,
+			position = 4
 	)
 	default boolean playRegionUnlockSound()
 	{
@@ -382,11 +382,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showBossTokenCounter",
-		name = "Show Boss Token Counter",
-		description = "Show the Boss Token currency icon + count above the chatbox (bottom-left)",
-		section = displaySection,
-		position = 5
+			keyName = "showBossTokenCounter",
+			name = "Show Boss Token Counter",
+			description = "Show the Boss Token currency icon + count above the chatbox (bottom-left)",
+			section = displaySection,
+			position = 5
 	)
 	default boolean showBossTokenCounter()
 	{
@@ -394,11 +394,71 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showMinimapOrbs",
-		name = "Show Minimap Orbs",
-		description = "Show the Boss Token and unlocked chunks minimap orbs",
-		section = displaySection,
-		position = 6
+			keyName = "showSelectedTaskOverlay",
+			name = "Show Selected Task On Screen",
+			description = "Pin the selected task and its progress bar to the game screen",
+			section = displaySection,
+			position = 6
+	)
+	default boolean showSelectedTaskOverlay()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "highlightTaskTargets",
+			name = "Highlight Task Targets",
+			description = "Outline NPCs and objects that one of your active tasks needs",
+			section = displaySection,
+			position = 7
+	)
+	default boolean highlightTaskTargets()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "taskHighlightColor",
+			name = "Task Highlight Colour",
+			description = "Outline colour for task NPCs and objects",
+			section = displaySection,
+			position = 8
+	)
+	default java.awt.Color taskHighlightColor()
+	{
+		return new java.awt.Color(255, 140, 0);
+	}
+
+	@ConfigItem(
+			keyName = "taskHighlightUnavailableColor",
+			name = "Task Highlight (No Level)",
+			description = "Outline colour when you don't have the level for any of that target's tasks",
+			section = displaySection,
+			position = 9
+	)
+	default java.awt.Color taskHighlightUnavailableColor()
+	{
+		return new java.awt.Color(255, 60, 60);
+	}
+
+	@ConfigItem(
+			keyName = "taskRightClickMenu",
+			name = "Tasks Right-Click Menu",
+			description = "Add a Tasks submenu when right-clicking NPCs and objects your tasks need",
+			section = displaySection,
+			position = 10
+	)
+	default boolean taskRightClickMenu()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "showMinimapOrbs",
+			name = "Show Minimap Orbs",
+			description = "Show the Boss Token and unlocked chunks minimap orbs",
+			section = displaySection,
+			position = 6
 	)
 	default boolean showMinimapOrbs()
 	{
@@ -410,18 +470,18 @@ public interface ChunkBlazerConfig extends Config
 	// config value by string key — no compile-time coupling in either direction.
 
 	@ConfigSection(
-		name = "Chat Messages",
-		description = "Control which task messages appear in chat",
-		position = 4
+			name = "Chat Messages",
+			description = "Control which task messages appear in chat",
+			position = 4
 	)
 	String chatSection = "chat";
 
 	@ConfigItem(
-		keyName = "showChatProgress",
-		name = "Show Task Progress",
-		description = "Show messages when you make progress on a task",
-		section = chatSection,
-		position = 0
+			keyName = "showChatProgress",
+			name = "Show Task Progress",
+			description = "Show messages when you make progress on a task",
+			section = chatSection,
+			position = 0
 	)
 	default boolean showChatProgress()
 	{
@@ -429,11 +489,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showChatSuccess",
-		name = "Show Task Success",
-		description = "Show messages when you complete a task",
-		section = chatSection,
-		position = 1
+			keyName = "showChatSuccess",
+			name = "Show Task Success",
+			description = "Show messages when you complete a task",
+			section = chatSection,
+			position = 1
 	)
 	default boolean showChatSuccess()
 	{
@@ -441,11 +501,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showChatFailed",
-		name = "Show Task Failed",
-		description = "Show messages when a task attempt fails",
-		section = chatSection,
-		position = 2
+			keyName = "showChatFailed",
+			name = "Show Task Failed",
+			description = "Show messages when a task attempt fails",
+			section = chatSection,
+			position = 2
 	)
 	default boolean showChatFailed()
 	{
@@ -453,18 +513,18 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigSection(
-		name = "Region Unlock",
-		description = "Region unlock settings",
-		position = 4
+			name = "Region Unlock",
+			description = "Region unlock settings",
+			position = 4
 	)
 	String regionSection = "region";
 
 	@ConfigItem(
-		keyName = "showUnlockPopup",
-		name = "Show Unlock Popup",
-		description = "Show an in-game popup to unlock regions when you walk into them (when Auto-Unlock is disabled).",
-		section = regionSection,
-		position = 2
+			keyName = "showUnlockPopup",
+			name = "Show Unlock Popup",
+			description = "Show an in-game popup to unlock regions when you walk into them (when Auto-Unlock is disabled).",
+			section = regionSection,
+			position = 2
 	)
 	default boolean showUnlockPopup()
 	{
@@ -472,11 +532,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "worldMapUnlockKey",
-		name = "Map Unlock Key",
-		description = "Hold this key (Shift by default) and click a neighbouring chunk on the world map to unlock it.",
-		section = regionSection,
-		position = 3
+			keyName = "worldMapUnlockKey",
+			name = "Map Unlock Key",
+			description = "Hold this key (Shift by default) and click a neighbouring chunk on the world map to unlock it.",
+			section = regionSection,
+			position = 3
 	)
 	default Keybind worldMapUnlockKey()
 	{

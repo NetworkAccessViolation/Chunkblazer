@@ -222,7 +222,13 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JCheckBox activeTasksBossOnlyCheck;
 	private boolean activeTasksBossOnly = false;
 	private JCheckBox activeTasksLevelCheck;
-	private boolean activeTasksLevelOnly = false;
+	private volatile boolean activeTasksLevelOnly = false;
+
+	/** Whether "Only tasks I have the level for" is ticked. */
+	public boolean isLevelFilterOn()
+	{
+		return activeTasksLevelOnly;
+	}
 	private JComboBox<String> completedTasksTierCombo;
 	private int completedTasksSelectedTier = 0;
 
@@ -234,7 +240,7 @@ public class ChunkBlazerPanel extends PluginPanel
 	private String activeTasksSelectedRegion = "All";
 	private String activeTasksSelectedArea = "All";
 	private boolean isRefreshingActiveFilters = false;
-	private NuzlockeTask selectedTask = null;
+	private volatile NuzlockeTask selectedTask = null;
 	// Tracks the region ID the bottom task list was last rendered for. When the player
 	// changes region (e.g. climbing a ladder) the list shows a different region's tasks,
 	// so a saved viewport position is meaningless — we scroll to top instead.
@@ -384,7 +390,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		resetAccountButton.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
 		resetAccountButton.setAlignmentX(LEFT_ALIGNMENT);
 		resetAccountButton.setToolTipText("Wipe this account's local ChunkBlazer data and restore it fresh "
-			+ "from the server. Your server progress is not touched.");
+				+ "from the server. Your server progress is not touched.");
 		resetAccountButton.addActionListener(e -> confirmResetAccountData());
 		resetAccountButton.setVisible(plugin != null && plugin.isServerSyncEnabled());
 		mainPanel.add(resetAccountButton);
@@ -505,7 +511,7 @@ public class ChunkBlazerPanel extends PluginPanel
 			{
 				java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
 				g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-					java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
 				g2.setColor(Color.WHITE);
 				if (down)
 				{
@@ -547,7 +553,7 @@ public class ChunkBlazerPanel extends PluginPanel
 			{
 				java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
 				g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-					java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
 				int s = 16;
 				// Square body.
 				g2.setColor(new Color(43, 43, 43));
@@ -562,7 +568,7 @@ public class ChunkBlazerPanel extends PluginPanel
 				// X.
 				g2.setColor(xColor);
 				g2.setStroke(new java.awt.BasicStroke(1.8f,
-					java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+						java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
 				g2.drawLine(x + 5, y + 5, x + 10, y + 10);
 				g2.drawLine(x + 10, y + 5, x + 5, y + 10);
 				g2.dispose();
@@ -585,23 +591,23 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(new Color(60, 45, 18)); // dark amber
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(new Color(230, 170, 50), 2),
-			new EmptyBorder(8, 8, 8, 8)
+				BorderFactory.createLineBorder(new Color(230, 170, 50), 2),
+				new EmptyBorder(8, 8, 8, 8)
 		));
 
 		addLabel(panel, "Verify Your Account", FontManager.getRunescapeBoldFont(), new Color(255, 190, 60));
 		panel.add(Box.createVerticalStrut(5));
 
 		WrappingTextLabel body = new WrappingTextLabel(
-			"Type this code in public chat and hit Enter to verify your ChunkBlazer account:",
-			FontManager.getRunescapeSmallFont(),
-			Color.WHITE,
-			CONTENT_WIDTH - 4);
+				"Type this code in public chat and hit Enter to verify your ChunkBlazer account:",
+				FontManager.getRunescapeSmallFont(),
+				Color.WHITE,
+				CONTENT_WIDTH - 4);
 		panel.add(body);
 		panel.add(Box.createVerticalStrut(6));
 
 		verificationCodeLabel = addLabel(panel, " ",
-			FontManager.getRunescapeBoldFont().deriveFont(24f), new Color(120, 230, 120));
+				FontManager.getRunescapeBoldFont().deriveFont(24f), new Color(120, 230, 120));
 
 		return panel;
 	}
@@ -706,18 +712,18 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (key == null || key.isEmpty())
 		{
 			JOptionPane.showMessageDialog(this,
-				"No sync key yet. Turn on Server Sync and log in once, and your key is created automatically.",
-				"Sync key", JOptionPane.INFORMATION_MESSAGE);
+					"No sync key yet. Turn on Server Sync and log in once, and your key is created automatically.",
+					"Sync key", JOptionPane.INFORMATION_MESSAGE);
 			return;
 		}
 		// Gate the reveal behind an explicit confirmation. The key is a full account
 		// credential and RuneLite is often streamed or screen-shared, so we never put
 		// it on screen until the player says so.
 		int confirm = JOptionPane.showConfirmDialog(this,
-			"This will reveal your account's Sync Key on screen. Anyone who can see your "
-				+ "screen, including a stream or screen share, will be able to read it. "
-				+ "Are you sure you want to show it?",
-			"Reveal sync key?", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+				"This will reveal your account's Sync Key on screen. Anyone who can see your "
+						+ "screen, including a stream or screen share, will be able to read it. "
+						+ "Are you sure you want to show it?",
+				"Reveal sync key?", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
 		if (confirm != JOptionPane.YES_OPTION)
 		{
 			return;
@@ -727,10 +733,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		keyField.setCaretPosition(0);
 		JPanel content = new JPanel(new BorderLayout(0, 6));
 		content.add(new JLabel("<html><body style='width:260px'>Select the key below and copy it "
-			+ "(Ctrl+C), then save it somewhere safe like a password manager. To sync this account "
-			+ "on another computer, "
-			+ "paste it into the \"Sync recovery key\" setting there.<br><br><b>Anyone with this key "
-			+ "can access your account. Do not share it.</b></body></html>"), BorderLayout.NORTH);
+				+ "(Ctrl+C), then save it somewhere safe like a password manager. To sync this account "
+				+ "on another computer, "
+				+ "paste it into the \"Sync recovery key\" setting there.<br><br><b>Anyone with this key "
+				+ "can access your account. Do not share it.</b></body></html>"), BorderLayout.NORTH);
 		content.add(keyField, BorderLayout.CENTER);
 		JOptionPane.showMessageDialog(this, content, "Your account sync key", JOptionPane.WARNING_MESSAGE);
 	}
@@ -745,23 +751,23 @@ public class ChunkBlazerPanel extends PluginPanel
 	private void confirmResetAccountData()
 	{
 		int confirm = JOptionPane.showConfirmDialog(this,
-			"<html><body style='width:270px'>This clears this account's ChunkBlazer data on THIS "
-				+ "computer (mode, tasks, points, chunks, and the stored sync key) and restores it "
-				+ "fresh from the server the next time you log in. Your server progress is not "
-				+ "touched.<br><br>Use this only if this account is showing the wrong mode or another "
-				+ "account's progress. After it finishes, restart RuneLite and log back in.<br><br>"
-				+ "Continue?</body></html>",
-			"Reset this account's local data?", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+				"<html><body style='width:270px'>This clears this account's ChunkBlazer data on THIS "
+						+ "computer (mode, tasks, points, chunks, and the stored sync key) and restores it "
+						+ "fresh from the server the next time you log in. Your server progress is not "
+						+ "touched.<br><br>Use this only if this account is showing the wrong mode or another "
+						+ "account's progress. After it finishes, restart RuneLite and log back in.<br><br>"
+						+ "Continue?</body></html>",
+				"Reset this account's local data?", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
 		if (confirm != JOptionPane.YES_OPTION)
 		{
 			return;
 		}
 		plugin.resetAccountLocalData();
 		JOptionPane.showMessageDialog(this,
-			"Local data cleared. Restart RuneLite and log back in to restore this account from the "
-				+ "server. If sync does not come back on its own, paste this account's key into the "
-				+ "\"Sync recovery key\" setting.",
-			"Done", JOptionPane.INFORMATION_MESSAGE);
+				"Local data cleared. Restart RuneLite and log back in to restore this account from the "
+						+ "server. If sync does not come back on its own, paste this account's key into the "
+						+ "\"Sync recovery key\" setting.",
+				"Done", JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	/**
@@ -775,25 +781,25 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME),
-			new EmptyBorder(6, 6, 6, 6)));
+				BorderFactory.createLineBorder(FLAME),
+				new EmptyBorder(6, 6, 6, 6)));
 		panel.setAlignmentX(LEFT_ALIGNMENT);
 
 		addLabel(panel, "Server sync is off", FontManager.getRunescapeBoldFont(), FLAME);
 		panel.add(Box.createVerticalStrut(3));
 
 		WrappingTextLabel body = new WrappingTextLabel(
-			"Turn on sync to save your progress across devices, show on the leaderboard, "
-			+ "see other players, and play Competitive mode. Nothing is sent until you enable it. "
-			+ "Your current progress will sync with the server when you do.",
-			FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
+				"Turn on sync to save your progress across devices, show on the leaderboard, "
+						+ "see other players, and play Competitive mode. Nothing is sent until you enable it. "
+						+ "Your current progress will sync with the server when you do.",
+				FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
 		body.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(body);
 
 		panel.add(Box.createVerticalStrut(3));
 		WrappingTextLabel comp = new WrappingTextLabel(
-			"Note that Competitive mode requires a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.",
-			FontManager.getRunescapeSmallFont(), new Color(255, 190, 60), TASK_TEXT_WRAP_WIDTH);
+				"Note that Competitive mode requires a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.",
+				FontManager.getRunescapeSmallFont(), new Color(255, 190, 60), TASK_TEXT_WRAP_WIDTH);
 		comp.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(comp);
 
@@ -801,8 +807,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		// deal Lumbridge before it knows whether the server already has a roll.
 		panel.add(Box.createVerticalStrut(3));
 		WrappingTextLabel hint = new WrappingTextLabel(
-			"Your starting tasks are dealt once you choose Enable Sync or Play offline.",
-			FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
+				"Your starting tasks are dealt once you choose Enable Sync or Play offline.",
+				FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
 		hint.setAlignmentX(LEFT_ALIGNMENT);
 		syncChoiceHint = hint;
 		panel.add(hint);
@@ -816,7 +822,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		enable.addActionListener(e ->
 		{
 			int ok = JOptionPane.showConfirmDialog(this, ChunkBlazerConfig.SERVER_SYNC_WARNING,
-				"Enable Server Sync", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+					"Enable Server Sync", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
 			if (ok == JOptionPane.OK_OPTION)
 			{
 				plugin.enableServerSync();
@@ -856,39 +862,39 @@ public class ChunkBlazerPanel extends PluginPanel
 	private void showDataUseDialog()
 	{
 		String msg =
-			"ChunkBlazer is a server-backed game mode. To save your progress\n"
-			+ "and rank you on the leaderboards, the plugin sends data to\n"
-			+ "ChunkBlazer's servers.\n"
-			+ "\n"
-			+ "WHAT IS SENT (only while \"Enable Server Sync\" is on):\n"
-			+ "  • Your RuneScape name\n"
-			+ "  • Your IP address\n"
-			+ "  • Your current world and map region\n"
-			+ "  • Progress events: NPC kills, XP/skill changes, items\n"
-			+ "    obtained or equipped, and task completions\n"
-			+ "  • If you're a Hardcore Ironman and lose that status: where\n"
-			+ "    it happened and what killed you (shown on chunkblazer.com)\n"
-			+ "\n"
-			+ "WHAT IT IS USED FOR:\n"
-			+ "  • Saving your unlocked chunks, tasks, points and game mode\n"
-			+ "  • Server-side verification of completions (anti-cheat)\n"
-			+ "  • Leaderboards and seeing other ChunkBlazer players online\n"
-			+ "\n"
-			+ "WHERE IT GOES:\n"
-			+ "  • Over HTTPS to api.chunkblazer.com. Not shared with any\n"
-			+ "    third parties.\n"
-			+ "\n"
-			+ "Track your account progress at chunkblazer.com.";
+				"ChunkBlazer is a server-backed game mode. To save your progress\n"
+						+ "and rank you on the leaderboards, the plugin sends data to\n"
+						+ "ChunkBlazer's servers.\n"
+						+ "\n"
+						+ "WHAT IS SENT (only while \"Enable Server Sync\" is on):\n"
+						+ "  • Your RuneScape name\n"
+						+ "  • Your IP address\n"
+						+ "  • Your current world and map region\n"
+						+ "  • Progress events: NPC kills, XP/skill changes, items\n"
+						+ "    obtained or equipped, and task completions\n"
+						+ "  • If you're a Hardcore Ironman and lose that status: where\n"
+						+ "    it happened and what killed you (shown on chunkblazer.com)\n"
+						+ "\n"
+						+ "WHAT IT IS USED FOR:\n"
+						+ "  • Saving your unlocked chunks, tasks, points and game mode\n"
+						+ "  • Server-side verification of completions (anti-cheat)\n"
+						+ "  • Leaderboards and seeing other ChunkBlazer players online\n"
+						+ "\n"
+						+ "WHERE IT GOES:\n"
+						+ "  • Over HTTPS to api.chunkblazer.com. Not shared with any\n"
+						+ "    third parties.\n"
+						+ "\n"
+						+ "Track your account progress at chunkblazer.com.";
 
 		int choice = JOptionPane.showOptionDialog(
-			this,
-			msg,
-			"How ChunkBlazer uses your data",
-			JOptionPane.DEFAULT_OPTION,
-			JOptionPane.INFORMATION_MESSAGE,
-			null,
-			new Object[]{"Open chunkblazer.com", "Close"},
-			"Close");
+				this,
+				msg,
+				"How ChunkBlazer uses your data",
+				JOptionPane.DEFAULT_OPTION,
+				JOptionPane.INFORMATION_MESSAGE,
+				null,
+				new Object[]{"Open chunkblazer.com", "Close"},
+				"Close");
 		if (choice == 0)
 		{
 			openLink("https://chunkblazer.com");
@@ -899,8 +905,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(new Color(100, 100, 180)),
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(new Color(100, 100, 180)),
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		panel.setAlignmentX(LEFT_ALIGNMENT);
 
@@ -1144,8 +1150,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(new Color(190, 150, 60)),
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(new Color(190, 150, 60)),
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		panel.setAlignmentX(LEFT_ALIGNMENT);
 
@@ -1427,8 +1433,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (globalTasksCollapsedLabel != null)
 		{
 			globalTasksCollapsedLabel.setText(total > 0
-				? "Click to view " + total + " global tasks"
-				: "No global tasks loaded");
+					? "Click to view " + total + " global tasks"
+					: "No global tasks loaded");
 		}
 
 		if (globalTasksExpanded)
@@ -1496,7 +1502,7 @@ public class ChunkBlazerPanel extends PluginPanel
 			// Mirrors the Completed Tasks summary line, and makes it obvious the
 			// list is filtered rather than empty/broken.
 			addLabel(globalTasksContentPanel, "Showing " + shown + " tasks (" + matchingPoints + " pts)",
-				FontManager.getRunescapeSmallFont(), FLAME);
+					FontManager.getRunescapeSmallFont(), FLAME);
 			globalTasksContentPanel.add(Box.createVerticalStrut(5));
 		}
 
@@ -1510,15 +1516,15 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (shown == 0)
 		{
 			addLabel(globalTasksContentPanel,
-				plugin.getVisibleGlobalTasks().isEmpty() ? "No global tasks loaded" : "No tasks match the filter",
-				FontManager.getRunescapeSmallFont(), Color.GRAY);
+					plugin.getVisibleGlobalTasks().isEmpty() ? "No global tasks loaded" : "No tasks match the filter",
+					FontManager.getRunescapeSmallFont(), Color.GRAY);
 		}
 
 		globalTasksContentPanel.revalidate();
 		globalTasksContentPanel.repaint();
 
 		SwingUtilities.invokeLater(() ->
-			globalTasksScrollPane.getViewport().setViewPosition(savedViewPos));
+				globalTasksScrollPane.getViewport().setViewPosition(savedViewPos));
 	}
 
 	/**
@@ -1542,8 +1548,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Tier colour by points, settled back once complete.
 		int pts = task.getBasePoints();
 		JPanel card = createCardPanel(
-			done ? dim(tierFill(pts), 0.30f) : tierFill(pts),
-			done ? dim(tierBorder(pts), 0.25f) : tierBorder(pts));
+				done ? dim(tierFill(pts), 0.30f) : tierFill(pts),
+				done ? dim(tierBorder(pts), 0.25f) : tierBorder(pts));
 		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
 		// Left inset (12) clears the orange accent bar.
 		card.setBorder(new EmptyBorder(5, 12, 6, 6));
@@ -1551,16 +1557,16 @@ public class ChunkBlazerPanel extends PluginPanel
 		card.setMaximumSize(new Dimension(CONTENT_WIDTH - 10, Integer.MAX_VALUE));
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			(done ? "✓ " : "") + task.getName(),
-			FontManager.getRunescapeSmallFont(),
-			done ? new Color(100, 200, 100) : Color.WHITE,
-			TASK_TEXT_WRAP_WIDTH);
+				(done ? "✓ " : "") + task.getName(),
+				FontManager.getRunescapeSmallFont(),
+				done ? new Color(100, 200, 100) : Color.WHITE,
+				TASK_TEXT_WRAP_WIDTH);
 		card.add(nameLabel);
 
 		// Info line mirrors the completed cards: "Quest  +2 pts".
 		String category = task.getCategory() != null ? NuzlockeTask.displayCategory(task.getCategory()) : "Global";
 		addLabel(card, category + "  +" + task.getBasePoints() + " pts",
-			FontManager.getRunescapeSmallFont(), done ? new Color(170, 130, 60) : Color.ORANGE);
+				FontManager.getRunescapeSmallFont(), done ? new Color(170, 130, 60) : Color.ORANGE);
 
 		return card;
 	}
@@ -1635,8 +1641,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel headerPanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		headerPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(3, 6, 3, 6)
+				BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+				new EmptyBorder(3, 6, 3, 6)
 		));
 
 		// Title row with Discord button
@@ -1678,8 +1684,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel statsPanel = styledPanel(new GridLayout(1, 4, 2, 0), ColorScheme.DARKER_GRAY_COLOR);
 		statsPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME), // Gold border
-			new EmptyBorder(2, 3, 2, 3)
+				BorderFactory.createLineBorder(FLAME), // Gold border
+				new EmptyBorder(2, 3, 2, 3)
 		));
 
 		JPanel pointsPanel = createStatBox("Points", "0");
@@ -1713,8 +1719,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME), // gold — matches stats border
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(FLAME), // gold — matches stats border
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		panel.setVisible(false); // shown by updateRegionUnlockSection() only when relevant
 		return panel;
@@ -1728,8 +1734,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		panel.setVisible(false);
 		return panel;
@@ -1776,7 +1782,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		headerRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 25));
 
 		headerRow.add(styledLabel("Unlocked Chunks (" + names.size() + ")",
-			FontManager.getRunescapeBoldFont(), Color.WHITE), BorderLayout.WEST);
+				FontManager.getRunescapeBoldFont(), Color.WHITE), BorderLayout.WEST);
 
 		JToggleButton toggle = new JToggleButton();
 		setToggleArrow(toggle, unlockedListExpanded);
@@ -1800,7 +1806,7 @@ public class ChunkBlazerPanel extends PluginPanel
 			if (names.isEmpty())
 			{
 				addLabel(unlockedListPanel, "No chunks unlocked yet.",
-					FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR);
+						FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR);
 			}
 			else
 			{
@@ -1825,7 +1831,7 @@ public class ChunkBlazerPanel extends PluginPanel
 				chunkScroll.getVerticalScrollBar().setUnitIncrement(16);
 
 				int height = Math.min(MAX_UNLOCKED_CHUNKS_HEIGHT,
-					Math.max(40, chunkList.getPreferredSize().height + 8));
+						Math.max(40, chunkList.getPreferredSize().height + 8));
 				chunkScroll.setMinimumSize(new Dimension(CONTENT_WIDTH, height));
 				chunkScroll.setPreferredSize(new Dimension(CONTENT_WIDTH, height));
 				chunkScroll.setMaximumSize(new Dimension(CONTENT_WIDTH, height));
@@ -1837,7 +1843,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			// Collapsed hint, matching the other collapsible sections.
 			addLabel(unlockedListPanel, "Click to view " + names.size() + " unlocked chunks",
-				FontManager.getRunescapeSmallFont(), Color.GRAY);
+					FontManager.getRunescapeSmallFont(), Color.GRAY);
 		}
 
 		unlockedListPanel.setVisible(true);
@@ -1929,15 +1935,15 @@ public class ChunkBlazerPanel extends PluginPanel
 		regionUnlockPanel.add(Box.createVerticalStrut(5));
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			regionName,
-			FontManager.getRunescapeBoldFont(),
-			Color.WHITE,
-			TASK_TEXT_WRAP_WIDTH);
+				regionName,
+				FontManager.getRunescapeBoldFont(),
+				Color.WHITE,
+				TASK_TEXT_WRAP_WIDTH);
 		regionUnlockPanel.add(nameLabel);
 		regionUnlockPanel.add(Box.createVerticalStrut(4));
 
 		addLabel(regionUnlockPanel, "Cost: " + cost + " pts | You have: " + points,
-			FontManager.getRunescapeSmallFont(), canAfford ? new Color(150, 255, 150) : new Color(255, 130, 130));
+				FontManager.getRunescapeSmallFont(), canAfford ? new Color(150, 255, 150) : new Color(255, 130, 130));
 		regionUnlockPanel.add(Box.createVerticalStrut(6));
 
 		// Two-state button: shows the cost, then on click swaps to "Confirm? Yes/No".
@@ -1990,26 +1996,26 @@ public class ChunkBlazerPanel extends PluginPanel
 		regionUnlockPanel.add(Box.createVerticalStrut(5));
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			regionName,
-			FontManager.getRunescapeBoldFont(),
-			Color.WHITE,
-			TASK_TEXT_WRAP_WIDTH);
+				regionName,
+				FontManager.getRunescapeBoldFont(),
+				Color.WHITE,
+				TASK_TEXT_WRAP_WIDTH);
 		regionUnlockPanel.add(nameLabel);
 		regionUnlockPanel.add(Box.createVerticalStrut(4));
 
 		addLabel(regionUnlockPanel, "Cost: 1 Boss Token | You have: " + tokens,
-			FontManager.getRunescapeSmallFont(), canAfford ? new Color(150, 255, 150) : new Color(255, 130, 130));
+				FontManager.getRunescapeSmallFont(), canAfford ? new Color(150, 255, 150) : new Color(255, 130, 130));
 		regionUnlockPanel.add(Box.createVerticalStrut(4));
 
 		addLabel(regionUnlockPanel, "All tasks will be granted upon unlock.",
-			FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+				FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 		regionUnlockPanel.add(Box.createVerticalStrut(4));
 
 		WrappingTextLabel tokenNote = new WrappingTextLabel(
-			"This will cost 1 boss token. You will need to defeat this boss to gain another.",
-			FontManager.getRunescapeSmallFont(),
-			new Color(230, 200, 120),
-			TASK_TEXT_WRAP_WIDTH);
+				"This will cost 1 boss token. You will need to defeat this boss to gain another.",
+				FontManager.getRunescapeSmallFont(),
+				new Color(230, 200, 120),
+				TASK_TEXT_WRAP_WIDTH);
 		tokenNote.setAlignmentX(LEFT_ALIGNMENT);
 		regionUnlockPanel.add(tokenNote);
 		regionUnlockPanel.add(Box.createVerticalStrut(6));
@@ -2128,8 +2134,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel modePanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		modePanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(10, 10, 10, 10)
+				BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+				new EmptyBorder(10, 10, 10, 10)
 		));
 
 		// Section title
@@ -2142,14 +2148,14 @@ public class ChunkBlazerPanel extends PluginPanel
 		// ownership and is required for Competitive, so lead with it here in the same
 		// amber as the "Verify Your Account" banner it points back to.
 		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
-			+ "Verify your account, then choose your game mode. Type the code from the verify "
-			+ "banner in public chat first."
-			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), new Color(255, 190, 60));
+				+ "Verify your account, then choose your game mode. Type the code from the verify "
+				+ "banner in public chat first."
+				+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), new Color(255, 190, 60));
 		modePanel.add(Box.createVerticalStrut(8));
 
 		// Warning text
 		addLabel(modePanel, "<html><i>This choice is permanent for this account!</i></html>",
-			FontManager.getRunescapeSmallFont(), Color.YELLOW);
+				FontManager.getRunescapeSmallFont(), Color.YELLOW);
 		modePanel.add(Box.createVerticalStrut(10));
 
 		// Radio buttons
@@ -2167,8 +2173,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Fixed-width table keeps the blurb inside CONTENT_WIDTH; Swing's CSS
 		// subset ignores width on div/body/p, so a table is the reliable wrap.
 		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
-			+ "Start anywhere. Play on any account. Featured on the casual leaderboard."
-			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+				+ "Start anywhere. Play on any account. Featured on the casual leaderboard."
+				+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 		modePanel.add(Box.createVerticalStrut(5));
 
 		nuzlockeRadio = new JRadioButton("Competitive");
@@ -2180,8 +2186,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		modePanel.add(nuzlockeRadio);
 
 		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
-			+ "Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account."
-			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+				+ "Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account."
+				+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 		modePanel.add(Box.createVerticalStrut(10));
 
 		// Confirm button
@@ -2201,8 +2207,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(10, 10, 10, 10)
+				BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+				new EmptyBorder(10, 10, 10, 10)
 		));
 
 		addLabel(panel, "Game Mode", FontManager.getRunescapeBoldFont(), Color.WHITE);
@@ -2223,15 +2229,15 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(15, 10, 15, 10)
+				BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+				new EmptyBorder(15, 10, 15, 10)
 		));
 
 		addLabel(panel, "Not logged in", FontManager.getRunescapeBoldFont(), Color.WHITE);
 		panel.add(Box.createVerticalStrut(5));
 
 		addLabel(panel, "<html>Log into Old School RuneScape to start playing ChunkBlazer.</html>",
-			FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+				FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 
 		return panel;
 	}
@@ -2240,16 +2246,16 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel taskPanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		taskPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(new Color(100, 180, 100)),
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(new Color(100, 180, 100)),
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		taskPanel.setAlignmentX(LEFT_ALIGNMENT);
 
 		// === SELECTED TASK HIGHLIGHT BOX ===
 		selectedTaskPanel = boxPanel(new Color(60, 80, 60));
 		selectedTaskPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME, 2), // Gold border
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(FLAME, 2), // Gold border
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		selectedTaskPanel.setAlignmentX(LEFT_ALIGNMENT);
 		selectedTaskPanel.setPreferredSize(new Dimension(CONTENT_WIDTH, 135));
@@ -2264,7 +2270,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		selectedTaskPanel.add(selectedTaskName);
 
 		selectedTaskPanel.setVisible(false); // Hidden until a task is selected
-		taskPanel.add(selectedTaskPanel);
+		// taskPanel.add(selectedTaskPanel); // shown on the game screen instead now
 		taskPanel.add(Box.createVerticalStrut(4));
 
 		// === HEADER ROW WITH TOGGLE ===
@@ -2545,10 +2551,10 @@ public class ChunkBlazerPanel extends PluginPanel
 			// Populate categories from all active tasks. Fold "_Set" pools
 			// (Herblore_Set, Obtain_Set) onto the base skill so they list once.
 			Set<String> categories = plugin.getActiveTasks().stream()
-				.map(NuzlockeTask::getCategory)
-				.filter(c -> c != null && !c.isEmpty())
-				.map(NuzlockeTask::displayCategory)
-				.collect(Collectors.toCollection(java.util.TreeSet::new));
+					.map(NuzlockeTask::getCategory)
+					.filter(c -> c != null && !c.isEmpty())
+					.map(NuzlockeTask::displayCategory)
+					.collect(Collectors.toCollection(java.util.TreeSet::new));
 
 			String currentCategory = activeTasksSelectedCategory;
 			activeTasksCategoryCombo.removeAllItems();
@@ -2611,6 +2617,11 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 	}
 
+	public NuzlockeTask getSelectedTask()
+	{
+		return selectedTask;
+	}
+
 	/**
 	 * Select a task and highlight it in the Selected Task box.
 	 */
@@ -2627,8 +2638,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	public void clearSelectedTaskIfMatch(NuzlockeTask task)
 	{
 		if (selectedTask != null && task != null &&
-			selectedTask.getTaskId() != null &&
-			selectedTask.getTaskId().equals(task.getTaskId()))
+				selectedTask.getTaskId() != null &&
+				selectedTask.getTaskId().equals(task.getTaskId()))
 		{
 			selectedTask = null;
 			updateSelectedTaskDisplay();
@@ -2725,10 +2736,10 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		// Task name (wrapped via WrappingTextLabel).
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			selectedTask.getName(),
-			FontManager.getRunescapeBoldFont(),
-			Color.WHITE,
-			TASK_TEXT_WRAP_WIDTH);
+				selectedTask.getName(),
+				FontManager.getRunescapeBoldFont(),
+				Color.WHITE,
+				TASK_TEXT_WRAP_WIDTH);
 		selectedTaskPanel.add(nameLabel);
 
 		// Description ("how to complete this"), wrapped, right under the title.
@@ -2736,10 +2747,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (selDesc != null && !selDesc.trim().isEmpty())
 		{
 			WrappingTextLabel selDescLabel = new WrappingTextLabel(
-				selDesc.trim(),
-				FontManager.getRunescapeSmallFont(),
-				new Color(200, 200, 200),
-				TASK_TEXT_WRAP_WIDTH);
+					selDesc.trim(),
+					FontManager.getRunescapeSmallFont(),
+					new Color(200, 200, 200),
+					TASK_TEXT_WRAP_WIDTH);
 			selDescLabel.setAlignmentX(LEFT_ALIGNMENT);
 			selectedTaskPanel.add(selDescLabel);
 		}
@@ -2756,8 +2767,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		// getTaskRegionName already includes the numeric ID in "ChunkName (id)" form.
 		String selRegionName = plugin.getTaskRegionName(selectedTask);
 		String regionRow = (selRegionName != null && !selRegionName.isEmpty())
-			? "Chunk: " + selRegionName
-			: "Chunk: unknown";
+				? "Chunk: " + selRegionName
+				: "Chunk: unknown";
 		addLabel(selectedTaskPanel, regionRow, FontManager.getRunescapeSmallFont(), new Color(140, 200, 230));
 
 		String selArea = plugin.getTaskArea(selectedTask);
@@ -2781,10 +2792,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		// for the long story on why we don't use BorderLayout.WEST + a fixed-size
 		// child for this anymore.
 		JPanel progressBar = createPercentageProgressBar(
-			pct,
-			FLAME,                // gold fill
-			FLAME,                // gold border
-			12);
+				pct,
+				FLAME,                // gold fill
+				FLAME,                // gold border
+				12);
 		progressRow.add(progressBar, BorderLayout.CENTER);
 
 		progressRow.add(styledLabel(progress + "/" + target, FontManager.getRunescapeSmallFont(), Color.WHITE), BorderLayout.EAST);
@@ -2800,8 +2811,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		JPanel listPanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		listPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(6, 6, 6, 6)
+				BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+				new EmptyBorder(6, 6, 6, 6)
 		));
 		listPanel.setAlignmentX(LEFT_ALIGNMENT);
 
@@ -2935,12 +2946,12 @@ public class ChunkBlazerPanel extends PluginPanel
 		GameMode selectedMode = casualRadio.isSelected() ? GameMode.CASUAL : GameMode.NUZLOCKE;
 
 		int confirm = JOptionPane.showConfirmDialog(
-			this,
-			"Are you sure you want to select " + selectedMode.getName() + " mode?\n\n" +
-			"This choice is PERMANENT for this account!",
-			"Confirm Game Mode",
-			JOptionPane.YES_NO_OPTION,
-			JOptionPane.WARNING_MESSAGE
+				this,
+				"Are you sure you want to select " + selectedMode.getName() + " mode?\n\n" +
+						"This choice is PERMANENT for this account!",
+				"Confirm Game Mode",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.WARNING_MESSAGE
 		);
 
 		if (confirm != JOptionPane.YES_OPTION)
@@ -2955,13 +2966,13 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (selectedMode == GameMode.NUZLOCKE && !plugin.isServerSyncEnabled())
 		{
 			int enable = JOptionPane.showConfirmDialog(
-				this,
-				"Competitive mode needs a connection to the ChunkBlazer server to verify\n"
-				+ "your RuneScape account.\n\n"
-				+ "Do you want to enable Server Sync?",
-				"Enable Server Sync?",
-				JOptionPane.YES_NO_OPTION,
-				JOptionPane.QUESTION_MESSAGE
+					this,
+					"Competitive mode needs a connection to the ChunkBlazer server to verify\n"
+							+ "your RuneScape account.\n\n"
+							+ "Do you want to enable Server Sync?",
+					"Enable Server Sync?",
+					JOptionPane.YES_NO_OPTION,
+					JOptionPane.QUESTION_MESSAGE
 			);
 			if (enable == JOptionPane.YES_OPTION)
 			{
@@ -3082,7 +3093,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			GameMode mode = plugin.getGameMode();
 			Color modeColor = mode == GameMode.NUZLOCKE ?
-				new Color(255, 100, 100) : new Color(100, 200, 100);
+					new Color(255, 100, 100) : new Color(100, 200, 100);
 			modeLabel.setText(" | " + mode.getName());
 			modeLabel.setForeground(modeColor);
 			lockedModeValueLabel.setText(mode.getName());
@@ -3168,62 +3179,62 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Filter tasks based on search text, category, region, area, and tier
 		final int filterTier = activeTasksSelectedTier;
 		List<NuzlockeTask> filteredTasks = allTasks.stream()
-			.filter(task ->
-			{
-				// Search text filter
-				if (!filterText.isEmpty())
+				.filter(task ->
 				{
-					String name = task.getName() != null ? task.getName().toLowerCase() : "";
-					String category = task.getCategory() != null ? task.getCategory().toLowerCase() : "";
-					if (!name.contains(filterText) && !category.contains(filterText))
+					// Search text filter
+					if (!filterText.isEmpty())
+					{
+						String name = task.getName() != null ? task.getName().toLowerCase() : "";
+						String category = task.getCategory() != null ? task.getCategory().toLowerCase() : "";
+						if (!name.contains(filterText) && !category.contains(filterText))
+						{
+							return false;
+						}
+					}
+					// Category filter
+					if (!"All".equals(filterCategory))
+					{
+						String taskCategory = NuzlockeTask.displayCategory(task.getCategory() != null ? task.getCategory() : "");
+						if (!filterCategory.equals(taskCategory))
+						{
+							return false;
+						}
+					}
+					// Region filter (chunk-level)
+					if (!"All".equals(filterRegion))
+					{
+						String taskRegion = plugin.getTaskRegionName(task);
+						if (taskRegion == null || !filterRegion.equals(taskRegion))
+						{
+							return false;
+						}
+					}
+					// Area filter (overarching: Misthalin / Asgarnia / ...)
+					if (!"All".equals(filterArea))
+					{
+						String taskArea = plugin.getTaskArea(task);
+						if (taskArea == null || !filterArea.equals(taskArea))
+						{
+							return false;
+						}
+					}
+					// Tier filter — 0 means All.
+					if (filterTier > 0 && task.getBasePoints() != filterTier)
 					{
 						return false;
 					}
-				}
-				// Category filter
-				if (!"All".equals(filterCategory))
-				{
-					String taskCategory = NuzlockeTask.displayCategory(task.getCategory() != null ? task.getCategory() : "");
-					if (!filterCategory.equals(taskCategory))
+					// Boss-chunk-only filter.
+					if (activeTasksBossOnly && !plugin.isBossTask(task))
 					{
 						return false;
 					}
-				}
-				// Region filter (chunk-level)
-				if (!"All".equals(filterRegion))
-				{
-					String taskRegion = plugin.getTaskRegionName(task);
-					if (taskRegion == null || !filterRegion.equals(taskRegion))
+					if (activeTasksLevelOnly && !plugin.meetsLevelRequirement(task))
 					{
 						return false;
 					}
-				}
-				// Area filter (overarching: Misthalin / Asgarnia / ...)
-				if (!"All".equals(filterArea))
-				{
-					String taskArea = plugin.getTaskArea(task);
-					if (taskArea == null || !filterArea.equals(taskArea))
-					{
-						return false;
-					}
-				}
-				// Tier filter — 0 means All.
-				if (filterTier > 0 && task.getBasePoints() != filterTier)
-				{
-					return false;
-				}
-				// Boss-chunk-only filter.
-				if (activeTasksBossOnly && !plugin.isBossTask(task))
-				{
-					return false;
-				}
-				if (activeTasksLevelOnly && !plugin.meetsLevelRequirement(task))
-				{
-					return false;
-				}
-				return true;
-			})
-			.collect(Collectors.toList());
+					return true;
+				})
+				.collect(Collectors.toList());
 
 		if (filteredTasks.isEmpty())
 		{
@@ -3237,8 +3248,8 @@ public class ChunkBlazerPanel extends PluginPanel
 			// points banked — these tasks are by definition incomplete.
 			int availablePoints = filteredTasks.stream().mapToInt(NuzlockeTask::getBasePoints).sum();
 			addLabel(activeTasksContentPanel,
-				"Showing " + filteredTasks.size() + " tasks (" + availablePoints + " pts available)",
-				FontManager.getRunescapeSmallFont(), FLAME);
+					"Showing " + filteredTasks.size() + " tasks (" + availablePoints + " pts available)",
+					FontManager.getRunescapeSmallFont(), FLAME);
 			activeTasksContentPanel.add(Box.createVerticalStrut(5));
 
 			int taskNumber = 1;
@@ -3385,9 +3396,9 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		float k = Math.max(0f, Math.min(1f, amount));
 		return new Color(
-			Math.round(c.getRed()   + (255 - c.getRed())   * k),
-			Math.round(c.getGreen() + (255 - c.getGreen()) * k),
-			Math.round(c.getBlue()  + (255 - c.getBlue())  * k));
+				Math.round(c.getRed()   + (255 - c.getRed())   * k),
+				Math.round(c.getGreen() + (255 - c.getGreen()) * k),
+				Math.round(c.getBlue()  + (255 - c.getBlue())  * k));
 	}
 
 	private JPanel createCardPanel(Color fill, Color border)
@@ -3400,11 +3411,11 @@ public class ChunkBlazerPanel extends PluginPanel
 				super.paintComponent(g);
 				java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
 				g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-					java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
 				int w = getWidth();
 				int h = getHeight();
 				java.awt.geom.RoundRectangle2D box =
-					new java.awt.geom.RoundRectangle2D.Float(0.5f, 0.5f, w - 1.5f, h - 1.5f, 12, 12);
+						new java.awt.geom.RoundRectangle2D.Float(0.5f, 0.5f, w - 1.5f, h - 1.5f, 12, 12);
 				g2.setColor(fill);
 				g2.fill(box);
 				java.awt.Shape oldClip = g2.getClip();
@@ -3466,14 +3477,14 @@ public class ChunkBlazerPanel extends PluginPanel
 		card.setMaximumSize(new Dimension(CONTENT_WIDTH - 10, Integer.MAX_VALUE));
 
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			"✓ " + name,
-			FontManager.getRunescapeSmallFont(),
-			new Color(120, 215, 120),
-			TASK_TEXT_WRAP_WIDTH);
+				"✓ " + name,
+				FontManager.getRunescapeSmallFont(),
+				new Color(120, 215, 120),
+				TASK_TEXT_WRAP_WIDTH);
 		card.add(nameLabel);
 
 		addLabel(card, region != null ? "Chunk " + region : "Unlocked",
-			FontManager.getRunescapeSmallFont(), new Color(150, 190, 150));
+				FontManager.getRunescapeSmallFont(), new Color(150, 190, 150));
 
 		return card;
 	}
@@ -3574,8 +3585,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	{
 		// Check if this task is currently selected
 		boolean isSelected = selectedTask != null &&
-			task.getTaskId() != null &&
-			task.getTaskId().equals(selectedTask.getTaskId());
+				task.getTaskId() != null &&
+				task.getTaskId().equals(selectedTask.getTaskId());
 
 		// Task card: a dark rounded box with a flame-orange left accent bar, painted
 		// (not a fixed image) so it scales to each row's height. Hover lightens the
@@ -3589,17 +3600,17 @@ public class ChunkBlazerPanel extends PluginPanel
 				super.paintComponent(g);
 				java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
 				g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-					java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
 				int w = getWidth();
 				int h = getHeight();
 				int arc = 12;
 				java.awt.geom.RoundRectangle2D box =
-					new java.awt.geom.RoundRectangle2D.Float(0.5f, 0.5f, w - 1.5f, h - 1.5f, arc, arc);
+						new java.awt.geom.RoundRectangle2D.Float(0.5f, 0.5f, w - 1.5f, h - 1.5f, arc, arc);
 				// ChunkBlazer navy backdrop (matches the News & Updates header) so the
 				// card pops off the near-black panel; brightens on hover / selection.
 				Color tier = tierFill(task.getBasePoints());
 				g2.setColor(isSelected ? lighten(tier, 0.22f)
-					: (hovered[0] ? lighten(tier, 0.12f) : tier));
+						: (hovered[0] ? lighten(tier, 0.12f) : tier));
 				g2.fill(box);
 				// Flame-orange left accent bar, clipped to the rounded shape.
 				java.awt.Shape oldClip = g2.getClip();
@@ -3675,10 +3686,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		String numberPrefix = taskNumber + ". ";
 		String selectionPrefix = isSelected ? "\u2605 " : ""; // Star for selected
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			numberPrefix + selectionPrefix + taskName,
-			FontManager.getRunescapeSmallFont(),
-			isSelected ? FLAME : new Color(150, 255, 150),
-			TASK_TEXT_WRAP_WIDTH);
+				numberPrefix + selectionPrefix + taskName,
+				FontManager.getRunescapeSmallFont(),
+				isSelected ? FLAME : new Color(150, 255, 150),
+				TASK_TEXT_WRAP_WIDTH);
 		itemPanel.add(nameLabel);
 
 		// Info line: Category | Points | Level (compact single line)
@@ -3690,15 +3701,15 @@ public class ChunkBlazerPanel extends PluginPanel
 			infoText.append("  L").append(task.getLevelRequirement());
 		}
 		addLabel(itemPanel, infoText.toString(),
-			FontManager.getRunescapeSmallFont(), isSelected ? new Color(255, 200, 100) : Color.ORANGE);
+				FontManager.getRunescapeSmallFont(), isSelected ? new Color(255, 200, 100) : Color.ORANGE);
 
 		// Region subtitle: friendly name + numeric region ID, so a glance tells the
 		// player which chunk rolled the task. getTaskRegionName already returns the
 		// composed "ChunkName (regionId)" string — don't append the ID again.
 		String activeRegionName = plugin.getTaskRegionName(task);
 		String regionText = (activeRegionName != null && !activeRegionName.isEmpty())
-			? "Chunk: " + activeRegionName
-			: "Chunk: unknown";
+				? "Chunk: " + activeRegionName
+				: "Chunk: unknown";
 		addLabel(itemPanel, regionText, FontManager.getRunescapeSmallFont(), new Color(140, 200, 230));
 
 		// Optional "how to complete this" description, wrapped. Especially useful for
@@ -3708,10 +3719,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (activeDesc != null && !activeDesc.trim().isEmpty())
 		{
 			WrappingTextLabel descLabel = new WrappingTextLabel(
-				activeDesc.trim(),
-				FontManager.getRunescapeSmallFont(),
-				new Color(185, 185, 185),
-				TASK_TEXT_WRAP_WIDTH);
+					activeDesc.trim(),
+					FontManager.getRunescapeSmallFont(),
+					new Color(185, 185, 185),
+					TASK_TEXT_WRAP_WIDTH);
 			descLabel.setAlignmentX(LEFT_ALIGNMENT);
 			itemPanel.add(Box.createVerticalStrut(2));
 			itemPanel.add(descLabel);
@@ -3733,10 +3744,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		// bar always visually matches `pct`, even when the parent layout stretches
 		// it wider than the preferred 80 px.
 		JPanel progressBar = createPercentageProgressBar(
-			pct,
-			isSelected ? FLAME : new Color(80, 180, 80),
-			isSelected ? FLAME : new Color(60, 60, 60),
-			10);
+				pct,
+				isSelected ? FLAME : new Color(80, 180, 80),
+				isSelected ? FLAME : new Color(60, 60, 60),
+				10);
 		progressRow.add(progressBar, BorderLayout.CENTER);
 
 		progressRow.add(styledLabel(progress + "/" + target, FontManager.getRunescapeSmallFont(), Color.WHITE), BorderLayout.EAST);
@@ -3833,8 +3844,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (completedCollapsedLabel != null)
 		{
 			completedCollapsedLabel.setText(count > 0 ?
-				"Click to view " + count + " completed tasks" :
-				"Click to view completed tasks");
+					"Click to view " + count + " completed tasks" :
+					"Click to view completed tasks");
 		}
 
 		if (completedTasksPanel.getComponentCount() > 0)
@@ -3878,55 +3889,55 @@ public class ChunkBlazerPanel extends PluginPanel
 		final int filterTier = completedTasksSelectedTier;
 
 		List<CompletedTaskInfo> filteredTasks = allTasks.stream()
-			.filter(info ->
-			{
-				if (info == null)
+				.filter(info ->
 				{
-					return false;
-				}
+					if (info == null)
+					{
+						return false;
+					}
 
-				if (!filterText.isEmpty())
-				{
-					String name = info.getName() != null ? info.getName().toLowerCase() : "";
-					if (!name.contains(filterText))
+					if (!filterText.isEmpty())
+					{
+						String name = info.getName() != null ? info.getName().toLowerCase() : "";
+						if (!name.contains(filterText))
+						{
+							return false;
+						}
+					}
+					if (!"All".equals(filterCategory))
+					{
+						String cat = NuzlockeTask.displayCategory(info.getCategory() != null ? info.getCategory() : "");
+						if (!filterCategory.equals(cat))
+						{
+							return false;
+						}
+					}
+					if (!"All".equals(filterRegion))
+					{
+						String reg = info.getRegionName() != null ? info.getRegionName() : "";
+						if (!filterRegion.equals(reg))
+						{
+							return false;
+						}
+					}
+					if (filterTier > 0 && info.getPoints() != filterTier)
 					{
 						return false;
 					}
-				}
-				if (!"All".equals(filterCategory))
-				{
-					String cat = NuzlockeTask.displayCategory(info.getCategory() != null ? info.getCategory() : "");
-					if (!filterCategory.equals(cat))
+					if (!"All".equals(filterArea))
 					{
-						return false;
+						// Global tasks have no chunk; getAreaForRegionId(-1) is null,
+						// so they need the shared bucket lookup or every specific
+						// area selection would silently hide them.
+						String area = plugin.getAreaForCompletedTask(info.getTaskId(), info.getRegionId());
+						if (area == null || !filterArea.equals(area))
+						{
+							return false;
+						}
 					}
-				}
-				if (!"All".equals(filterRegion))
-				{
-					String reg = info.getRegionName() != null ? info.getRegionName() : "";
-					if (!filterRegion.equals(reg))
-					{
-						return false;
-					}
-				}
-				if (filterTier > 0 && info.getPoints() != filterTier)
-				{
-					return false;
-				}
-				if (!"All".equals(filterArea))
-				{
-					// Global tasks have no chunk; getAreaForRegionId(-1) is null,
-					// so they need the shared bucket lookup or every specific
-					// area selection would silently hide them.
-					String area = plugin.getAreaForCompletedTask(info.getTaskId(), info.getRegionId());
-					if (area == null || !filterArea.equals(area))
-					{
-						return false;
-					}
-				}
-				return true;
-			})
-			.collect(Collectors.toList());
+					return true;
+				})
+				.collect(Collectors.toList());
 
 		if (filteredTasks.isEmpty())
 		{
@@ -3937,7 +3948,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		{
 			int totalPoints = filteredTasks.stream().mapToInt(CompletedTaskInfo::getPoints).sum();
 			addLabel(completedTasksContentPanel, "Showing " + filteredTasks.size() + " tasks (" + totalPoints + " pts)",
-				FontManager.getRunescapeSmallFont(), FLAME);
+					FontManager.getRunescapeSmallFont(), FLAME);
 			completedTasksContentPanel.add(Box.createVerticalStrut(5));
 
 			for (CompletedTaskInfo info : filteredTasks)
@@ -3974,8 +3985,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Shared navy card look; dimmed slightly since these are already done.
 		// Tier colour, settled back a little because it's already done.
 		JPanel itemPanel = createCardPanel(
-			dim(tierFill(info.getPoints()), 0.30f),
-			dim(tierBorder(info.getPoints()), 0.25f));
+				dim(tierFill(info.getPoints()), 0.30f),
+				dim(tierBorder(info.getPoints()), 0.25f));
 		itemPanel.setLayout(new BoxLayout(itemPanel, BoxLayout.Y_AXIS));
 		// Left inset (12) clears the orange accent bar.
 		itemPanel.setBorder(new EmptyBorder(5, 12, 6, 6));
@@ -3986,10 +3997,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Task name with checkmark (wrapped via WrappingTextLabel).
 		String taskName = info.getName();
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			"\u2713 " + taskName,
-			FontManager.getRunescapeSmallFont(),
-			new Color(100, 200, 100),
-			TASK_TEXT_WRAP_WIDTH);
+				"\u2713 " + taskName,
+				FontManager.getRunescapeSmallFont(),
+				new Color(100, 200, 100),
+				TASK_TEXT_WRAP_WIDTH);
 		itemPanel.add(nameLabel);
 
 		// Description ("what this task was"), looked up from the catalog by id since
@@ -4000,10 +4011,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		if (completedDesc != null && !completedDesc.trim().isEmpty())
 		{
 			WrappingTextLabel completedDescLabel = new WrappingTextLabel(
-				completedDesc.trim(),
-				FontManager.getRunescapeSmallFont(),
-				new Color(170, 170, 170),
-				TASK_TEXT_WRAP_WIDTH);
+					completedDesc.trim(),
+					FontManager.getRunescapeSmallFont(),
+					new Color(170, 170, 170),
+					TASK_TEXT_WRAP_WIDTH);
 			completedDescLabel.setAlignmentX(LEFT_ALIGNMENT);
 			itemPanel.add(completedDescLabel);
 		}
@@ -4016,10 +4027,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		// "ChunkName (regionId)" string from getRegionName(int) — display as-is.
 		String regionName = info.getRegionName();
 		WrappingTextLabel regionLabel = new WrappingTextLabel(
-			regionName != null && !regionName.isEmpty() ? regionName : "Unknown",
-			FontManager.getRunescapeSmallFont(),
-			Color.CYAN,
-			TASK_TEXT_WRAP_WIDTH);
+				regionName != null && !regionName.isEmpty() ? regionName : "Unknown",
+				FontManager.getRunescapeSmallFont(),
+				Color.CYAN,
+				TASK_TEXT_WRAP_WIDTH);
 		itemPanel.add(regionLabel);
 
 		return itemPanel;
@@ -4031,11 +4042,11 @@ public class ChunkBlazerPanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			JOptionPane.showMessageDialog(
-				this,
-				"All available tasks have been completed!\n\n" +
-				"Unlock more chunks to get new tasks.",
-				"No Tasks Available",
-				JOptionPane.INFORMATION_MESSAGE
+					this,
+					"All available tasks have been completed!\n\n" +
+							"Unlock more chunks to get new tasks.",
+					"No Tasks Available",
+					JOptionPane.INFORMATION_MESSAGE
 			);
 		});
 	}
@@ -4100,8 +4111,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		final int currentRegionId = plugin.getCurrentRegionId();
 		final boolean sameRegion = currentRegionId == lastRenderedTaskListRegionId;
 		final java.awt.Point savedTaskListViewPos = sameRegion
-			? taskListScrollPane.getViewport().getViewPosition()
-			: new java.awt.Point(0, 0);
+				? taskListScrollPane.getViewport().getViewPosition()
+				: new java.awt.Point(0, 0);
 		lastRenderedTaskListRegionId = currentRegionId;
 
 		taskListContentPanel.removeAll();
@@ -4208,10 +4219,10 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Task name (wrapped via WrappingTextLabel).
 		String displayName = task.getName();
 		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			displayName,
-			FontManager.getRunescapeSmallFont(),
-			textColor,
-			TASK_TEXT_WRAP_WIDTH);
+				displayName,
+				FontManager.getRunescapeSmallFont(),
+				textColor,
+				TASK_TEXT_WRAP_WIDTH);
 		itemPanel.add(nameLabel);
 
 		// Task info line (status + points + level)
@@ -4241,7 +4252,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 
 		infoPanel.add(styledLabel(task.getBasePoints() + "pt",
-			FontManager.getRunescapeSmallFont(), isActive ? new Color(100, 200, 100) : Color.GRAY));
+				FontManager.getRunescapeSmallFont(), isActive ? new Color(100, 200, 100) : Color.GRAY));
 
 		itemPanel.add(infoPanel);
 
