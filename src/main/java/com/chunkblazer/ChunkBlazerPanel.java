@@ -2649,6 +2649,9 @@ public class ChunkBlazerPanel extends PluginPanel
 
 	private void updateSelectedTaskDisplay()
 	{
+		plugin.setSelectedTask(selectedTask);
+		// Inform the plugin of the current selection
+		// All assignments call to this function after so placing it here will catch all cases
 		if (selectedTask == null)
 		{
 			selectedTaskPanel.setVisible(false);
