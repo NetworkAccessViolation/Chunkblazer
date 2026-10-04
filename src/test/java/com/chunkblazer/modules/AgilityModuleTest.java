@@ -2,6 +2,8 @@ package com.chunkblazer.modules;
 
 import net.runelite.api.MenuAction;
 import net.runelite.api.Skill;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
@@ -214,6 +216,80 @@ class AgilityModuleTest extends AbstractTaskModuleTest
 
 		// Clean up so the next per-course test starts with no active task.
 		agilityModule.onTaskCleared();
+	}
+
+	/**
+	 * Dors' report: spam-clicking the Draynor crate mid-jump credited the lap 5 times.
+	 * Each click re-armed it and each animation frame confirmed it; one use is one credit,
+	 * and the next real lap still counts.
+	 */
+	@Test
+	void spamClickLaps()
+	{
+		NuzlockeTask task = createTaskWithRequiredObject("Draynor Laps", "complete_draynor_roof", "AGILITY", 18,
+			Collections.singletonList(DRAYNOR_LAP_END));
+		task.setHasRequiredObject(true);
+		agilityModule.addActiveTask(task);
+
+		jumpAt(100, 827);
+		for (int frame = 1; frame <= 4; frame++)
+		{
+			jumpAt(100 + frame, 827 + frame); // spam click, next frame of the same jump
+		}
+		assertEquals(1, task.getCurrentProgress());
+
+		jumpAt(160, 827); // the next lap, a minute later
+		assertEquals(2, task.getCurrentProgress());
+	}
+
+	@Test
+	void lapMessageParsed()
+	{
+		NuzlockeTask task = new com.google.gson.Gson().fromJson(
+			"{\"taskID\":\"complete_draynor_roof\",\"lap_message\":\"Draynor Village Rooftop\"}", NuzlockeTask.class);
+		assertEquals("Draynor Village Rooftop", task.getLapMessage());
+	}
+
+	/**
+	 * Course tasks count laps from "Your <course> lap count is: N.". The first lap's
+	 * click and message are one lap; once the message is proven, clicks stop counting.
+	 */
+	@Test
+	void lapMessageCountsLaps()
+	{
+		NuzlockeTask task = createTaskWithRequiredObject("Draynor Laps", "complete_draynor_roof", "AGILITY", 18,
+			Collections.singletonList(DRAYNOR_LAP_END));
+		task.setHasRequiredObject(true);
+		task.setLapMessage("Draynor Village Rooftop");
+		agilityModule.addActiveTask(task);
+
+		jumpAt(100, 827);
+		lapMessageAt(103, "Draynor Village Rooftop", 5);
+		assertEquals(1, task.getCurrentProgress());
+
+		jumpAt(160, 827);
+		assertEquals(1, task.getCurrentProgress());
+		lapMessageAt(163, "Draynor Village Rooftop", 6);
+		assertEquals(2, task.getCurrentProgress());
+
+		lapMessageAt(200, "Canifis Rooftop", 3);
+		assertEquals(2, task.getCurrentProgress());
+	}
+
+	private void lapMessageAt(int tick, String course, int laps)
+	{
+		lenient().when(client.getTickCount()).thenReturn(tick);
+		ChatMessage msg = mock(ChatMessage.class);
+		when(msg.getType()).thenReturn(ChatMessageType.GAMEMESSAGE);
+		when(msg.getMessage()).thenReturn("Your " + course + " lap count is: <col=ff0000>" + laps + "</col>.");
+		agilityModule.onChatMessage(msg);
+	}
+
+	private void jumpAt(int tick, int animation)
+	{
+		lenient().when(client.getTickCount()).thenReturn(tick);
+		agilityModule.onMenuOptionClicked(mockObjectClick(DRAYNOR_LAP_END, MenuAction.GAME_OBJECT_FIRST_OPTION));
+		simulatePlayerAnimation(animation);
 	}
 
 	/**

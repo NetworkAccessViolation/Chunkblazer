@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -41,12 +43,14 @@ import net.runelite.api.MenuAction;
 import net.runelite.api.Player;
 import net.runelite.api.Skill;
 import net.runelite.api.events.AnimationChanged;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.util.Text;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.RequiredObject;
 
@@ -97,6 +101,13 @@ public class AgilityModule extends AbstractTaskModule
 	// produces an animation/XP), never credits.
 	private static final int TRAVERSAL_TIMEOUT_TICKS = 12;
 
+	// Once an obstacle is credited it can't credit again for this long. Spam-clicking
+	// an obstacle mid-use re-arms the click, and each frame of a multi-part jump then
+	// confirmed another credit (Draynor crate: 5 credits for one lap, Dors 2026-10-04).
+	// One use is a few ticks; using the same obstacle again for real (next lap, or a
+	// shortcut and back) takes longer than this.
+	private static final int REUSE_COOLDOWN_TICKS = 10;
+
 	// Menu-option verbs that indicate an agility obstacle / shortcut interaction.
 	// Used only by the diagnostic logger to filter the firehose of GameObject
 	// clicks down to agility-relevant ones, so we can surface the REAL runtime
@@ -134,6 +145,18 @@ public class AgilityModule extends AbstractTaskModule
 	private int pendingObjectId = -1;
 	private int pendingTick = -1;
 
+	// Obstacle id -> tick it was last credited (see REUSE_COOLDOWN_TICKS).
+	private final Map<Integer, Integer> lastCreditTick = new ConcurrentHashMap<>();
+
+	// Course tasks (lap_message set) count a lap from the game's "Your <course> lap count
+	// is: N." message, which arrives exactly once per finished lap. Until a course's
+	// message has been seen this session, its lap-end click still counts as a fallback,
+	// and the click and the message for the same lap only count once.
+	private static final Pattern LAP_COUNT = Pattern.compile("^Your (.+) lap count is: [0-9,]+\\.?$");
+	private static final int LAP_DEDUPE_TICKS = 10;
+	private final Map<String, Integer> lapCreditTick = new ConcurrentHashMap<>();
+	private final Set<String> lapMessageSeen = ConcurrentHashMap.newKeySet();
+
 
 	@Inject
 	public AgilityModule()
@@ -168,6 +191,9 @@ public class AgilityModule extends AbstractTaskModule
 		watchedObjectIds.clear();
 		pendingObjectId = -1;
 		pendingTick = -1;
+		lastCreditTick.clear();
+		lapCreditTick.clear();
+		lapMessageSeen.clear();
 	}
 
 	@Override
@@ -362,14 +388,67 @@ public class AgilityModule extends AbstractTaskModule
 		pendingObjectId = -1;
 		pendingTick = -1;
 
+		int now = client.getTickCount();
+		Integer last = lastCreditTick.get(obj);
+		// now < last: the tick counter restarted (relog), so the old credit doesn't count.
+		if (last != null && now >= last && now - last < REUSE_COOLDOWN_TICKS)
+		{
+			return; // the same use, confirmed again by a spam click
+		}
+		lastCreditTick.put(obj, now);
+
 		for (NuzlockeTask task : new HashSet<>(activeTasks))
 		{
 			Set<Integer> taskObjects = taskRequiredObjectIds.get(task.getTaskId());
-			if (taskObjects != null && taskObjects.contains(obj))
+			if (taskObjects == null || !taskObjects.contains(obj))
+			{
+				continue;
+			}
+			if (task.getLapMessage() == null)
 			{
 				creditTaskProgress(task, 1);
 			}
+			else if (!lapMessageSeen.contains(task.getLapMessage().toLowerCase()))
+			{
+				creditLap(task); // fallback until this course's lap message shows up
+			}
 		}
+	}
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (event.getType() != ChatMessageType.GAMEMESSAGE || activeTasks.isEmpty())
+		{
+			return;
+		}
+		Matcher m = LAP_COUNT.matcher(Text.removeTags(event.getMessage()));
+		if (!m.matches())
+		{
+			return;
+		}
+		String course = m.group(1);
+		for (NuzlockeTask task : new HashSet<>(activeTasks))
+		{
+			if (course.equalsIgnoreCase(task.getLapMessage()))
+			{
+				lapMessageSeen.add(course.toLowerCase());
+				creditLap(task);
+			}
+		}
+	}
+
+	/** One credit per lap, however many signals (click, lap message) report it. */
+	private void creditLap(NuzlockeTask task)
+	{
+		int now = client.getTickCount();
+		Integer last = lapCreditTick.get(task.getTaskId());
+		if (last != null && now >= last && now - last < LAP_DEDUPE_TICKS)
+		{
+			return;
+		}
+		lapCreditTick.put(task.getTaskId(), now);
+		creditTaskProgress(task, 1);
 	}
 
 	@Subscribe

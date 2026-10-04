@@ -148,6 +148,11 @@ public class NuzlockeTask
 	@SerializedName("target_npc")
 	private TargetNpc targetNpc;
 
+	// Agility course tasks: the course name in the game's "Your <name> lap count is: N."
+	// message, e.g. "Draynor Village Rooftop". Each such message is one finished lap.
+	@SerializedName("lap_message")
+	private String lapMessage;
+
 	private TaskConstraints constraints;
 
 	// DEPRECATED top-level mirrors of varbit_boolean and varbit_bit. The
@@ -270,6 +275,7 @@ public class NuzlockeTask
 			task.setTaskId(getStringOrNull(obj, "taskID"));
 			task.setCategory(getStringOrNull(obj, "category"));
 			task.setDescription(getStringOrNull(obj, "description"));
+			task.setLapMessage(getStringOrNull(obj, "lap_message"));
 			task.setCompletionType(getStringOrNull(obj, "completion_type"));
 
 			// Integer fields (with null checks)

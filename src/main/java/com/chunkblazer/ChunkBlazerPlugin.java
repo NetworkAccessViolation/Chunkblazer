@@ -5217,8 +5217,19 @@ public class ChunkBlazerPlugin extends Plugin
 		// Get tasks already rolled for this region
 		Set<String> alreadyRolledForThisRegion = getRolledTasksForRegion(regionId);
 
-		// Get ALL globally assigned tasks (tasks assigned in ANY region)
-		Set<String> globallyAssignedTasks = getAssignedTaskIds();
+		// Tasks already out in ANY region (active or still face-down) can't be rolled again.
+		// Many tasks share an id across chunks ("Mine some Coal"), and the old guard read
+		// assignedTasks, which only the legacy single-task system writes, so a second chunk
+		// could roll the same task: it merged into the existing one and left that chunk a
+		// task short forever (Blade Laser, 2026-10-04). Completed tasks are excluded below.
+		Set<String> globallyAssignedTasks = new HashSet<>(getAssignedTaskIds());
+		for (String tasks : parseRollBlob(acStr("regionRolledTasks", "")).values())
+		{
+			for (String id : tasks.split(","))
+			{
+				globallyAssignedTasks.add(id.trim());
+			}
+		}
 
 		// Get all completed task IDs - completed tasks must never re-roll into the active list
 		Set<String> completedTaskIds = getCompletedTaskIds();
