@@ -685,6 +685,8 @@ public class ChunkBlazerPlugin extends Plugin
 			pendingNuzlockeSnapshot = null;
 			pendingCompetitiveLock = false;
 			panel.hideVerificationPrompt();
+			// After the logout sync above has been built from the old task data.
+			reloadCatalogIfNewer();
 			// Refresh the side panel into its logged-out state (gates the
 			// gameplay sections behind being in-game).
 			panel.updatePanel();
@@ -1251,8 +1253,32 @@ public class ChunkBlazerPlugin extends Plugin
 		return catalogStore != null ? catalogStore.getFileContent(filename) : null;
 	}
 
+	// Catalog version the task data below was parsed from; see reloadCatalogIfNewer().
+	private volatile long parsedCatalogVersion;
+
+	/**
+	 * Re-read the task data if the catalog store now holds a newer catalog than the
+	 * one parsed (a background refresh downloaded a fix). Only called from the login
+	 * screen: no account is loaded there, and the next login rebuilds the active tasks
+	 * from the fresh data, so a catalog fix lands after a logout instead of a restart.
+	 */
+	boolean reloadCatalogIfNewer()
+	{
+		long available = catalogStore != null ? catalogStore.getCatalogVersion() : 0;
+		if (available <= parsedCatalogVersion)
+		{
+			return false;
+		}
+		log.info("[CHUNKBLAZER] applying task catalog v{} (was v{})", available, parsedCatalogVersion);
+		loadChunkData();
+		return true;
+	}
+
 	private void loadChunkData()
 	{
+		// Read the version BEFORE the files: if a refresh lands mid-parse, the older
+		// number just means the next login screen reloads again.
+		parsedCatalogVersion = catalogStore != null ? catalogStore.getCatalogVersion() : 0;
 		allChunks.clear();
 		chunksByRegionId.clear();
 

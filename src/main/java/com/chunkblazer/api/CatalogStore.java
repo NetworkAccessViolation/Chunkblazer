@@ -226,12 +226,16 @@ public class CatalogStore
 			log.error("Task catalog: no cache and no seed available");
 		}
 
-		// Async refresh for NEXT launch. Never blocks startup; never re-parses the
-		// running task set.
+		// Async refresh. Never blocks startup and never re-parses the running task
+		// set itself; the plugin picks up a newer catalog at the login screen.
 		refreshExecutor.execute(this::refreshCatalog);
 	}
 
-	/** Build version of the currently-loaded catalog (from _meta.json), 0 if unversioned. */
+	/**
+	 * Build version of the catalog this store now serves (from _meta.json), 0 if
+	 * unversioned. A successful refresh raises it, which is how the plugin knows to
+	 * re-read its task data.
+	 */
 	public long getCatalogVersion()
 	{
 		return loadedVersion;
@@ -430,7 +434,8 @@ public class CatalogStore
 				return;
 			}
 
-			// Only a valid, complete 200 rewrites the cache. Takes effect NEXT launch.
+			// Only a valid, complete 200 rewrites the cache. The plugin re-reads it at
+			// the next login screen (or next launch).
 			writeAtomic(catalogFile, json.getBytes(StandardCharsets.UTF_8));
 			String newEtag = resp.header("ETag");
 			if (newEtag != null)
@@ -439,8 +444,9 @@ public class CatalogStore
 			}
 			this.files = fresh;
 			this.loaded = true;
-			log.info("Task catalog refreshed from server ({} files, v{}), applies next launch",
-				fresh.size(), versionOf(fresh));
+			this.loadedVersion = versionOf(fresh);
+			log.info("Task catalog refreshed from server ({} files, v{}), applies at the login screen",
+				fresh.size(), loadedVersion);
 		}
 		catch (IOException e)
 		{
