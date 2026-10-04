@@ -798,7 +798,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		panel.add(Box.createVerticalStrut(3));
 		WrappingTextLabel comp = new WrappingTextLabel(
-			"Note that Competitive mode requires a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.",
+			"Competitive mode requires a new Ironman, Hardcore Ironman, or Ultimate Ironman account with combat level 9 or lower and no skill above level 3.",
 			FontManager.getRunescapeSmallFont(), new Color(255, 190, 60), TASK_TEXT_WRAP_WIDTH);
 		comp.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(comp);
@@ -2178,7 +2178,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		modePanel.add(Box.createVerticalStrut(5));
 
 		nuzlockeRadio = new JRadioButton("Competitive");
-		nuzlockeRadio.setToolTipText("Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.");
+		nuzlockeRadio.setToolTipText("Featured on the main page of the leaderboard and website. You must start on a new Ironman, Hardcore Ironman or Ultimate Ironman account (combat level 9 or lower).");
 		nuzlockeRadio.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		nuzlockeRadio.setForeground(Color.WHITE);
 		nuzlockeRadio.setAlignmentX(LEFT_ALIGNMENT);
@@ -2186,7 +2186,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		modePanel.add(nuzlockeRadio);
 
 		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
-			+ "Featured on the main page of the leaderboard and website. You must start on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account."
+			+ "Featured on the main page of the leaderboard and website. You must start on a new Ironman, Hardcore Ironman or Ultimate Ironman account (combat level 9 or lower)."
 			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
 		modePanel.add(Box.createVerticalStrut(10));
 
