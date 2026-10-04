@@ -4745,6 +4745,7 @@ public class ChunkBlazerPlugin extends Plugin
 		migrateRepairBogusProgressionBaseline();
 		migrateResetStaleSoundVolume();
 		ensureBossChunkTasksGranted();
+		replaceRetiredTasks();
 
 		activeTasks.clear();
 		taskModuleManager.clearTask(); // Clear module state to prevent duplicates
@@ -5316,6 +5317,95 @@ public class ChunkBlazerPlugin extends Plugin
 	 * Select a random task using weighted probability based on assignment_weight.
 	 * Higher weight = higher chance of being selected.
 	 */
+	/**
+	 * Swap any retired task ("is_unlocked": false) the player never finished for another
+	 * task from the same chunk, so retiring a broken task doesn't leave their chunk a task
+	 * short. If the chunk has nothing left to give, the retired task is just dropped. The
+	 * server accepts exactly this swap into a committed roll (acceptRetiredSwap).
+	 */
+	private void replaceRetiredTasks()
+	{
+		if (!canRollMissing())
+		{
+			return; // a server roll may still be on its way
+		}
+		Map<String, String> roll = parseRollBlob(acStr("regionRolledTasks", ""));
+		Set<String> completed = getCompletedTaskIds();
+		Set<String> rolledAnywhere = new HashSet<>();
+		for (String tasks : roll.values())
+		{
+			for (String id : tasks.split(","))
+			{
+				rolledAnywhere.add(id.trim());
+			}
+		}
+
+		List<String> retiredIds = new ArrayList<>();
+		for (Map.Entry<String, String> entry : roll.entrySet())
+		{
+			NuzlockeChunk chunk;
+			try
+			{
+				chunk = chunksByRegionId.get(Integer.parseInt(entry.getKey()));
+			}
+			catch (NumberFormatException e)
+			{
+				continue;
+			}
+			if (chunk == null || chunk.getTasks() == null)
+			{
+				continue;
+			}
+			List<String> ids = new ArrayList<>();
+			boolean regionChanged = false;
+			for (String raw : entry.getValue().split(","))
+			{
+				String id = raw.trim();
+				NuzlockeTask task = chunk.getTasks().stream()
+					.filter(t -> id.equals(t.getTaskId())).findFirst().orElse(null);
+				if (task == null || !task.isLocked() || completed.contains(id))
+				{
+					ids.add(id);
+					continue;
+				}
+				List<NuzlockeTask> pool = chunk.getTasks().stream()
+					.filter(t -> !t.isLocked() && !completed.contains(t.getTaskId())
+						&& !rolledAnywhere.contains(t.getTaskId()))
+					.collect(Collectors.toList());
+				NuzlockeTask pick = selectWeightedRandom(pool);
+				if (pick != null)
+				{
+					ids.add(pick.getTaskId());
+					rolledAnywhere.add(pick.getTaskId());
+					addPluginChatMessage(task.getName() + " was retired, so " + chunk.getName()
+						+ " gave you " + pick.getName() + " instead.");
+				}
+				else
+				{
+					addPluginChatMessage(task.getName() + " was retired. " + chunk.getName()
+						+ " has no other tasks left to give.");
+				}
+				retiredIds.add(id);
+				regionChanged = true;
+			}
+			if (regionChanged)
+			{
+				entry.setValue(String.join(",", ids));
+			}
+		}
+
+		if (!retiredIds.isEmpty())
+		{
+			setAccountState("regionRolledTasks", serializeRollBlob(roll));
+			List<String> cards = getUnrevealedTaskIds();
+			if (cards.removeAll(retiredIds))
+			{
+				setAccountState("unrevealedTasks", String.join(",", cards));
+			}
+			log.info("[CHUNKBLAZER] replaced retired task(s) {}", retiredIds);
+		}
+	}
+
 	private NuzlockeTask selectWeightedRandom(List<NuzlockeTask> tasks)
 	{
 		if (tasks.isEmpty())

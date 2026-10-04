@@ -26,15 +26,20 @@
 
 package com.chunkblazer;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,17 +47,19 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-/** A chunk never rolls a task that's already out (active or face-down) in another chunk. */
+/** A retired task the player never finished is swapped for another task from the same chunk. */
 @ExtendWith(MockitoExtension.class)
-class DuplicateRollTest
+class RetiredReplaceTest
 {
-	private static final int CHUNK_A = 12341;
-	private static final int CHUNK_B = 12342;
+	private static final int MANOR = 12340;
+	private static final String SKELETON = "defeat_draynor_manor_skeleton";
 
 	@Mock
 	private ChunkBlazerConfig config;
 	@Mock
 	private ConfigManager configManager;
+	@Mock
+	private ClientThread clientThread;
 
 	private ChunkBlazerPlugin plugin;
 	private Map<String, String> state;
@@ -63,74 +70,91 @@ class DuplicateRollTest
 		plugin = new ChunkBlazerPlugin();
 		set(plugin, "config", config);
 		set(plugin, "configManager", configManager);
+		set(plugin, "clientThread", clientThread);
 		state = RsProfileTestSupport.install(configManager, config);
-		chunks().put(CHUNK_A, chunk("mine_coal"));
-		chunks().put(CHUNK_B, chunk("mine_coal", "mine_iron", "mine_tin", "mine_clay", "mine_copper", "mine_silver"));
+		manor(SKELETON, "defeat_a_ghost", "defeat_rats", "defeat_count_draynor");
 	}
 
 	@Test
-	void sharedTaskNotRolledTwice() throws Exception
+	void retiredSwappedForSameChunk() throws Exception
 	{
-		for (int i = 0; i < 30; i++)
-		{
-			state.put("regionRolledTasks", CHUNK_A + ":mine_coal");
-			Set<String> rolled = roll(CHUNK_B);
-			assertFalse(rolled.isEmpty());
-			assertFalse(rolled.contains("mine_coal"), "chunk B re-rolled chunk A's coal task: " + rolled);
-		}
+		state.put("regionRolledTasks", MANOR + ":" + SKELETON + ",defeat_a_ghost");
+		state.put("unrevealedTasks", SKELETON);
+		replace();
+		Set<String> rolled = rolled();
+		assertFalse(rolled.contains(SKELETON));
+		assertTrue(rolled.contains("defeat_a_ghost"));
+		assertEquals(2, rolled.size());
+		assertEquals("", state.get("unrevealedTasks"));
 	}
 
 	@Test
-	void onlySharedTaskLeavesNothing() throws Exception
+	void completedRetiredLeftAlone() throws Exception
 	{
-		chunks().put(CHUNK_B, chunk("mine_coal"));
-		state.put("regionRolledTasks", CHUNK_A + ":mine_coal");
-		assertTrue(roll(CHUNK_B).isEmpty());
+		state.put("regionRolledTasks", MANOR + ":" + SKELETON + ",defeat_a_ghost");
+		when(config.completedTasks()).thenReturn(SKELETON);
+		replace();
+		assertTrue(rolled().contains(SKELETON));
 	}
 
-	/** A retired task ("is_unlocked": false, e.g. the Draynor Manor Skeleton) is never rolled. */
 	@Test
-	void retiredTaskNeverRolled() throws Exception
+	void nothingLeftJustDrops() throws Exception
 	{
-		NuzlockeChunk manor = chunk("defeat_draynor_manor_skeleton", "defeat_a_ghost");
-		manor.getTasks().get(0).setIsUnlocked(false);
-		chunks().put(CHUNK_B, manor);
+		manor(SKELETON, "defeat_a_ghost");
+		state.put("regionRolledTasks", MANOR + ":" + SKELETON + ",defeat_a_ghost");
+		replace();
+		assertEquals(new HashSet<>(Arrays.asList("defeat_a_ghost")), rolled());
+	}
+
+	@Test
+	void replacementNotOutElsewhere() throws Exception
+	{
 		for (int i = 0; i < 20; i++)
 		{
-			state.put("regionRolledTasks", "");
-			assertFalse(roll(CHUNK_B).contains("defeat_draynor_manor_skeleton"));
+			state.put("regionRolledTasks", "12339:defeat_rats|" + MANOR + ":" + SKELETON + ",defeat_a_ghost");
+			replace();
+			assertTrue(rolled().contains("defeat_count_draynor"), "only Count Draynor is free: " + rolled());
 		}
+	}
+
+	private Set<String> rolled()
+	{
+		String blob = state.get("regionRolledTasks");
+		for (String entry : blob.split("\\|"))
+		{
+			if (entry.startsWith(MANOR + ":"))
+			{
+				return new HashSet<>(Arrays.asList(entry.substring(entry.indexOf(':') + 1).split(",")));
+			}
+		}
+		return new HashSet<>();
+	}
+
+	private void replace() throws Exception
+	{
+		Method m = ChunkBlazerPlugin.class.getDeclaredMethod("replaceRetiredTasks");
+		m.setAccessible(true);
+		m.invoke(plugin);
 	}
 
 	@SuppressWarnings("unchecked")
-	private Set<String> roll(int region) throws Exception
-	{
-		Method m = ChunkBlazerPlugin.class.getDeclaredMethod("rollTasksForRegion", int.class, boolean.class, boolean.class);
-		m.setAccessible(true);
-		return (Set<String>) m.invoke(plugin, region, false, false);
-	}
-
-	private static NuzlockeChunk chunk(String... taskIds) throws Exception
+	private void manor(String... taskIds) throws Exception
 	{
 		List<NuzlockeTask> tasks = new ArrayList<>();
 		for (String id : taskIds)
 		{
 			NuzlockeTask t = new NuzlockeTask();
 			t.setTaskId(id);
+			t.setName(id);
+			t.setIsUnlocked(!id.equals(SKELETON));
 			set(t, "assignmentWeight", 8);
 			tasks.add(t);
 		}
 		NuzlockeChunk c = new NuzlockeChunk();
 		set(c, "tasks", tasks);
-		return c;
-	}
-
-	@SuppressWarnings("unchecked")
-	private Map<Integer, NuzlockeChunk> chunks() throws Exception
-	{
 		Field f = ChunkBlazerPlugin.class.getDeclaredField("chunksByRegionId");
 		f.setAccessible(true);
-		return (Map<Integer, NuzlockeChunk>) f.get(plugin);
+		((Map<Integer, NuzlockeChunk>) f.get(plugin)).put(MANOR, c);
 	}
 
 	private static void set(Object target, String name, Object value) throws Exception
