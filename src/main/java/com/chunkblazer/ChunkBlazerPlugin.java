@@ -106,14 +106,14 @@ import com.chunkblazer.verification.VarPlayerVerificationService;
 
 @Slf4j
 @PluginDescriptor(
-		name = "ChunkBlazer",
-		description = "A Nuzlocke Chunk Unlocker Plugin with RNG Task Assignment",
-		tags = {"chunk", "chunkblazer", "nuzlocke", "challenge", "task"},
-		// Roots getPluginDirectory() at .runelite/plugin-data/chunkblazer. legacy dir
-		// moves the old .runelite/chunkblazer cache over on first run, so existing
-		// users keep their downloaded catalog + audio.
-		internalName = "chunkblazer",
-		legacyDataDirectory = "chunkblazer"
+	name = "ChunkBlazer",
+	description = "A Nuzlocke Chunk Unlocker Plugin with RNG Task Assignment",
+	tags = {"chunk", "chunkblazer", "nuzlocke", "challenge", "task"},
+	// Roots getPluginDirectory() at .runelite/plugin-data/chunkblazer. legacy dir
+	// moves the old .runelite/chunkblazer cache over on first run, so existing
+	// users keep their downloaded catalog + audio.
+	internalName = "chunkblazer",
+	legacyDataDirectory = "chunkblazer"
 )
 public class ChunkBlazerPlugin extends Plugin
 {
@@ -423,7 +423,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// Schedule periodic server save-state sync. First run is delayed by one
 		// interval so we don't race the login flow on plugin startup.
 		syncFuture = executorService.scheduleAtFixedRate(
-				this::syncToServer, SYNC_INTERVAL_SECONDS, SYNC_INTERVAL_SECONDS, TimeUnit.SECONDS);
+			this::syncToServer, SYNC_INTERVAL_SECONDS, SYNC_INTERVAL_SECONDS, TimeUnit.SECONDS);
 
 		// Create and register the sidebar panel
 		panel = new ChunkBlazerPanel();
@@ -433,11 +433,11 @@ public class ChunkBlazerPlugin extends Plugin
 		BufferedImage icon = ImageUtil.loadImageResource(getClass(), "icon.png");
 
 		navButton = NavigationButton.builder()
-				.tooltip("ChunkBlazer")
-				.icon(icon)
-				.priority(8)
-				.panel(panel)
-				.build();
+			.tooltip("ChunkBlazer")
+			.icon(icon)
+			.priority(8)
+			.panel(panel)
+			.build();
 
 		clientToolbar.addNavigation(navButton);
 
@@ -625,28 +625,28 @@ public class ChunkBlazerPlugin extends Plugin
 			// read EMPTY and push it over the server record. Skipping a logout sync loses at
 			// most one unsynced session (re-synced next login); pushing empty is unrecoverable.
 			PlayerSyncRequest finalSync = (serverStateMerged && isAccountStateAvailable())
-					? buildSyncRequest() : null;
+				? buildSyncRequest() : null;
 			if (finalSync != null && config.apiEnabled())
 			{
 				apiClient.syncPlayerState(finalSync)
-						.thenAccept(resp ->
-						{
-							log.info("Logout sync: success={}", resp != null && resp.isSuccess());
-							recordServerOutcome(resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome(),
-									resp == null ? 0 : resp.getRetryAfterMs());
-						});
+					.thenAccept(resp ->
+					{
+						log.info("Logout sync: success={}", resp != null && resp.isSuccess());
+						recordServerOutcome(resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome(),
+							resp == null ? 0 : resp.getRetryAfterMs());
+					});
 			}
 			else if (!serverStateMerged)
 			{
 				// Expected on any session that logs out before a server merge (e.g. the
 				// cold login screen), so this is normal bookkeeping, not a fault: debug.
 				log.debug("[CHUNKBLAZER] skipping logout sync, server state was never "
-						+ "merged this session, so local progress is not authoritative");
+					+ "merged this session, so local progress is not authoritative");
 			}
 			else
 			{
 				log.warn("[CHUNKBLAZER] skipping logout sync, RS profile already cleared, so "
-						+ "per-account state is unreadable and a sync would push empty over the record");
+					+ "per-account state is unreadable and a sync would push empty over the record");
 			}
 			activeTask = null;
 			lastRegionId = -1;
@@ -779,7 +779,7 @@ public class ChunkBlazerPlugin extends Plugin
 	void revokeSyncAuthorityForProfileSwitch()
 	{
 		log.info("[CHUNKBLAZER] RuneLite profile changed, revoking sync authority until "
-				+ "this profile has merged the server's record");
+			+ "this profile has merged the server's record");
 
 		serverStateMerged = false;
 		serverRollRestoreResolved = false;
@@ -834,7 +834,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			syncChoiceNoticeShown = true;
 			addPluginChatMessage("Open the ChunkBlazer panel and choose Enable Sync or Play offline "
-					+ "to get your starting tasks.");
+				+ "to get your starting tasks.");
 		}
 		// Then the mode, once per login, until one is locked. canRollMissing also means a
 		// server lock (new device) has already been adopted, so this can't misfire.
@@ -863,7 +863,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// unlockRegionFree is 0-cost; it rolls tasks for charter ports but skips
 			// rolling for free-list chunks (they have none).
 			if ((isCharterRegion(currentRegionId) || isFreeUnlockableRegion(currentRegionId))
-					&& !isRegionUnlocked(currentRegionId))
+				&& !isRegionUnlocked(currentRegionId))
 			{
 				unlockRegionFree(currentRegionId);
 				loadActiveTasks();
@@ -894,8 +894,8 @@ public class ChunkBlazerPlugin extends Plugin
 		// Check if this is a minimap-related menu
 		int componentId = event.getActionParam1();
 		if (componentId != InterfaceID.Toplevel.MINIMAP &&
-				componentId != InterfaceID.ToplevelOsrsStretch.MINIMAP &&
-				componentId != InterfaceID.ToplevelPreEoc.MINIMAP)
+			componentId != InterfaceID.ToplevelOsrsStretch.MINIMAP &&
+			componentId != InterfaceID.ToplevelPreEoc.MINIMAP)
 		{
 			return;
 		}
@@ -918,10 +918,10 @@ public class ChunkBlazerPlugin extends Plugin
 		int cost = getRegionUnlockCost(hoveredRegion);
 
 		client.createMenuEntry(-1)
-				.setOption("Unlock chunk")
-				.setTarget("<col=ffff00>" + regionName + "</col> (" + cost + " pts)")
-				.setType(MenuAction.RUNELITE)
-				.onClick(e -> showChatboxUnlockPopup(hoveredRegion));
+			.setOption("Unlock chunk")
+			.setTarget("<col=ffff00>" + regionName + "</col> (" + cost + " pts)")
+			.setType(MenuAction.RUNELITE)
+			.onClick(e -> showChatboxUnlockPopup(hoveredRegion));
 	}
 
 	/**
@@ -1161,7 +1161,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// interface default supplied it. Nothing is on disk, so external
 			// readers see an empty unlock set. Force the write.
 			log.debug("[CHUNKBLAZER] unlockedChunks absent from disk, seeding start region {}",
-					DEFAULT_START_REGION);
+				DEFAULT_START_REGION);
 			needsUpdate = true;
 		}
 
@@ -1203,26 +1203,26 @@ public class ChunkBlazerPlugin extends Plugin
 	// attributed to an area by filename. The former Lumbridge starter chunks now
 	// live at the top of Misthalin_Tasks.json like any other Misthalin chunk.
 	private static final String[] TASK_JSON_FILES = {
-			"Misthalin_Tasks.json",
-			"Asgarnia_Tasks.json",
-			"Kandarin_Tasks.json",
-			"Karamja_Tasks.json",
-			"Desert_Tasks.json",
-			"Varlamore_Tasks.json",
-			"Zeah_Tasks.json",
-			"Fremennik_Tasks.json",
-			"Tirannwn_Tasks.json",
-			"Morytania_Tasks.json",
-			"Wilderness_Tasks.json",
-			// Charter ports. Authored per-port in Tasks_JSON/Charter_Tasks_Folder and
-			// aggregated into this one file by build-charter-tasks.ps1. They're free +
-			// auto-unlocked via Free_Chunks.json (also generated by that script).
-			"Charter_Tasks.json",
-			// Boss chunks (raids / bosses). Authored per-boss in
-			// task-authoring/Boss_Task_Folder and aggregated into this file by
-			// build-task-catalog.ps1. Unlocked with Boss Tokens (not points); unlocking
-			// grants EVERY task at once. See docs/BOSS-CHUNKS.md.
-			"Boss_Tasks.json"
+		"Misthalin_Tasks.json",
+		"Asgarnia_Tasks.json",
+		"Kandarin_Tasks.json",
+		"Karamja_Tasks.json",
+		"Desert_Tasks.json",
+		"Varlamore_Tasks.json",
+		"Zeah_Tasks.json",
+		"Fremennik_Tasks.json",
+		"Tirannwn_Tasks.json",
+		"Morytania_Tasks.json",
+		"Wilderness_Tasks.json",
+		// Charter ports. Authored per-port in Tasks_JSON/Charter_Tasks_Folder and
+		// aggregated into this one file by build-charter-tasks.ps1. They're free +
+		// auto-unlocked via Free_Chunks.json (also generated by that script).
+		"Charter_Tasks.json",
+		// Boss chunks (raids / bosses). Authored per-boss in
+		// task-authoring/Boss_Task_Folder and aggregated into this file by
+		// build-task-catalog.ps1. Unlocked with Boss Tokens (not points); unlocking
+		// grants EVERY task at once. See docs/BOSS-CHUNKS.md.
+		"Boss_Tasks.json"
 	};
 
 	// The single free chunk every new game starts with (Lumbridge). Auto-unlocked
@@ -1292,7 +1292,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 						// Extract area name from filename (e.g., "Misthalin_Tasks.json" -> "Misthalin")
 						String areaName = jsonFile.replace("_Tasks.json", "")
-								.replace("_", " ");
+							.replace("_", " ");
 
 						// Add chunks and build mappings
 						for (NuzlockeChunk chunk : chunks)
@@ -1667,7 +1667,7 @@ public class ChunkBlazerPlugin extends Plugin
 		completeTasks(backfilled);
 
 		addPluginChatMessage("Global Tasks: " + backfilled.size()
-				+ " already complete (+" + backfilledPoints + " points).");
+			+ " already complete (+" + backfilledPoints + " points).");
 	}
 
 	// --- Progression baseline ---------------------------------------------
@@ -1930,7 +1930,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 
 		setAccountState("progressionBaseline",
-				owner + BASELINE_OWNER_SEP + sb);
+			owner + BASELINE_OWNER_SEP + sb);
 		cachedProgressionBaseline = baseline;
 		cachedBaselineOwner = owner;
 		log.info("[CHUNKBLAZER] Progression baseline captured for {}: {}", getPlayerName(), sb);
@@ -2027,14 +2027,14 @@ public class ChunkBlazerPlugin extends Plugin
 			// next login's union would restore them and re-trigger this repair on a
 			// loop.
 			declareIntentionalReset("progression baseline repair dropped "
-					+ removed + " progression task(s)");
+				+ removed + " progression task(s)");
 			setAccountState("completedTasks", String.join(",", keep));
 			addPoints(-refunded);
 			completedTaskCache.keySet().removeIf(id -> id.startsWith("progression_"));
 		}
 
 		log.warn("[CHUNKBLAZER] repaired a bogus all-zeros Progression baseline: "
-				+ "cleared baseline, un-completed {} progression tasks, refunded {} points", removed, refunded);
+			+ "cleared baseline, un-completed {} progression tasks, refunded {} points", removed, refunded);
 	}
 
 	/**
@@ -2128,7 +2128,7 @@ public class ChunkBlazerPlugin extends Plugin
 		try
 		{
 			return client.getRealSkillLevel(Skill.valueOf(c.getRequiredSkill().toUpperCase()))
-					>= c.getRequiredLevel();
+				>= c.getRequiredLevel();
 		}
 		catch (IllegalArgumentException e)
 		{
@@ -2152,7 +2152,7 @@ public class ChunkBlazerPlugin extends Plugin
 		try
 		{
 			return net.runelite.api.Quest.valueOf(questName).getState(client)
-					== net.runelite.api.QuestState.FINISHED;
+				== net.runelite.api.QuestState.FINISHED;
 		}
 		catch (IllegalArgumentException e)
 		{
@@ -2203,7 +2203,7 @@ public class ChunkBlazerPlugin extends Plugin
 					}
 					com.google.gson.JsonObject entry = el.getAsJsonObject();
 					String name = (entry.has("Friendly_Name") && !entry.get("Friendly_Name").isJsonNull())
-							? entry.get("Friendly_Name").getAsString() : null;
+						? entry.get("Friendly_Name").getAsString() : null;
 					List<Integer> neighborIds = new ArrayList<>();
 					if (entry.has("neighbor_ids") && entry.get("neighbor_ids").isJsonArray())
 					{
@@ -2339,39 +2339,39 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 
 			apiClient.checkNuzlockeEligibility(snapshot)
-					.thenAccept(resp ->
+				.thenAccept(resp ->
+				{
+					if (resp != null && resp.isEligible())
 					{
-						if (resp != null && resp.isEligible())
-						{
-							// Stash the snapshot; the chat-code handshake will commit
-							// the lock (re-sending it for the server to re-validate).
-							pendingNuzlockeSnapshot = snapshot;
-							startNuzlockeVerification();
-						}
-						else
-						{
-							pendingNuzlockeSnapshot = null;
+						// Stash the snapshot; the chat-code handshake will commit
+						// the lock (re-sending it for the server to re-validate).
+						pendingNuzlockeSnapshot = snapshot;
+						startNuzlockeVerification();
+					}
+					else
+					{
+						pendingNuzlockeSnapshot = null;
 
-							// Surface the server's specific reason. It already computes
-							// one ("Hitpoints must be level 10", "combat level must be
-							// 3 (yours is N)", …) and swallowing it left a genuinely
-							// fresh account with no way to tell a real disqualification
-							// from a bad reading — which is exactly the position we
-							// were in on 2026-07-21 with the account "ChunkBlazer".
-							String reason = resp != null ? resp.getReason() : null;
-							addPluginChatMessage("Sorry, your account does not meet the Competitive requirements, "
-									+ "please create a new account or play Casual Mode."
-									+ (reason == null || reason.isEmpty() ? "" : " (" + reason + ")"));
+						// Surface the server's specific reason. It already computes
+						// one ("Hitpoints must be level 10", "combat level must be
+						// 3 (yours is N)", …) and swallowing it left a genuinely
+						// fresh account with no way to tell a real disqualification
+						// from a bad reading — which is exactly the position we
+						// were in on 2026-07-21 with the account "ChunkBlazer".
+						String reason = resp != null ? resp.getReason() : null;
+						addPluginChatMessage("Sorry, your account does not meet the Competitive requirements, "
+							+ "please create a new account or play Casual Mode."
+							+ (reason == null || reason.isEmpty() ? "" : " (" + reason + ")"));
 
-							// Log what we actually SENT as well. If the reason looks
-							// wrong for the account, the snapshot is the thing to
-							// distrust — client-side reads can be unhydrated.
-							log.warn("[CHUNKBLAZER] Competitive eligibility refused: reason='{}' "
-											+ "submitted combat={} questPoints={} totalLevel={} skills={}",
-									reason, snapshot.getCombatLevel(), snapshot.getQuestPoints(),
-									snapshot.getTotalLevel(), snapshot.getSkills());
-						}
-					});
+						// Log what we actually SENT as well. If the reason looks
+						// wrong for the account, the snapshot is the thing to
+						// distrust — client-side reads can be unhydrated.
+						log.warn("[CHUNKBLAZER] Competitive eligibility refused: reason='{}' "
+								+ "submitted combat={} questPoints={} totalLevel={} skills={}",
+							reason, snapshot.getCombatLevel(), snapshot.getQuestPoints(),
+							snapshot.getTotalLevel(), snapshot.getSkills());
+					}
+				});
 		});
 	}
 
@@ -2393,12 +2393,12 @@ public class ChunkBlazerPlugin extends Plugin
 			skills.put(skill.name(), client.getRealSkillLevel(skill));
 		}
 		return EligibilitySnapshot.builder()
-				.combatLevel(local.getCombatLevel())
-				.questPoints(client.getVarpValue(VarPlayerID.QP))
-				.totalLevel(client.getTotalLevel())
-				.skills(skills)
-				.accountType(client.getVarbitValue(VarbitID.IRONMAN))
-				.build();
+			.combatLevel(local.getCombatLevel())
+			.questPoints(client.getVarpValue(VarPlayerID.QP))
+			.totalLevel(client.getTotalLevel())
+			.skills(skills)
+			.accountType(client.getVarbitValue(VarbitID.IRONMAN))
+			.build();
 	}
 
 	/**
@@ -2410,38 +2410,38 @@ public class ChunkBlazerPlugin extends Plugin
 	private void startNuzlockeVerification()
 	{
 		apiClient.verifyStart()
-				.thenAccept(start ->
+			.thenAccept(start ->
+			{
+				if (start == null)
 				{
-					if (start == null)
+					pendingNuzlockeSnapshot = null;
+					addPluginChatMessage("Couldn't reach the server to verify your account. Try again shortly.");
+					return;
+				}
+				if (start.isAlreadyVerified())
+				{
+					// RSN ownership already proven — commit the Nuzlocke lock now.
+					EligibilitySnapshot snap = pendingNuzlockeSnapshot;
+					pendingNuzlockeSnapshot = null;
+					if (snap != null)
 					{
-						pendingNuzlockeSnapshot = null;
-						addPluginChatMessage("Couldn't reach the server to verify your account. Try again shortly.");
-						return;
+						addPluginChatMessage("Your account meets the Competitive requirements. Locking it in!");
+						commitModeLock(GameMode.NUZLOCKE, snap);
 					}
-					if (start.isAlreadyVerified())
-					{
-						// RSN ownership already proven — commit the Nuzlocke lock now.
-						EligibilitySnapshot snap = pendingNuzlockeSnapshot;
-						pendingNuzlockeSnapshot = null;
-						if (snap != null)
-						{
-							addPluginChatMessage("Your account meets the Competitive requirements. Locking it in!");
-							commitModeLock(GameMode.NUZLOCKE, snap);
-						}
-						return;
-					}
-					if (start.getNonce() == null || start.getChatPhrase() == null)
-					{
-						pendingNuzlockeSnapshot = null;
-						addPluginChatMessage("Couldn't issue a verification code right now. Try again shortly.");
-						return;
-					}
-					String nonce = start.getNonce();
-					pendingVerificationNonce = nonce;
-					addPluginChatMessage("Your account meets the Competitive requirements! Type " + nonce
-							+ " in public chat and hit Enter to lock in Competitive.");
-					panel.showVerificationPrompt(nonce);
-				});
+					return;
+				}
+				if (start.getNonce() == null || start.getChatPhrase() == null)
+				{
+					pendingNuzlockeSnapshot = null;
+					addPluginChatMessage("Couldn't issue a verification code right now. Try again shortly.");
+					return;
+				}
+				String nonce = start.getNonce();
+				pendingVerificationNonce = nonce;
+				addPluginChatMessage("Your account meets the Competitive requirements! Type " + nonce
+					+ " in public chat and hit Enter to lock in Competitive.");
+				panel.showVerificationPrompt(nonce);
+			});
 	}
 
 	/**
@@ -2478,42 +2478,42 @@ public class ChunkBlazerPlugin extends Plugin
 		if (config.apiEnabled() && apiClient != null)
 		{
 			apiClient.lockGameMode(mode, eligibility)
-					.thenAccept(response ->
+				.thenAccept(response ->
+				{
+					if (response == null)
 					{
-						if (response == null)
+						if (mode == GameMode.NUZLOCKE)
 						{
-							if (mode == GameMode.NUZLOCKE)
-							{
-								addPluginChatMessage("Couldn't reach the server to confirm Competitive. Staying on Casual, try again later.");
-							}
-							return;
+							addPluginChatMessage("Couldn't reach the server to confirm Competitive. Staying on Casual, try again later.");
 						}
-						if (response.isSuccess())
+						return;
+					}
+					if (response.isSuccess())
+					{
+						if (mode == GameMode.NUZLOCKE)
 						{
-							if (mode == GameMode.NUZLOCKE)
-							{
-								// Server confirmed eligibility — now it is safe to persist.
-								setAccountState("accountModeHash", modeKey);
-								setAccountState("gameMode", mode);
-								addPluginChatMessage("Competitive locked in. Good luck, there's no going back!");
-							}
+							// Server confirmed eligibility — now it is safe to persist.
+							setAccountState("accountModeHash", modeKey);
+							setAccountState("gameMode", mode);
+							addPluginChatMessage("Competitive locked in. Good luck, there's no going back!");
 						}
-						else if (response.isAlreadyLocked())
+					}
+					else if (response.isAlreadyLocked())
+					{
+						log.warn("Server already had a locked mode: {}", response.getGameModeEnum());
+					}
+					else
+					{
+						// Rejected (e.g. eligibility_required for a non-fresh account).
+						// Never leave a local Competitive lock the server won't honor.
+						if (mode == GameMode.NUZLOCKE)
 						{
-							log.warn("Server already had a locked mode: {}", response.getGameModeEnum());
+							addPluginChatMessage("Competitive was declined by the server. Your account isn't eligible, so you're staying on Casual.");
 						}
-						else
-						{
-							// Rejected (e.g. eligibility_required for a non-fresh account).
-							// Never leave a local Competitive lock the server won't honor.
-							if (mode == GameMode.NUZLOCKE)
-							{
-								addPluginChatMessage("Competitive was declined by the server. Your account isn't eligible, so you're staying on Casual.");
-							}
-							log.warn("Server lock-mode response: status={} message={}",
-									response.getStatus(), response.getMessage());
-						}
-					});
+						log.warn("Server lock-mode response: status={} message={}",
+							response.getStatus(), response.getMessage());
+					}
+				});
 		}
 		else if (mode == GameMode.NUZLOCKE)
 		{
@@ -2601,7 +2601,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// union would restore them locally, and the strip would silently undo
 			// itself permanently rather than retrying.
 			declareIntentionalReset("charter seed strip removed "
-					+ removed + " charter chunk(s)");
+				+ removed + " charter chunk(s)");
 			setAccountState("unlockedChunks", String.join(",", kept));
 		}
 		configManager.setConfiguration("chunkblazer", CHARTER_SEED_STRIPPED_KEY, "true");
@@ -2632,7 +2632,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// default changes carry through, and so this reads as "never chosen".
 			configManager.unsetConfiguration(CONFIG_GROUP, "taskCompletionSoundVolume");
 			log.info("[CHUNKBLAZER] cleared stale {}% task-sound volume; now uses the 3% default",
-					OLD_DEFAULT_SOUND_VOLUME);
+				OLD_DEFAULT_SOUND_VOLUME);
 		}
 		configManager.setConfiguration(CONFIG_GROUP, SOUND_VOLUME_MIGRATED_KEY, "true");
 	}
@@ -2662,9 +2662,9 @@ public class ChunkBlazerPlugin extends Plugin
 	private String hashRsn(String rsn)
 	{
 		return Hashing.sha256()
-				.hashString(rsn.toLowerCase().trim(), StandardCharsets.UTF_8)
-				.toString()
-				.substring(0, 16);
+			.hashString(rsn.toLowerCase().trim(), StandardCharsets.UTF_8)
+			.toString()
+			.substring(0, 16);
 	}
 
 	/**
@@ -2675,8 +2675,8 @@ public class ChunkBlazerPlugin extends Plugin
 	private String fullHashRsn(String rsn)
 	{
 		return Hashing.sha256()
-				.hashString(rsn.toLowerCase().trim(), StandardCharsets.UTF_8)
-				.toString();
+			.hashString(rsn.toLowerCase().trim(), StandardCharsets.UTF_8)
+			.toString();
 	}
 
 	/**
@@ -2759,110 +2759,110 @@ public class ChunkBlazerPlugin extends Plugin
 		// with the copy it persisted, not one re-fetched every login.
 		loadPersistedApiKey();
 		apiClient.login(rsn, fullHashRsn(rsn))
-				.thenAccept(resp ->
+			.thenAccept(resp ->
+			{
+				ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
+				recordServerOutcome(outcome, resp == null ? 0 : resp.getRetryAfterMs());
+				if (outcome == ApiOutcome.REGISTRATION_CLOSED && !rsn.equals(registrationClosedRsn))
 				{
-					ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
-					recordServerOutcome(outcome, resp == null ? 0 : resp.getRetryAfterMs());
-					if (outcome == ApiOutcome.REGISTRATION_CLOSED && !rsn.equals(registrationClosedRsn))
+					registrationClosedRsn = rsn;
+					log.info("[CHUNKBLAZER] server registration is closed; {} will play offline this session", rsn);
+					addPluginChatMessage("New ChunkBlazer sign-ups are closed right now, so this account "
+						+ "isn't syncing. You can keep playing, and your progress is saved locally.");
+				}
+				// Only mark complete on a real OK / created response. Offline
+				// or error responses leave the flag false so we retry next
+				// LOGGED_IN tick instead of pretending we're done.
+				if (resp != null && resp.isSuccess())
+				{
+					serverLoginDone = true;
+					if (resp.isKeyMismatch())
 					{
-						registrationClosedRsn = rsn;
-						log.info("[CHUNKBLAZER] server registration is closed; {} will play offline this session", rsn);
-						addPluginChatMessage("New ChunkBlazer sign-ups are closed right now, so this account "
-								+ "isn't syncing. You can keep playing, and your progress is saved locally.");
-					}
-					// Only mark complete on a real OK / created response. Offline
-					// or error responses leave the flag false so we retry next
-					// LOGGED_IN tick instead of pretending we're done.
-					if (resp != null && resp.isSuccess())
-					{
-						serverLoginDone = true;
-						if (resp.isKeyMismatch())
+						if (pendingPastedKey != null)
 						{
-							if (pendingPastedKey != null)
-							{
-								// A pasted candidate that belongs to a DIFFERENT account. Discard
-								// it and keep the stored key untouched — a bad paste must never
-								// wipe a working key.
-								restoreStoredApiKey();
-								configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
-								addPluginChatMessage("That sync key belongs to a different account, so it "
-										+ "was ignored and your saved key kept.");
-							}
-							else
-							{
-								// The STORED key belongs to another account (the cross-account
-								// leak). Drop it so we stop impersonating; the server served THIS
-								// account by name. Sync re-enables once this account's own key is
-								// present (RuneLite config-sync carries it, else a one-time paste).
-								log.info("[CHUNKBLAZER] server rejected our stored key as belonging to another "
-										+ "account; cleared it and served {} by name. Paste this account's own key "
-										+ "to re-enable sync.", rsn);
-								if (isAccountStateAvailable())
-								{
-									setAccountState("apiKey", "");
-								}
-								apiClient.setPlayerApiKey(null);
-							}
-						}
-						else if (pendingPastedKey != null)
-						{
-							if (resp.isAuthedByKey())
-							{
-								// The pasted key key-authenticated as THIS account: confirmed
-								// correct, so NOW persist it (replacing any old key) and wipe
-								// the shared recovery field.
-								persistApiKey(pendingPastedKey);
-								configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
-								addPluginChatMessage("Sync key accepted. This account is now synced with it.");
-							}
-							else
-							{
-								// The pasted key did NOT authenticate this account (unknown or
-								// wrong; the server served us by name). Discard it WITHOUT
-								// touching the stored key, so a bad paste can never brick a
-								// working account.
-								restoreStoredApiKey();
-								configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
-								addPluginChatMessage("That sync key wasn't recognised for this account, so it "
-										+ "was ignored and your saved key kept.");
-							}
+							// A pasted candidate that belongs to a DIFFERENT account. Discard
+							// it and keep the stored key untouched — a bad paste must never
+							// wipe a working key.
+							restoreStoredApiKey();
+							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+							addPluginChatMessage("That sync key belongs to a different account, so it "
+								+ "was ignored and your saved key kept.");
 						}
 						else
 						{
-							// First-claim logins return a fresh key; capture it per-account.
-							persistApiKey(apiClient.getPlayerApiKey());
-						}
-						pendingPastedKey = null;
-						clientThread.invoke(this::sendPendingHcimDeath);
-						// A Competitive lock the player asked for while sync was off:
-						// now that we're logged in (api_key is set), start it. beginNuzlockeLock
-						// handles the eligibility check + verification handshake from here.
-						if (pendingCompetitiveLock)
-						{
-							pendingCompetitiveLock = false;
-							beginNuzlockeLock();
+							// The STORED key belongs to another account (the cross-account
+							// leak). Drop it so we stop impersonating; the server served THIS
+							// account by name. Sync re-enables once this account's own key is
+							// present (RuneLite config-sync carries it, else a one-time paste).
+							log.info("[CHUNKBLAZER] server rejected our stored key as belonging to another "
+								+ "account; cleared it and served {} by name. Paste this account's own key "
+								+ "to re-enable sync.", rsn);
+							if (isAccountStateAvailable())
+							{
+								setAccountState("apiKey", "");
+							}
+							apiClient.setPlayerApiKey(null);
 						}
 					}
-					hydrateFromLoginResponse(resp);
-					if (resp == null || !resp.isSuccess())
+					else if (pendingPastedKey != null)
 					{
-						// Offline / error: no server roll is coming. Resolve the restore so
-						// loadActiveTasks stops deferring and reconstructs from the local roll
-						// (or backfills) instead of leaving the account task-less.
-						serverRollRestoreResolved = true;
-						clientThread.invokeLater(this::loadActiveTasks);
+						if (resp.isAuthedByKey())
+						{
+							// The pasted key key-authenticated as THIS account: confirmed
+							// correct, so NOW persist it (replacing any old key) and wipe
+							// the shared recovery field.
+							persistApiKey(pendingPastedKey);
+							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+							addPluginChatMessage("Sync key accepted. This account is now synced with it.");
+						}
+						else
+						{
+							// The pasted key did NOT authenticate this account (unknown or
+							// wrong; the server served us by name). Discard it WITHOUT
+							// touching the stored key, so a bad paste can never brick a
+							// working account.
+							restoreStoredApiKey();
+							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+							addPluginChatMessage("That sync key wasn't recognised for this account, so it "
+								+ "was ignored and your saved key kept.");
+						}
 					}
-					maybeStartVerification(resp);
-				})
-				.exceptionally(e ->
+					else
+					{
+						// First-claim logins return a fresh key; capture it per-account.
+						persistApiKey(apiClient.getPlayerApiKey());
+					}
+					pendingPastedKey = null;
+					clientThread.invoke(this::sendPendingHcimDeath);
+					// A Competitive lock the player asked for while sync was off:
+					// now that we're logged in (api_key is set), start it. beginNuzlockeLock
+					// handles the eligibility check + verification handshake from here.
+					if (pendingCompetitiveLock)
+					{
+						pendingCompetitiveLock = false;
+						beginNuzlockeLock();
+					}
+				}
+				hydrateFromLoginResponse(resp);
+				if (resp == null || !resp.isSuccess())
 				{
-					// Expected when the server is unreachable or sync is mid-toggle; not an error.
-					log.debug("login request failed: {}", e.toString());
-					recordServerOutcome(ApiOutcome.TRANSIENT, 0);
+					// Offline / error: no server roll is coming. Resolve the restore so
+					// loadActiveTasks stops deferring and reconstructs from the local roll
+					// (or backfills) instead of leaving the account task-less.
 					serverRollRestoreResolved = true;
 					clientThread.invokeLater(this::loadActiveTasks);
-					return null;
-				});
+				}
+				maybeStartVerification(resp);
+			})
+			.exceptionally(e ->
+			{
+				// Expected when the server is unreachable or sync is mid-toggle; not an error.
+				log.debug("login request failed: {}", e.toString());
+				recordServerOutcome(ApiOutcome.TRANSIENT, 0);
+				serverRollRestoreResolved = true;
+				clientThread.invokeLater(this::loadActiveTasks);
+				return null;
+			});
 	}
 
 	/**
@@ -2928,7 +2928,7 @@ public class ChunkBlazerPlugin extends Plugin
 	private static boolean isValidApiKeyFormat(String s)
 	{
 		return s != null && s.trim().matches(
-				"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+			"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 	}
 
 	/**
@@ -2999,7 +2999,7 @@ public class ChunkBlazerPlugin extends Plugin
 		serverStateMerged = false;
 		serverRollRestoreResolved = false;
 		log.info("[CHUNKBLAZER] cleared this account's local sync data on request; restart the client "
-				+ "and log in to restore it fresh from the server.");
+			+ "and log in to restore it fresh from the server.");
 	}
 
 	/**
@@ -3078,7 +3078,7 @@ public class ChunkBlazerPlugin extends Plugin
 	public void onHitsplatApplied(HitsplatApplied event)
 	{
 		if (!(event.getActor() instanceof NPC) || event.getHitsplat() == null
-				|| event.getHitsplat().isOthers())
+			|| event.getHitsplat().isOthers())
 		{
 			return; // someone else's / non-player splat
 		}
@@ -3111,10 +3111,10 @@ public class ChunkBlazerPlugin extends Plugin
 		// The status can drop before or after the death animation, so take whichever killer is fresh.
 		String killer = System.currentTimeMillis() - deathKillerAt < 30_000 ? deathKiller : findKiller();
 		HcimDeathReport report = HcimDeathReport.builder()
-				.regionId(me == null ? 0 : WorldPoint.fromLocalInstance(client, me.getLocalLocation()).getRegionID())
-				.killer(killer)
-				.totalLevel(client.getTotalLevel())
-				.build();
+			.regionId(me == null ? 0 : WorldPoint.fromLocalInstance(client, me.getLocalLocation()).getRegionID())
+			.killer(killer)
+			.totalLevel(client.getTotalLevel())
+			.build();
 		log.info("[CHUNKBLAZER] hardcore status lost in region {} (killer: {})", report.getRegionId(), killer);
 		// Stored until the server confirms, so a dropped report retries on the next login.
 		setAccountState(PENDING_DEATH_KEY, gson.toJson(report));
@@ -3151,13 +3151,13 @@ public class ChunkBlazerPlugin extends Plugin
 			return;
 		}
 		apiClient.reportHcimDeath(gson.fromJson(json, HcimDeathReport.class))
-				.thenAccept(ok ->
+			.thenAccept(ok ->
+			{
+				if (ok)
 				{
-					if (ok)
-					{
-						clientThread.invoke(() -> setAccountState(PENDING_DEATH_KEY, ""));
-					}
-				});
+					clientThread.invoke(() -> setAccountState(PENDING_DEATH_KEY, ""));
+				}
+			});
 	}
 
 	@Subscribe
@@ -3271,7 +3271,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// complete!") both fire on a finished CoX; either grants the token. NOTE: verify
 		// the exact wording in-game — see docs/BOSS-CHUNKS.md capture note.
 		else if ((plain.contains("chambers of xeric") && plain.contains("count is"))
-				|| plain.contains("your raid is complete"))
+			|| plain.contains("your raid is complete"))
 		{
 			recordBossCompletion("cox");
 		}
@@ -3399,7 +3399,7 @@ public class ChunkBlazerPlugin extends Plugin
 		String localName = getPlayerName();
 		String eventName = event.getName();
 		if (localName == null || eventName == null
-				|| !Text.standardize(localName).equals(Text.standardize(eventName)))
+			|| !Text.standardize(localName).equals(Text.standardize(eventName)))
 		{
 			return;
 		}
@@ -3416,46 +3416,46 @@ public class ChunkBlazerPlugin extends Plugin
 		// Consume locally first so we don't double-fire if the server is slow.
 		pendingVerificationNonce = null;
 		apiClient.verify(pending)
-				.thenAccept(resp ->
+			.thenAccept(resp ->
+			{
+				if (resp != null && resp.isVerified())
 				{
-					if (resp != null && resp.isVerified())
+					panel.hideVerificationPrompt();
+					// If this handshake was the final step of a Full Nuzlocke
+					// lock, commit it now (the server re-validates the snapshot
+					// and the verified flag before accepting).
+					EligibilitySnapshot snap = pendingNuzlockeSnapshot;
+					if (snap != null)
 					{
-						panel.hideVerificationPrompt();
-						// If this handshake was the final step of a Full Nuzlocke
-						// lock, commit it now (the server re-validates the snapshot
-						// and the verified flag before accepting).
-						EligibilitySnapshot snap = pendingNuzlockeSnapshot;
-						if (snap != null)
-						{
-							pendingNuzlockeSnapshot = null;
-							addPluginChatMessage("Account verified! Locking in Competitive...");
-							commitModeLock(GameMode.NUZLOCKE, snap);
-						}
-						else
-						{
-							// Players read "all set" as done and never picked a mode, so point them at it.
-							clientThread.invoke(() -> addPluginChatMessage(isModeLocked()
-									? "Account verified! You're all set."
-									: "Account verified! " + SELECT_MODE_MESSAGE));
-						}
+						pendingNuzlockeSnapshot = null;
+						addPluginChatMessage("Account verified! Locking in Competitive...");
+						commitModeLock(GameMode.NUZLOCKE, snap);
 					}
 					else
 					{
-						log.warn("Verification POST rejected: {}",
-								resp != null ? resp.getMessage() : "null response");
-						addPluginChatMessage("That code didn't work - it may have expired. Issuing a fresh one...");
-						// Likely an expired code. Issue a new one so the player can
-						// retry. Use the Nuzlocke-aware kickoff if a lock is pending.
-						if (pendingNuzlockeSnapshot != null)
-						{
-							startNuzlockeVerification();
-						}
-						else
-						{
-							requestAndShowVerification();
-						}
+						// Players read "all set" as done and never picked a mode, so point them at it.
+						clientThread.invoke(() -> addPluginChatMessage(isModeLocked()
+							? "Account verified! You're all set."
+							: "Account verified! " + SELECT_MODE_MESSAGE));
 					}
-				});
+				}
+				else
+				{
+					log.warn("Verification POST rejected: {}",
+						resp != null ? resp.getMessage() : "null response");
+					addPluginChatMessage("That code didn't work - it may have expired. Issuing a fresh one...");
+					// Likely an expired code. Issue a new one so the player can
+					// retry. Use the Nuzlocke-aware kickoff if a lock is pending.
+					if (pendingNuzlockeSnapshot != null)
+					{
+						startNuzlockeVerification();
+					}
+					else
+					{
+						requestAndShowVerification();
+					}
+				}
+			});
 	}
 
 	/**
@@ -3487,22 +3487,22 @@ public class ChunkBlazerPlugin extends Plugin
 	private void requestAndShowVerification()
 	{
 		apiClient.verifyStart()
-				.thenAccept(start ->
+			.thenAccept(start ->
+			{
+				if (start == null || start.isAlreadyVerified())
 				{
-					if (start == null || start.isAlreadyVerified())
-					{
-						return; // race: server says we got verified between calls
-					}
-					if (start.getNonce() == null || start.getChatPhrase() == null)
-					{
-						return; // offline / failed response
-					}
-					String nonce = start.getNonce();
-					pendingVerificationNonce = nonce;
-					addPluginChatMessage("Type " + nonce
-							+ " in public chat and hit Enter to verify your ChunkBlazer account.");
-					panel.showVerificationPrompt(nonce);
-				});
+					return; // race: server says we got verified between calls
+				}
+				if (start.getNonce() == null || start.getChatPhrase() == null)
+				{
+					return; // offline / failed response
+				}
+				String nonce = start.getNonce();
+				pendingVerificationNonce = nonce;
+				addPluginChatMessage("Type " + nonce
+					+ " in public chat and hit Enter to verify your ChunkBlazer account.");
+				panel.showVerificationPrompt(nonce);
+			});
 	}
 
 	/**
@@ -3514,7 +3514,7 @@ public class ChunkBlazerPlugin extends Plugin
 		clientThread.invoke(() ->
 		{
 			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
-					"[ChunkBlazer] " + message, null);
+				"[ChunkBlazer] " + message, null);
 		});
 	}
 
@@ -3560,7 +3560,7 @@ public class ChunkBlazerPlugin extends Plugin
 	// One "select your game mode" chat reminder per session while no mode is locked.
 	private boolean modeChoiceNoticeShown;
 	static final String SELECT_MODE_MESSAGE = "Please select your game mode in the ChunkBlazer panel! "
-			+ "Competitive is only available on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.";
+		+ "Competitive is only available on a fresh level 3 Ironman, Hardcore Ironman or Ultimate Ironman account.";
 
 	/**
 	 * Whether an unlocked region with no roll may be rolled now: only once we know the
@@ -3604,11 +3604,11 @@ public class ChunkBlazerPlugin extends Plugin
 	// set of keys the RSProfile store holds. apiKey is excluded on purpose (a user-typed
 	// @ConfigItem, profile-scoped by construction).
 	private static final String[] MIGRATION_KEYS = {
-			"unlockedChunks", "completedTasks", "assignedTasks", "regionRolledTasks",
-			"currentTaskId", "currentTaskQuantity", "currentTaskProgress",
-			"totalPoints", "pointsSpent", "bossTokens", "taskProgressData",
-			"progressionBaseline", "bossCompletions",
-			"unrevealedTasks", "gameMode", "accountModeHash", "rollVersion",
+		"unlockedChunks", "completedTasks", "assignedTasks", "regionRolledTasks",
+		"currentTaskId", "currentTaskQuantity", "currentTaskProgress",
+		"totalPoints", "pointsSpent", "bossTokens", "taskProgressData",
+		"progressionBaseline", "bossCompletions",
+		"unrevealedTasks", "gameMode", "accountModeHash", "rollVersion",
 	};
 
 	// --- Per-account state accessors ---------------------------------------
@@ -3753,7 +3753,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!isAccountStateAvailable())
 		{
 			log.warn("[CHUNKBLAZER] per-account write '{}' refused, no RS profile is active, so an "
-					+ "RSProfile write would be silently dropped. This caller must be gated on the profile.", key);
+				+ "RSProfile write would be silently dropped. This caller must be gated on the profile.", key);
 			return;
 		}
 		// Skip no-op writes: a single completion can re-run the same save path
@@ -3789,7 +3789,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// (1) Destination already populated: this account migrated already, or was born
 		// under RSProfile. Never run again.
 		if (configManager.getRSProfileConfiguration(CONFIG_GROUP, "unlockedChunks") != null
-				|| configManager.getRSProfileConfiguration(CONFIG_GROUP, "completedTasks") != null)
+			|| configManager.getRSProfileConfiguration(CONFIG_GROUP, "completedTasks") != null)
 		{
 			log.debug("[CHUNKBLAZER] legacy migration: RSProfile already populated, nothing to do");
 			return;
@@ -3807,7 +3807,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!anyLegacy)
 		{
 			log.info("[CHUNKBLAZER] legacy migration: no global data to move (RSProfile empty AND "
-					+ "no legacy global keys), this account has no local progress in either store");
+				+ "no legacy global keys), this account has no local progress in either store");
 			return;
 		}
 		// (3) Ownership evidence: migrate only a blob that belongs to THIS account.
@@ -3821,7 +3821,7 @@ public class ChunkBlazerPlugin extends Plugin
 		String modeHash = configManager.getConfiguration(CONFIG_GROUP, "accountModeHash");   // "<rsnHash>:<MODE>"
 		String storedOwner = configManager.getConfiguration(CONFIG_GROUP, "accountStateOwner");
 		log.info("[CHUNKBLAZER] legacy migration: legacy data present for RS profile of {}; ownership "
-				+ "tags accountModeHash='{}', accountStateOwner='{}'", rsn, modeHash, storedOwner);
+			+ "tags accountModeHash='{}', accountStateOwner='{}'", rsn, modeHash, storedOwner);
 		boolean mine;
 		if (modeHash != null && modeHash.contains(":"))
 		{
@@ -3838,7 +3838,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!mine)
 		{
 			log.info("[CHUNKBLAZER] legacy global progress belongs to a different account; {} starts "
-					+ "clean under RSProfile (foreign blob left for its owner to migrate)", rsn);
+				+ "clean under RSProfile (foreign blob left for its owner to migrate)", rsn);
 			return;
 		}
 		// (4) Copy into RSProfile; never clobber a value already there. Keep the originals.
@@ -3853,7 +3853,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 		}
 		log.info("[CHUNKBLAZER] migrated {} legacy key(s) into the RSProfile store for {} "
-				+ "(global originals kept as rollback this release)", copied, rsn);
+			+ "(global originals kept as rollback this release)", copied, rsn);
 	}
 
 	/**
@@ -3881,7 +3881,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		setAccountState("unlockedChunks", String.join(",", merged));
 		log.info("[CHUNKBLAZER] restored {} unlocked chunk(s) from the server (had {}, now {})",
-				merged.size() - before, before, merged.size());
+			merged.size() - before, before, merged.size());
 	}
 
 	/** Union the server's completed tasks into local config. */
@@ -3902,7 +3902,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		setAccountState("completedTasks", String.join(",", merged));
 		log.info("[CHUNKBLAZER] restored {} completed task(s) from the server (had {}, now {})",
-				merged.size() - before, before, merged.size());
+			merged.size() - before, before, merged.size());
 	}
 
 	/**
@@ -3952,7 +3952,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			setAccountState("regionRolledTasks", merged);
 			log.info("[CHUNKBLAZER] reconciled task roll with the server ({} region entr{})",
-					reconciled.size(), reconciled.size() == 1 ? "y" : "ies");
+				reconciled.size(), reconciled.size() == 1 ? "y" : "ies");
 		}
 
 		// The face-down card set is client-updatable (revealing a card is a live local
@@ -4208,16 +4208,16 @@ public class ChunkBlazerPlugin extends Plugin
 				if (localMode != null && config.apiEnabled() && apiClient != null)
 				{
 					apiClient.lockGameMode(localMode)
-							.thenAccept(resp ->
+						.thenAccept(resp ->
+						{
+							if (resp != null && "eligibility_required".equals(resp.getError()))
 							{
-								if (resp != null && "eligibility_required".equals(resp.getError()))
-								{
-									setAccountState("accountModeHash", "");
-									setAccountState("gameMode", GameMode.CASUAL);
-									modeLockConfirmed = false;
-									addPluginChatMessage("Your account isn't eligible for Competitive, so ChunkBlazer set it back to Casual.");
-								}
-							});
+								setAccountState("accountModeHash", "");
+								setAccountState("gameMode", GameMode.CASUAL);
+								modeLockConfirmed = false;
+								addPluginChatMessage("Your account isn't eligible for Competitive, so ChunkBlazer set it back to Casual.");
+							}
+						});
 				}
 			}
 
@@ -4265,7 +4265,7 @@ public class ChunkBlazerPlugin extends Plugin
 			if (pdata != null && pdata.getPointsSpent() > acInt("pointsSpent", 0))
 			{
 				log.info("[CHUNKBLAZER] restored points spent from the server (had {}, now {})",
-						acInt("pointsSpent", 0), pdata.getPointsSpent());
+					acInt("pointsSpent", 0), pdata.getPointsSpent());
 				setAccountState("pointsSpent", pdata.getPointsSpent());
 			}
 			// AFTER the monotonic merge, deliberately. The corrupt figure this
@@ -4308,7 +4308,7 @@ public class ChunkBlazerPlugin extends Plugin
 			return null; // steady state: skip parsing taskProgressData
 		}
 		return CompletedTargets.next(completed, sent,
-				CompletedTargets.parseTargets(acStr("taskProgressData", "")));
+			CompletedTargets.parseTargets(acStr("taskProgressData", "")));
 	}
 
 	/**
@@ -4336,7 +4336,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (serverBackoff.recordFailure(outcome, retryAfterMs, System.currentTimeMillis()))
 		{
 			addPluginChatMessage("Can't reach the ChunkBlazer server right now. Your progress is saved "
-					+ "locally and will sync once it's back.");
+				+ "locally and will sync once it's back.");
 		}
 	}
 
@@ -4421,44 +4421,44 @@ public class ChunkBlazerPlugin extends Plugin
 				req.setCompletedTargets(targets.targets);
 			}
 			apiClient.syncPlayerState(req)
-					.thenAccept(resp ->
+				.thenAccept(resp ->
+				{
+					ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
+					recordServerOutcome(outcome, resp == null ? 0 : resp.getRetryAfterMs());
+					if (outcome == ApiOutcome.AUTH_REJECTED && syncRejectedKey == null)
 					{
-						ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
-						recordServerOutcome(outcome, resp == null ? 0 : resp.getRetryAfterMs());
-						if (outcome == ApiOutcome.AUTH_REJECTED && syncRejectedKey == null)
-						{
-							syncRejectedKey = sentKey;
-							log.warn("[CHUNKBLAZER] server rejected this account's sync key; sync paused "
-									+ "until a different key is supplied");
-							addPluginChatMessage("The server didn't accept this account's sync key, so syncing "
-									+ "is paused. Your progress is still saved locally. Paste this account's key "
-									+ "into Sync recovery key in the ChunkBlazer settings to resume.");
-						}
-						// Only retire the reset declaration once the server has actually
-						// accepted it. Clearing it on send would strand a reset behind one
-						// dropped request: the retry would arrive without the flag, be
-						// refused as a destructive drop, and the next login's union would
-						// restore everything the player asked to clear.
-						if (resp != null && resp.isSuccess() && targets != null)
-						{
-							setAccountState(TARGETS_SENT_KEY, targets.sentThrough);
-						}
-						if (resp != null && resp.isSuccess() && declaredReset)
-						{
-							pendingIntentionalReset = false;
-							log.info("[CHUNKBLAZER] intentional reset accepted by the server");
-						}
-						// Adopt the server's authoritative Boss Token balance. The client
-						// mutates a local copy for immediate UX (spend on unlock, +1 on
-						// first clear); the server recomputes the truth from the monotonic
-						// completion + boss-unlock records, so adopting here recovers the
-						// balance after a reinstall / profile switch and self-heals any
-						// transient client/server divergence. Config write is thread-safe.
-						if (resp != null && resp.isSuccess() && resp.getServerBossTokens() != null)
-						{
-							setAccountState("bossTokens", resp.getServerBossTokens());
-						}
-					});
+						syncRejectedKey = sentKey;
+						log.warn("[CHUNKBLAZER] server rejected this account's sync key; sync paused "
+							+ "until a different key is supplied");
+						addPluginChatMessage("The server didn't accept this account's sync key, so syncing "
+							+ "is paused. Your progress is still saved locally. Paste this account's key "
+							+ "into Sync recovery key in the ChunkBlazer settings to resume.");
+					}
+					// Only retire the reset declaration once the server has actually
+					// accepted it. Clearing it on send would strand a reset behind one
+					// dropped request: the retry would arrive without the flag, be
+					// refused as a destructive drop, and the next login's union would
+					// restore everything the player asked to clear.
+					if (resp != null && resp.isSuccess() && targets != null)
+					{
+						setAccountState(TARGETS_SENT_KEY, targets.sentThrough);
+					}
+					if (resp != null && resp.isSuccess() && declaredReset)
+					{
+						pendingIntentionalReset = false;
+						log.info("[CHUNKBLAZER] intentional reset accepted by the server");
+					}
+					// Adopt the server's authoritative Boss Token balance. The client
+					// mutates a local copy for immediate UX (spend on unlock, +1 on
+					// first clear); the server recomputes the truth from the monotonic
+					// completion + boss-unlock records, so adopting here recovers the
+					// balance after a reinstall / profile switch and self-heals any
+					// transient client/server divergence. Config write is thread-safe.
+					if (resp != null && resp.isSuccess() && resp.getServerBossTokens() != null)
+					{
+						setAccountState("bossTokens", resp.getServerBossTokens());
+					}
+				});
 		});
 	}
 
@@ -4484,7 +4484,7 @@ public class ChunkBlazerPlugin extends Plugin
 	{
 		pendingIntentionalReset = true;
 		log.warn("[CHUNKBLAZER] intentional reset declared ({}), the next sync will be "
-				+ "allowed to drop progress server-side", reason);
+			+ "allowed to drop progress server-side", reason);
 	}
 
 	/**
@@ -4519,33 +4519,33 @@ public class ChunkBlazerPlugin extends Plugin
 		String modeName = (mode != null && isModeLocked()) ? mode.name() : null;
 
 		return PlayerSyncRequest.builder()
-				.playerHash(hashRsn(rsn))
-				.displayName(rsn)
-				.accountType("NORMAL")
-				.gameMode(modeName)
-				.combatLevel(local != null ? local.getCombatLevel() : 0)
-				.totalLevel(client.getTotalLevel())
-				.currentRegionId(lastRegionId)
-				.unlockedRegions(unlocked)
-				.activeTaskId(activeTask != null ? activeTask.getTaskId() : null)
-				.activeTaskProgress(0)
-				// clientPoints is the BALANCE, kept for the Tier-0 mismatch check;
-				// pointsSpent is what actually needs preserving server-side, since
-				// the balance is derived and the server has no concept of spending.
-				.clientPoints(acInt("totalPoints", 0))
-				.pointsSpent(acInt("pointsSpent", 0))
-				.completedTasks(completed)
-				.completedOrdered(true)
-				.bossCompletions(new ArrayList<>(getCompletedBossKeys()))
-				// The roll + reveal state, verbatim, so it survives a profile switch or
-				// reinstall instead of being regenerated wholesale on the next login.
-				.regionRolledTasks(acStr("regionRolledTasks", ""))
-				.unrevealedTasks(acStr("unrevealedTasks", ""))
-				.taskProgress(acStr("taskProgressData", ""))
-				.intentionalReset(pendingIntentionalReset)
-				.timestamp(System.currentTimeMillis())
-				.clientVersion(VERSION)
-				.build();
+			.playerHash(hashRsn(rsn))
+			.displayName(rsn)
+			.accountType("NORMAL")
+			.gameMode(modeName)
+			.combatLevel(local != null ? local.getCombatLevel() : 0)
+			.totalLevel(client.getTotalLevel())
+			.currentRegionId(lastRegionId)
+			.unlockedRegions(unlocked)
+			.activeTaskId(activeTask != null ? activeTask.getTaskId() : null)
+			.activeTaskProgress(0)
+			// clientPoints is the BALANCE, kept for the Tier-0 mismatch check;
+			// pointsSpent is what actually needs preserving server-side, since
+			// the balance is derived and the server has no concept of spending.
+			.clientPoints(acInt("totalPoints", 0))
+			.pointsSpent(acInt("pointsSpent", 0))
+			.completedTasks(completed)
+			.completedOrdered(true)
+			.bossCompletions(new ArrayList<>(getCompletedBossKeys()))
+			// The roll + reveal state, verbatim, so it survives a profile switch or
+			// reinstall instead of being regenerated wholesale on the next login.
+			.regionRolledTasks(acStr("regionRolledTasks", ""))
+			.unrevealedTasks(acStr("unrevealedTasks", ""))
+			.taskProgress(acStr("taskProgressData", ""))
+			.intentionalReset(pendingIntentionalReset)
+			.timestamp(System.currentTimeMillis())
+			.clientVersion(VERSION)
+			.build();
 	}
 
 	// --- Region Methods ---
@@ -4828,10 +4828,10 @@ public class ChunkBlazerPlugin extends Plugin
 					{
 						String taskId = task.getTaskId();
 						if (rolledTaskIds.contains(taskId) &&
-								!completedTaskIds.contains(taskId) &&
-								!unrevealed.contains(taskId) && // still face-down
-								!addedTaskIds.contains(taskId) && // Prevent duplicates
-								!task.isLocked())
+							!completedTaskIds.contains(taskId) &&
+							!unrevealed.contains(taskId) && // still face-down
+							!addedTaskIds.contains(taskId) && // Prevent duplicates
+							!task.isLocked())
 						{
 							// Initialize task
 							initializeTask(task);
@@ -4881,7 +4881,7 @@ public class ChunkBlazerPlugin extends Plugin
 			setAccountState("completedTasks", String.join(",", merged));
 			addPoints(settledPoints);
 			log.info("[CHUNKBLAZER] settled {} already-satisfied task(s) on load (+{} points, batched)",
-					settledIds.size(), settledPoints);
+				settledIds.size(), settledPoints);
 		}
 
 		// Register all active tasks with modules for tracking
@@ -4919,7 +4919,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (inMemoryProgress > savedProgress)
 		{
 			log.warn("PROGRESS REGRESSION: task '{}' (id={}) in-memory={}, restoring from config={}, caller stack:",
-					task.getName(), task.getTaskId(), inMemoryProgress, savedProgress, new Throwable());
+				task.getName(), task.getTaskId(), inMemoryProgress, savedProgress, new Throwable());
 		}
 
 		int targetQty;
@@ -5107,8 +5107,8 @@ public class ChunkBlazerPlugin extends Plugin
 					{
 						String taskId = task.getTaskId();
 						if (rolledTaskIds.contains(taskId) &&
-								!assignedTaskIds.contains(taskId) &&
-								!task.isLocked())
+							!assignedTaskIds.contains(taskId) &&
+							!task.isLocked())
 						{
 							eligibleTasks.add(task);
 						}
@@ -5131,8 +5131,8 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// Weighted random selection
 		int totalWeight = eligibleTasks.stream()
-				.mapToInt(NuzlockeTask::getAssignmentWeight)
-				.sum();
+			.mapToInt(NuzlockeTask::getAssignmentWeight)
+			.sum();
 
 		int roll = random.nextInt(totalWeight);
 		int cumulative = 0;
@@ -5228,7 +5228,7 @@ public class ChunkBlazerPlugin extends Plugin
 				// areas, dungeons, instances. They carry no tasks and are not lockable, so
 				// this is normal, not an error. Debug, deduped per region for a clean log.
 				log.debug("rollTasksForRegion: no chunk for region {} (outside the chunk grid; total {})",
-						regionId, chunksByRegionId.size());
+					regionId, chunksByRegionId.size());
 			}
 			return new HashSet<>();
 		}
@@ -5261,11 +5261,11 @@ public class ChunkBlazerPlugin extends Plugin
 		// Filter available tasks: not locked, not already rolled for this region,
 		// not globally assigned, and not previously completed.
 		List<NuzlockeTask> availableTasks = chunk.getTasks().stream()
-				.filter(t -> !t.isLocked())
-				.filter(t -> !alreadyRolledForThisRegion.contains(t.getTaskId()))
-				.filter(t -> !globallyAssignedTasks.contains(t.getTaskId()))
-				.filter(t -> !completedTaskIds.contains(t.getTaskId()))
-				.collect(Collectors.toList());
+			.filter(t -> !t.isLocked())
+			.filter(t -> !alreadyRolledForThisRegion.contains(t.getTaskId()))
+			.filter(t -> !globallyAssignedTasks.contains(t.getTaskId()))
+			.filter(t -> !completedTaskIds.contains(t.getTaskId()))
+			.collect(Collectors.toList());
 
 		if (availableTasks.isEmpty())
 		{
@@ -5383,28 +5383,28 @@ public class ChunkBlazerPlugin extends Plugin
 			{
 				String id = raw.trim();
 				NuzlockeTask task = chunk.getTasks().stream()
-						.filter(t -> id.equals(t.getTaskId())).findFirst().orElse(null);
+					.filter(t -> id.equals(t.getTaskId())).findFirst().orElse(null);
 				if (task == null || !task.isLocked() || completed.contains(id))
 				{
 					ids.add(id);
 					continue;
 				}
 				List<NuzlockeTask> pool = chunk.getTasks().stream()
-						.filter(t -> !t.isLocked() && !completed.contains(t.getTaskId())
-								&& !rolledAnywhere.contains(t.getTaskId()))
-						.collect(Collectors.toList());
+					.filter(t -> !t.isLocked() && !completed.contains(t.getTaskId())
+						&& !rolledAnywhere.contains(t.getTaskId()))
+					.collect(Collectors.toList());
 				NuzlockeTask pick = selectWeightedRandom(pool);
 				if (pick != null)
 				{
 					ids.add(pick.getTaskId());
 					rolledAnywhere.add(pick.getTaskId());
 					addPluginChatMessage(task.getName() + " was retired, so " + chunk.getName()
-							+ " gave you " + pick.getName() + " instead.");
+						+ " gave you " + pick.getName() + " instead.");
 				}
 				else
 				{
 					addPluginChatMessage(task.getName() + " was retired. " + chunk.getName()
-							+ " has no other tasks left to give.");
+						+ " has no other tasks left to give.");
 				}
 				retiredIds.add(id);
 				regionChanged = true;
@@ -5557,7 +5557,7 @@ public class ChunkBlazerPlugin extends Plugin
 		NuzlockeTask task = findTaskById(taskId);
 		boolean rolled = !keepRolledCards(taskId, parseRollBlob(acStr("regionRolledTasks", ""))).isEmpty();
 		if (task != null && rolled && !task.isLocked()
-				&& !getCompletedTaskIds().contains(taskId) && !isTaskActive(taskId))
+			&& !getCompletedTaskIds().contains(taskId) && !isTaskActive(taskId))
 		{
 			initializeTask(task);
 			if (task.getCurrentProgress() >= task.getTargetQuantity())
@@ -5717,8 +5717,8 @@ public class ChunkBlazerPlugin extends Plugin
 		if (panel.isLevelFilterOn() && !meetsLevelRequirement(task))
 		{
 			addPluginChatMessage("You need level " + task.getLevelRequirement() + " "
-					+ NuzlockeTask.displayCategory(task.getCategory()) + " for " + task.getName()
-					+ ". Turn off \"Only tasks I have the level for\" to track it anyway.");
+				+ NuzlockeTask.displayCategory(task.getCategory()) + " for " + task.getName()
+				+ ". Turn off \"Only tasks I have the level for\" to track it anyway.");
 			return;
 		}
 		javax.swing.SwingUtilities.invokeLater(() -> panel.selectTask(task));
@@ -5840,9 +5840,9 @@ public class ChunkBlazerPlugin extends Plugin
 			return new HashSet<>();
 		}
 		return Arrays.stream(assigned.split(","))
-				.map(String::trim)
-				.filter(s -> !s.isEmpty())
-				.collect(Collectors.toSet());
+			.map(String::trim)
+			.filter(s -> !s.isEmpty())
+			.collect(Collectors.toSet());
 	}
 
 	private void markTaskAssigned(String taskId)
@@ -5963,7 +5963,7 @@ public class ChunkBlazerPlugin extends Plugin
 			if (taskCompletionAnimationOverlay != null && shown < COMPLETION_ANIM_CAP)
 			{
 				taskCompletionAnimationOverlay.showTaskCompletion(
-						task, task.getBasePoints(), getTaskCompletionLabel(task));
+					task, task.getBasePoints(), getTaskCompletionLabel(task));
 				shown++;
 			}
 		}
@@ -5983,7 +5983,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 * collapses to a single queued panel rebuild.
 	 */
 	private final java.util.concurrent.atomic.AtomicBoolean taskDisplayRefreshPending =
-			new java.util.concurrent.atomic.AtomicBoolean(false);
+		new java.util.concurrent.atomic.AtomicBoolean(false);
 
 	/**
 	 * Queue AT MOST ONE task-panel rebuild at a time. onProgressUpdated /
@@ -6169,9 +6169,9 @@ public class ChunkBlazerPlugin extends Plugin
 			return new HashSet<>();
 		}
 		return Arrays.stream(completed.split(","))
-				.map(String::trim)
-				.filter(s -> !s.isEmpty())
-				.collect(Collectors.toSet());
+			.map(String::trim)
+			.filter(s -> !s.isEmpty())
+			.collect(Collectors.toSet());
 	}
 
 	/** Completed task IDs in the order they were completed (the stored CSV order), deduplicated. */
@@ -6232,8 +6232,8 @@ public class ChunkBlazerPlugin extends Plugin
 				// for what they are instead of showing a broken region. Same
 				// string as the area bucket so the Area and Chunk filters agree.
 				String regionName = globalTaskIds.contains(taskId)
-						? GLOBAL_AREA_NAME
-						: getRegionName(regionId);
+					? GLOBAL_AREA_NAME
+					: getRegionName(regionId);
 				completedTasks.add(new CompletedTaskInfo(taskId, regionId, regionName, task));
 			}
 		}
@@ -6494,7 +6494,7 @@ public class ChunkBlazerPlugin extends Plugin
 			return regionName;
 		}
 		if (task != null && isGlobalTask(task.getTaskId())
-				&& task.getCategory() != null && !task.getCategory().isEmpty())
+			&& task.getCategory() != null && !task.getCategory().isEmpty())
 		{
 			return task.getCategory();
 		}
@@ -6808,15 +6808,15 @@ public class ChunkBlazerPlugin extends Plugin
 		if (spent > earned)
 		{
 			log.warn("[CHUNKBLAZER] spend counter exceeds lifetime earnings: spent {} > earned {}. "
-							+ "The balance is pinned at 0 and every point earned will vanish on the next "
-							+ "recompute. Expect migrateRepairImpossiblePointsSpent() to correct this on login.",
-					spent, earned);
+					+ "The balance is pinned at 0 and every point earned will vanish on the next "
+					+ "recompute. Expect migrateRepairImpossiblePointsSpent() to correct this on login.",
+				spent, earned);
 		}
 
 		if (balance != acInt("totalPoints", 0))
 		{
 			log.info("[CHUNKBLAZER] points balance recomputed: earned {} - spent {} = {} (was {})",
-					earned, spent, balance, acInt("totalPoints", 0));
+				earned, spent, balance, acInt("totalPoints", 0));
 			setAccountState("totalPoints", balance);
 		}
 	}
@@ -6869,8 +6869,8 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!isPointsBalancePersisted())
 		{
 			log.info("[CHUNKBLAZER] skipping spend derivation, no balance stored locally "
-					+ "(fresh profile or account switch), so a zero balance means UNKNOWN, "
-					+ "not SPENT EVERYTHING. The server's spend figure stands.");
+				+ "(fresh profile or account switch), so a zero balance means UNKNOWN, "
+				+ "not SPENT EVERYTHING. The server's spend figure stands.");
 			return;
 		}
 
@@ -6884,7 +6884,7 @@ public class ChunkBlazerPlugin extends Plugin
 		int spent = earned - balance;
 		setAccountState("pointsSpent", spent);
 		log.info("[CHUNKBLAZER] derived points spent for this account: earned {} - balance {} = {}",
-				earned, balance, spent);
+			earned, balance, spent);
 	}
 
 	/**
@@ -6955,10 +6955,10 @@ public class ChunkBlazerPlugin extends Plugin
 
 		int earned = computeEarnedPoints();
 		log.warn("[CHUNKBLAZER] impossible spend counter repaired: spent {} exceeds the {} its {} owned "
-						+ "chunk(s) could ever cost (lifetime earned {}). Rebuilt from the chunks actually owned: "
-						+ "spent = {}. Balance goes {} to {}.",
-				spent, ledger, getUnlockedRegionIds().size(), earned, ledger,
-				Math.max(0, earned - spent), Math.max(0, earned - ledger));
+				+ "chunk(s) could ever cost (lifetime earned {}). Rebuilt from the chunks actually owned: "
+				+ "spent = {}. Balance goes {} to {}.",
+			spent, ledger, getUnlockedRegionIds().size(), earned, ledger,
+			Math.max(0, earned - spent), Math.max(0, earned - ledger));
 		setAccountState("pointsSpent", ledger);
 	}
 
@@ -7046,8 +7046,8 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// Unlock every region of the chunk (surface + any sub-regions).
 		List<Integer> toUnlock = (chunk.getRegionIds() != null && !chunk.getRegionIds().isEmpty())
-				? chunk.getRegionIds()
-				: java.util.Collections.singletonList(regionId);
+			? chunk.getRegionIds()
+			: java.util.Collections.singletonList(regionId);
 		java.util.LinkedHashSet<String> unlockedSet = new java.util.LinkedHashSet<>(getUnlockedRegionIds());
 		for (Integer r : toUnlock)
 		{
@@ -7065,7 +7065,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 
 		addPluginChatMessage("Unlocked boss chunk " + getRegionName(regionId)
-				+ " for 1 Boss Token. " + getBossTokens() + " remaining.");
+			+ " for 1 Boss Token. " + getBossTokens() + " remaining.");
 		playRegionUnlockJingle(regionId);
 	}
 
@@ -7108,7 +7108,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// (Scurrius + Bryophyta) — match against the whole set so each boss's first
 			// clear can mint its own token.
 			if (chunk == null || !chunk.isBoss() || chunk.getRegionIds() == null
-					|| !containsIgnoreCase(chunk.getBossKeys(), bossKey))
+				|| !containsIgnoreCase(chunk.getBossKeys(), bossKey))
 			{
 				continue;
 			}
@@ -7193,7 +7193,7 @@ public class ChunkBlazerPlugin extends Plugin
 		for (NuzlockeChunk chunk : new HashSet<>(chunksByRegionId.values()))
 		{
 			if (chunk == null || !chunk.isBoss() || chunk.getRegionIds() == null
-					|| chunk.getRegionIds().isEmpty() || chunk.getTasks() == null)
+				|| chunk.getRegionIds().isEmpty() || chunk.getTasks() == null)
 			{
 				continue;
 			}
@@ -7285,7 +7285,7 @@ public class ChunkBlazerPlugin extends Plugin
 				if (freeNeighbors == null && freeUnlockableRegionIds.contains(regionId))
 				{
 					freeNeighbors = Arrays.asList(
-							regionId + 1, regionId - 1, regionId + 256, regionId - 256);
+						regionId + 1, regionId - 1, regionId + 256, regionId - 256);
 				}
 				if (freeNeighbors != null)
 				{
@@ -7331,7 +7331,7 @@ public class ChunkBlazerPlugin extends Plugin
 		for (NuzlockeChunk chunk : new HashSet<>(chunksByRegionId.values()))
 		{
 			if (chunk == null || !chunk.isBoss()
-					|| chunk.getNeighborIds() == null || chunk.getRegionIds() == null)
+				|| chunk.getNeighborIds() == null || chunk.getRegionIds() == null)
 			{
 				continue;
 			}
@@ -7459,7 +7459,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			// Dedupe multi-region chunks by their first region id.
 			Integer key = (c.getRegionIds() != null && !c.getRegionIds().isEmpty())
-					? c.getRegionIds().get(0) : id;
+				? c.getRegionIds().get(0) : id;
 			seenChunks.add(key);
 		}
 		return seenChunks.size();
@@ -7513,12 +7513,12 @@ public class ChunkBlazerPlugin extends Plugin
 	// auto-free them the moment a player steps inside. It's a genuine surface
 	// city, not a dungeon — exempt it so the four city chunks start LOCKED.
 	private static final Set<Integer> PRIF_CITY_REGIONS = new HashSet<>(Arrays.asList(
-			12894, 12895, 13150, 13151));
+		12894, 12895, 13150, 13151));
 	// The Tirannwn surface chunks surrounding the city. The city regions aren't
 	// adjacent to them in region-id space (instance coordinates), so unlocking
 	// ANY of these bridges all four city chunks into the unlockable set.
 	private static final Set<Integer> PRIF_GATE_REGIONS = new HashSet<>(Arrays.asList(
-			8757, 9013, 9268, 9267, 9010, 8754, 8500, 8499));
+		8757, 9013, 9268, 9267, 9010, 8754, 8500, 8499));
 
 	public boolean isFreeRegion(int regionId)
 	{
@@ -7580,7 +7580,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (currentPoints < cost)
 		{
 			log.warn("Not enough points to unlock region {}. Need {} but have {}",
-					regionId, cost, currentPoints);
+				regionId, cost, currentPoints);
 			return;
 		}
 
@@ -7596,7 +7596,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!neighbors.contains(regionId))
 		{
 			log.warn("unlockRegion({}) refused, region is not adjacent to any unlocked chunk (neighbors: {})",
-					regionId, neighbors);
+				regionId, neighbors);
 			return;
 		}
 
@@ -7618,9 +7618,9 @@ public class ChunkBlazerPlugin extends Plugin
 		// "go down to the dungeon, come back up, surface is locked" bug.
 		NuzlockeChunk unlockedChunk = chunksByRegionId.get(regionId);
 		List<Integer> toUnlock = (unlockedChunk != null && unlockedChunk.getRegionIds() != null
-				&& !unlockedChunk.getRegionIds().isEmpty())
-				? unlockedChunk.getRegionIds()
-				: java.util.Collections.singletonList(regionId);
+			&& !unlockedChunk.getRegionIds().isEmpty())
+			? unlockedChunk.getRegionIds()
+			: java.util.Collections.singletonList(regionId);
 
 		java.util.LinkedHashSet<String> unlockedSet = new java.util.LinkedHashSet<>(getUnlockedRegionIds());
 		for (Integer r : toUnlock)
@@ -7643,7 +7643,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// Confirm in chat so the player doesn't have to watch the side panel.
 		addPluginChatMessage("Unlocked " + getRegionName(regionId) + " for " + cost
-				+ (cost == 1 ? " point. " : " points. ") + (currentPoints - cost) + " remaining.");
+			+ (cost == 1 ? " point. " : " points. ") + (currentPoints - cost) + " remaining.");
 
 		if (!wasAlreadyUnlocked)
 		{
