@@ -223,9 +223,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 	// --- Plugin State ---
 
-	@Getter @Setter
-	private NuzlockeTask selectedTask = null; // Selected task from the sidepanel
-
 	@Getter
 	private NuzlockeTask activeTask; // Legacy single task for backward compatibility
 
@@ -3199,6 +3196,11 @@ public class ChunkBlazerPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
+		if (CONFIG_GROUP.equals(event.getGroup()) && "taskTrackerStyle".equals(event.getKey()) && panel != null)
+		{
+			// Off shows the Selected Task box in the side panel; the other styles draw it in game.
+			javax.swing.SwingUtilities.invokeLater(panel::refreshSelectedTaskDisplay);
+		}
 		if ("chunkblazer".equals(event.getGroup()) && "serverSyncEnabled".equals(event.getKey()))
 		{
 			// Turning sync off is choosing to play offline.
@@ -5731,6 +5733,12 @@ public class ChunkBlazerPlugin extends Plugin
 			return;
 		}
 		javax.swing.SwingUtilities.invokeLater(() -> panel.selectTask(task));
+	}
+
+	/** How the selected task is shown in game (see the "Selected Task Tracker" setting). */
+	public TaskTrackerStyle getTaskTrackerStyle()
+	{
+		return config.taskTrackerStyle();
 	}
 
 	/** Called from the overlay's right-click menu. */

@@ -2270,7 +2270,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		selectedTaskPanel.add(selectedTaskName);
 
 		selectedTaskPanel.setVisible(false); // Hidden until a task is selected
-		// taskPanel.add(selectedTaskPanel); // shown on the game screen instead now
+		// Only shown when the Selected Task Tracker setting is Off; otherwise it's drawn in game.
+		taskPanel.add(selectedTaskPanel);
 		taskPanel.add(Box.createVerticalStrut(4));
 
 		// === HEADER ROW WITH TOGGLE ===
@@ -2649,6 +2650,12 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 	}
 
+	/** Re-show or hide the Selected Task box after the tracker style setting changes. */
+	public void refreshSelectedTaskDisplay()
+	{
+		updateSelectedTaskDisplay();
+	}
+
 	/**
 	 * Clear the selected task unconditionally.
 	 */
@@ -2660,10 +2667,7 @@ public class ChunkBlazerPanel extends PluginPanel
 
 	private void updateSelectedTaskDisplay()
 	{
-		plugin.setSelectedTask(selectedTask);
-		// Inform the plugin of the current selection
-		// All assignments call to this function after so placing it here will catch all cases
-		if (selectedTask == null)
+		if (selectedTask == null || plugin.getTaskTrackerStyle() != TaskTrackerStyle.OFF)
 		{
 			selectedTaskPanel.setVisible(false);
 			// Force the parent layout to recompute so the gap left by the now-hidden panel

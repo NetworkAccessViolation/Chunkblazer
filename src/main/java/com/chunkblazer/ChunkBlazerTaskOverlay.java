@@ -31,6 +31,8 @@ import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import javax.inject.Inject;
+import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.components.LineComponent;
@@ -40,13 +42,15 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 
 public class ChunkBlazerTaskOverlay extends OverlayPanel
 {
+	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
 
 	@Inject
-	ChunkBlazerTaskOverlay(ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
+	ChunkBlazerTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
 	{
 		super(plugin);
+		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
 		setLayer(OverlayLayer.UNDER_WIDGETS);
@@ -55,8 +59,12 @@ public class ChunkBlazerTaskOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (config.taskTrackerStyle() != TaskTrackerStyle.NET || client.getGameState() != GameState.LOGGED_IN)
+		{
+			return null;
+		}
 		NuzlockeTask selectedTask = plugin.getSelectedTask();
-		if (selectedTask == null || !config.showTaskOverlay())
+		if (selectedTask == null)
 		{
 			return null;
 		}

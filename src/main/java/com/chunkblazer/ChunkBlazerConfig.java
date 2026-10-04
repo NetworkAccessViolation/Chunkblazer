@@ -394,35 +394,37 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showSelectedTaskOverlay",
-		name = "Show Selected Task On Screen",
-		description = "Pin the selected task and its progress bar to the game screen",
+		keyName = "taskTrackerStyle",
+		name = "Selected Task Tracker",
+		description = "How the task you select in the side panel is shown in game. Off keeps it in the side panel.<br>"
+			+ "Simple overlay by Net: an info box with a progress bar.<br>"
+			+ "Yellow paint by Vani: a compact box, plus a Tasks right-click menu on NPCs and objects your tasks need.",
 		section = displaySection,
-		position = 6
+		position = 7
 	)
-	default boolean showSelectedTaskOverlay()
+	default TaskTrackerStyle taskTrackerStyle()
 	{
-		return true;
+		return TaskTrackerStyle.OFF;
 	}
 
 	@ConfigItem(
 		keyName = "highlightTaskTargets",
-		name = "Highlight Task Targets",
+		name = "Highlight Tasks On Screen",
 		description = "Outline NPCs and objects that one of your active tasks needs",
 		section = displaySection,
-		position = 7
+		position = 8
 	)
 	default boolean highlightTaskTargets()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
 		keyName = "taskHighlightColor",
 		name = "Task Highlight Colour",
-		description = "Outline colour for task NPCs and objects",
+		description = "Outline colour for task NPCs and objects (Highlight Tasks On Screen)",
 		section = displaySection,
-		position = 8
+		position = 9
 	)
 	default java.awt.Color taskHighlightColor()
 	{
@@ -432,9 +434,9 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "taskHighlightUnavailableColor",
 		name = "Task Highlight (No Level)",
-		description = "Outline colour when you don't have the level for any of that target's tasks",
+		description = "Outline colour when you don't have the level for any of that target's tasks (Highlight Tasks On Screen)",
 		section = displaySection,
-		position = 9
+		position = 10
 	)
 	default java.awt.Color taskHighlightUnavailableColor()
 	{
@@ -444,9 +446,9 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "taskRightClickMenu",
 		name = "Tasks Right-Click Menu",
-		description = "Add a Tasks submenu when right-clicking NPCs and objects your tasks need",
+		description = "Yellow paint by Vani: add a Tasks submenu when right-clicking NPCs and objects your tasks need",
 		section = displaySection,
-		position = 10
+		position = 11
 	)
 	default boolean taskRightClickMenu()
 	{
@@ -463,18 +465,6 @@ public interface ChunkBlazerConfig extends Config
 	default boolean showMinimapOrbs()
 	{
 		return true;
-	}
-
-	@ConfigItem(
-		keyName = "showTaskOverlay",
-		name = "Show Selected Task Overlay",
-		description = "Show an overlay for the currently selected task",
-		section = displaySection,
-		position = 7
-	)
-	default boolean showTaskOverlay()
-	{
-		return false;
 	}
 	// NOTE: the locked-chunk GPU greyscale settings moved into the standalone
 	// "ChunkBlazer GPU" plugin's own config (group "chunkblazergpu") when that

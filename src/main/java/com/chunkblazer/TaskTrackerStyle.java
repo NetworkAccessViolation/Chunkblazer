@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026, Vani-Lab
+ * Copyright (c) 2026, btwinnn
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -26,39 +26,26 @@
 
 package com.chunkblazer;
 
-import java.awt.event.MouseEvent;
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import net.runelite.client.input.MouseAdapter;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 
-/**
- * Makes the X on the Selected Task box clickable. Overlays can't take clicks by
- * themselves, so this listens to the game canvas (like TaskCardInput does for the
- * task cards) and swallows a click on the X so it doesn't also walk the player.
- * The overlay works out whether the X is hovered while drawing, so no coordinate
- * maths happens here.
- */
-@Singleton
-public class SelectedTaskOverlayInput extends MouseAdapter
+/** How the task selected in the side panel is shown in game. */
+@Getter
+@RequiredArgsConstructor
+public enum TaskTrackerStyle
 {
-	private final SelectedTaskOverlay overlay;
-	private final ChunkBlazerPlugin plugin;
+	/** Nothing on the game screen; the side panel shows the Selected Task box. */
+	OFF("Off"),
+	/** ChunkBlazerTaskOverlay: a detailed info box with a progress bar. */
+	NET("Simple overlay by Net"),
+	/** SelectedTaskOverlay box, plus a Tasks right-click menu on task targets. */
+	VANI("Yellow paint by Vani");
 
-	@Inject
-	private SelectedTaskOverlayInput(SelectedTaskOverlay overlay, ChunkBlazerPlugin plugin)
-	{
-		this.overlay = overlay;
-		this.plugin = plugin;
-	}
+	private final String name;
 
 	@Override
-	public MouseEvent mousePressed(MouseEvent event)
+	public String toString()
 	{
-		if (event.getButton() == MouseEvent.BUTTON1 && overlay.isCloseHovered())
-		{
-			plugin.clearSelectedTask();
-			event.consume();
-		}
-		return event;
+		return name;
 	}
 }
