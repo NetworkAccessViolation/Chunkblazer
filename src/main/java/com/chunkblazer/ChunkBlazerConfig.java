@@ -327,6 +327,18 @@ public interface ChunkBlazerConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "showChunkNamePopups",
+		name = "Chunk Name Popups",
+		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
+		section = displaySection,
+		position = 3
+	)
+	default boolean showChunkNamePopups()
+	{
+		return true;
+	}
+
 	@net.runelite.client.config.Alpha
 	@ConfigItem(
 		keyName = "chunkWallColor",
