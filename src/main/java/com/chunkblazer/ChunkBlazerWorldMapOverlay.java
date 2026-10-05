@@ -34,6 +34,7 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.util.Set;
 import javax.inject.Inject;
+import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
@@ -48,6 +49,8 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 
 @Slf4j
+// Shared: the task window reads which chunk is hovered on the world map.
+@Singleton
 class ChunkBlazerWorldMapOverlay extends Overlay
 {
 	private static final int REGION_SIZE = 64; // 64 tiles per region
