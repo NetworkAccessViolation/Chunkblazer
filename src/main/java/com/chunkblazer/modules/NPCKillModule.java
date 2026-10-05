@@ -553,6 +553,35 @@ public class NPCKillModule extends AbstractTaskModule
 		// Could add a sync check with hiscores here for verification.
 	}
 
+	/**
+	 * When the current fight against one of this target's NPCs started (the tick of
+	 * our first hit), or -1 if we aren't fighting one. Read-only: used by the on-screen
+	 * task box to show a live countdown for timed tasks, and changes nothing here.
+	 * If several matching fights are going on, the most recently started one wins.
+	 * Client thread only (reads the scene's NPCs).
+	 */
+	public int getActiveFightStartTick(TargetNpc target)
+	{
+		if (target == null || fights.isEmpty())
+		{
+			return -1;
+		}
+		int latest = -1;
+		for (NPC npc : client.getNpcs())
+		{
+			if (npc == null || !target.matchesNpcId(npc.getId()))
+			{
+				continue;
+			}
+			FightRecord fight = fights.get(npc.getIndex());
+			if (fight != null && fight.combatStartTick > latest)
+			{
+				latest = fight.combatStartTick;
+			}
+		}
+		return latest;
+	}
+
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
