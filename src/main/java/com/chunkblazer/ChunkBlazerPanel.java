@@ -1082,6 +1082,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		completedTasksScrollPane = new JScrollPane(completedTasksContentPanel);
 		completedTasksScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 		completedTasksScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		pinToLeftEdge(completedTasksScrollPane);
 		completedTasksScrollPane.setBorder(null);
 		completedTasksScrollPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		completedTasksScrollPane.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -1264,6 +1265,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		globalTasksScrollPane = new JScrollPane(globalTasksContentPanel);
 		globalTasksScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 		globalTasksScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		pinToLeftEdge(globalTasksScrollPane);
 		globalTasksScrollPane.setBorder(null);
 		globalTasksScrollPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		globalTasksScrollPane.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -1524,7 +1526,26 @@ public class ChunkBlazerPanel extends PluginPanel
 		globalTasksContentPanel.repaint();
 
 		SwingUtilities.invokeLater(() ->
-			globalTasksScrollPane.getViewport().setViewPosition(savedViewPos));
+			globalTasksScrollPane.getViewport().setViewPosition(new java.awt.Point(0, savedViewPos.y)));
+	}
+
+	/**
+	 * Keep a vertical-only scroll pane at its left edge. Its content is a plain panel,
+	 * so while it is momentarily wider than the viewport (a rebuild on logout/login)
+	 * Swing can scroll it sideways, and with the horizontal bar hidden nothing ever
+	 * scrolls it back: the task cards stay shifted left with their edge cut off.
+	 */
+	private static void pinToLeftEdge(JScrollPane scrollPane)
+	{
+		javax.swing.JViewport viewport = scrollPane.getViewport();
+		viewport.addChangeListener(e ->
+		{
+			java.awt.Point pos = viewport.getViewPosition();
+			if (pos.x != 0)
+			{
+				viewport.setViewPosition(new java.awt.Point(0, pos.y));
+			}
+		});
 	}
 
 	/**
@@ -1824,6 +1845,7 @@ public class ChunkBlazerPanel extends PluginPanel
 				JScrollPane chunkScroll = new JScrollPane(chunkList);
 				chunkScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 				chunkScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+				pinToLeftEdge(chunkScroll);
 				chunkScroll.setBorder(null);
 				chunkScroll.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 				chunkScroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -2480,6 +2502,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		activeTasksScrollPane = new JScrollPane(activeTasksContentPanel);
 		activeTasksScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 		activeTasksScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		pinToLeftEdge(activeTasksScrollPane);
 		activeTasksScrollPane.setBorder(null);
 		activeTasksScrollPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		activeTasksScrollPane.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -2884,6 +2907,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		taskListScrollPane = new JScrollPane(taskListContentPanel);
 		taskListScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 		taskListScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		pinToLeftEdge(taskListScrollPane);
 		taskListScrollPane.setBorder(null);
 		taskListScrollPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		taskListScrollPane.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -3302,7 +3326,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 
 		// Restore the viewport AFTER the layout pass — Swing resets it to (0,0) during revalidate.
-		SwingUtilities.invokeLater(() -> activeTasksScrollPane.getViewport().setViewPosition(savedActiveViewPos));
+		SwingUtilities.invokeLater(() -> activeTasksScrollPane.getViewport().setViewPosition(new java.awt.Point(0, savedActiveViewPos.y)));
 	}
 
 	private void updateActiveTasksSectionTitle(int totalCount, int filteredCount)
@@ -3984,7 +4008,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 
 		// Restore viewport AFTER the layout pass; revalidate resets it to (0,0) otherwise.
-		SwingUtilities.invokeLater(() -> completedTasksScrollPane.getViewport().setViewPosition(savedCompletedViewPos));
+		SwingUtilities.invokeLater(() -> completedTasksScrollPane.getViewport().setViewPosition(new java.awt.Point(0, savedCompletedViewPos.y)));
 	}
 
 	private JPanel createEnhancedCompletedTaskItem(CompletedTaskInfo info)
@@ -4174,7 +4198,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 
 		// Restore viewport AFTER the layout pass; revalidate resets it to (0,0) otherwise.
-		SwingUtilities.invokeLater(() -> taskListScrollPane.getViewport().setViewPosition(savedTaskListViewPos));
+		SwingUtilities.invokeLater(() -> taskListScrollPane.getViewport().setViewPosition(new java.awt.Point(0, savedTaskListViewPos.y)));
 	}
 
 	private JPanel createTaskListItem(NuzlockeTask task)
