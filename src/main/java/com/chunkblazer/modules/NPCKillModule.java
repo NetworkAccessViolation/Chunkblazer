@@ -49,7 +49,6 @@ import net.runelite.api.Tile;
 import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.events.ActorDeath;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -58,8 +57,6 @@ import net.runelite.api.events.ItemSpawned;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.ChunkBlazerConfig;
 import com.chunkblazer.NuzlockeTask;
@@ -172,9 +169,6 @@ public class NPCKillModule extends AbstractTaskModule
 
 	@Inject
 	private VarPlayerVerificationService varPlayerService;
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	@Inject
 	private ChunkBlazerConfig config;
@@ -1087,108 +1081,6 @@ public class NPCKillModule extends AbstractTaskModule
 			}
 		}
 	}
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";        // [ChunkBlazer] branding
-	private static final String COLOR_RED = "ff3333";         // Task Failed
-	private static final String COLOR_DARK_BLUE = "1a5276";   // Task Success (dark blue, readable)
-	private static final String COLOR_DARK_GREEN = "228b22";  // Task Progress
-	private static final String COLOR_BLACK = "000000";       // Task name text
-
-	/**
-	 * Send a task success message to the player's chatbox.
-	 * Used when a task is fully completed.
-	 */
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		// Check config - if showChatSuccess is disabled, don't send
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Success:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + task.getCurrentProgress() + "/" + task.getTargetQuantity() + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			String detailMessage = "  - " + details;
-
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value(detailMessage)
-				.build());
-		}
-	}
-
-	/**
-	 * Send a task progress message to the player's chatbox.
-	 * Used when progress is made but task is not yet complete.
-	 */
-	private void sendTaskProgress(NuzlockeTask task, String details)
-	{
-		// Check config - if showChatProgress is disabled, don't send
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + (task.getCurrentProgress() + 1) + "/" + task.getTargetQuantity() + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			String detailMessage = "  - " + details;
-
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value(detailMessage)
-				.build());
-		}
-	}
-
-	/**
-	 * Send a task failure message to the player's chatbox.
-	 */
-	private void sendTaskFailure(NuzlockeTask task, String reason)
-	{
-		// Check config - if showChatFailed is disabled, don't send
-		if (!config.showChatFailed())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_RED + ">Task Failed:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		String reasonMessage = "  - Reason: " + reason;
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(reasonMessage)
-			.build());
-	}
-
 	/**
 	 * Check ground items at a specific location for matching item IDs.
 	 * Only counts items that belong to us (OWNERSHIP_SELF).
@@ -1975,5 +1867,20 @@ public class NPCKillModule extends AbstractTaskModule
 			return "";
 		}
 		return String.format(" in %.1fs", elapsedTicks * 0.6);
+	}
+
+	@Override
+	protected void sendTaskSuccess(NuzlockeTask task, String details)
+	{
+		if (config.showChatSuccess())
+		{
+			announce(COLOR_DARK_BLUE, "Task Success:", task,
+				" (" + task.getCurrentProgress() + "/" + task.getTargetQuantity() + ")", details);
+		}
+	}
+
+	private void sendTaskProgress(NuzlockeTask task, String details)
+	{
+		sendTaskProgress(task, details, task.getCurrentProgress() + 1, task.getTargetQuantity());
 	}
 }

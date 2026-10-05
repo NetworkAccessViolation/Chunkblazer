@@ -35,15 +35,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Skill;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.RequiredObject;
@@ -66,13 +63,6 @@ import com.chunkblazer.TargetNpc;
 public class ThievingModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "THIEVING";
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_DARK_GREEN = "228b22";
-	private static final String COLOR_BLACK = "000000";
-
 	// Minimum XP gain to count as successful pickpocket
 	private static final int MIN_XP_THRESHOLD = 1;
 
@@ -87,9 +77,6 @@ public class ThievingModule extends AbstractTaskModule
 		MenuAction.GAME_OBJECT_FOURTH_OPTION,
 		MenuAction.GAME_OBJECT_FIFTH_OPTION
 	);
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// Per-task NPC IDs (pickpocket tasks).
 	private final Map<String, Set<Integer>> taskTargetNpcs = new ConcurrentHashMap<>();
@@ -371,7 +358,7 @@ public class ThievingModule extends AbstractTaskModule
 
 		task.setCurrentProgress(newProgress);
 
-		sendTaskProgress(task, "Pickpocket successful", newProgress, required);
+		sendTaskProgress(task, null, newProgress, required);
 
 		if (completionCallback != null)
 		{
@@ -383,7 +370,7 @@ public class ThievingModule extends AbstractTaskModule
 		{
 			task.setCompleted(true);
 
-			sendTaskSuccess(task, "Thieving task complete!");
+			sendTaskSuccess(task, null);
 
 			if (completionCallback != null)
 			{
@@ -410,42 +397,5 @@ public class ThievingModule extends AbstractTaskModule
 		{
 			watchedObjectIds.addAll(objects);
 		}
-	}
-
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
 	}
 }

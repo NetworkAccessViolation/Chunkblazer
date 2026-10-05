@@ -267,7 +267,7 @@ public class CatalogStore
 		}
 		catch (RuntimeException e)
 		{
-			log.debug("Catalog _meta.json unreadable: {}", e.getMessage());
+			// Unreadable version: treat the catalog as unversioned (0).
 		}
 		return 0L;
 	}
@@ -288,7 +288,7 @@ public class CatalogStore
 		}
 		catch (IOException e)
 		{
-			log.debug("Could not delete stale catalog cache: {}", e.getMessage());
+			// A stale cache that can't be deleted is overwritten by the next refresh.
 		}
 	}
 
@@ -318,12 +318,6 @@ public class CatalogStore
 			seedFiles = s != null ? s : java.util.Collections.emptyMap();
 		}
 		return seedFiles.get(filename);
-	}
-
-	/** The set of catalog filenames currently loaded. */
-	public Set<String> fileNames()
-	{
-		return files.keySet();
 	}
 
 	public void shutdown()
@@ -409,7 +403,6 @@ public class CatalogStore
 		{
 			if (resp.code() == 304)
 			{
-				log.debug("Task catalog unchanged (304)");
 				return;
 			}
 			if (!resp.isSuccessful())
@@ -451,7 +444,6 @@ public class CatalogStore
 		catch (IOException e)
 		{
 			// Genuinely offline / network hiccup — benign and common, keep it quiet.
-			log.debug("Task catalog fetch failed (offline?): {}", e.getMessage());
 		}
 		catch (RuntimeException e)
 		{

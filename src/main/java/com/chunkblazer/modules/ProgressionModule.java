@@ -32,12 +32,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.Skill;
 import net.runelite.api.events.StatChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TaskConstraints;
@@ -75,15 +72,6 @@ import com.chunkblazer.TaskConstraints;
 public class ProgressionModule extends AbstractTaskModule
 {
 	private static final String PROGRESSION_TYPE = "SKILL_THRESHOLD";
-
-	// Chat colors for ChunkBlazer messages (matches QuestCheckModule).
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_BLACK = "000000";
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
-
 	// taskId -> the rung it represents. Resolved once in addActiveTask so a bad
 	// skill name in the JSON fails loudly at registration rather than silently
 	// never firing.
@@ -250,7 +238,7 @@ public class ProgressionModule extends AbstractTaskModule
 
 		task.setCurrentProgress(1);
 		task.setCompleted(true);
-		sendTaskSuccess(task);
+		sendTaskSuccess(task, null);
 
 		if (completionCallback != null)
 		{
@@ -262,22 +250,5 @@ public class ProgressionModule extends AbstractTaskModule
 		activeTasks.remove(task);
 		taskRungs.remove(task.getTaskId());
 		return true;
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
 	}
 }

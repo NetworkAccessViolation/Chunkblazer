@@ -35,15 +35,12 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.NPC;
 import net.runelite.api.Player;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TargetNpc;
@@ -60,15 +57,6 @@ import com.chunkblazer.TargetNpc;
 public class NpcDialogueModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "NPC_DIALOGUE";
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_BLACK = "000000";
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
-
 	// Track task-specific data
 	// Map: taskId -> Set of target NPC IDs
 	private final Map<String, Set<Integer>> taskTargetNpcs = new ConcurrentHashMap<>();
@@ -302,7 +290,7 @@ public class NpcDialogueModule extends AbstractTaskModule
 		{
 			task.setCompleted(true);
 
-			sendTaskSuccess(task, "Dialogue complete!");
+			sendTaskSuccess(task, null);
 
 			if (completionCallback != null)
 			{
@@ -323,23 +311,5 @@ public class NpcDialogueModule extends AbstractTaskModule
 		{
 			watchedNpcIds.addAll(npcs);
 		}
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
 	}
 }

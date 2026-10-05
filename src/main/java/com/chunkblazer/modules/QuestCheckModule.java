@@ -33,14 +33,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.Quest;
 import net.runelite.api.QuestState;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.VarbitChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TaskConstraints;
@@ -83,15 +80,6 @@ public class QuestCheckModule extends AbstractTaskModule
 	// Swing rebuild of the panel), and firing ~150 of them in one tick is what
 	// hard-locked the client on 2026-07-19. Leftovers roll into the next sweep.
 	private static final int MAX_COMPLETIONS_PER_SWEEP = 5;
-
-	// Chat colors for ChunkBlazer messages (matches VarbitCheckModule).
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_BLACK = "000000";
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
-
 	// taskId -> resolved Quest enum constant. Resolved once in addActiveTask so
 	// a bad name in the JSON fails loudly at registration rather than silently
 	// never firing, and so the sweep doesn't re-run valueOf() 200x per sweep.
@@ -284,7 +272,7 @@ public class QuestCheckModule extends AbstractTaskModule
 		task.setCurrentProgress(1);
 		task.setCompleted(true);
 
-		sendTaskSuccess(task);
+		sendTaskSuccess(task, null);
 
 		if (completionCallback != null)
 		{
@@ -296,22 +284,5 @@ public class QuestCheckModule extends AbstractTaskModule
 		activeTasks.remove(task);
 		taskQuests.remove(task.getTaskId());
 		return true;
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
 	}
 }

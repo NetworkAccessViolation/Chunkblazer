@@ -36,7 +36,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -45,8 +44,6 @@ import net.runelite.api.Skill;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ItemDespawned;
 import net.runelite.api.events.StatChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import com.chunkblazer.NuzlockeTask;
@@ -99,13 +96,6 @@ import com.chunkblazer.RequiredItem;
 public class FiremakingModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "FIREMAKING";
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_DARK_GREEN = "228b22";
-	private static final String COLOR_BLACK = "000000";
-
 	// How far apart (in ticks) the log leaving the inventory and the Firemaking
 	// XP gain may land and still count as the same burn. Covers a bonfire batch
 	// draining ahead of its XP drops; short enough that logs banked or dropped
@@ -120,9 +110,6 @@ public class FiremakingModule extends AbstractTaskModule
 
 	@Inject
 	private ItemManager itemManager;
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// Track task-specific data
 	// Map: taskId -> (Map: itemId -> required quantity)
@@ -553,7 +540,7 @@ public class FiremakingModule extends AbstractTaskModule
 
 			task.setCurrentProgress(newProgress);
 
-			sendTaskProgress(task, "Burned " + progressIncrement + " logs", newProgress, required);
+			sendTaskProgress(task, null, newProgress, required);
 
 			if (completionCallback != null)
 			{
@@ -565,7 +552,7 @@ public class FiremakingModule extends AbstractTaskModule
 			{
 				task.setCompleted(true);
 
-				sendTaskSuccess(task, "All logs burned!");
+				sendTaskSuccess(task, null);
 
 				if (completionCallback != null)
 				{
@@ -593,42 +580,5 @@ public class FiremakingModule extends AbstractTaskModule
 		{
 			watchedItemIds.addAll(items.keySet());
 		}
-	}
-
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
 	}
 }

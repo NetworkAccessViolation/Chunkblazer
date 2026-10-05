@@ -36,7 +36,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
@@ -47,8 +46,6 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.widgets.Widget;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import com.chunkblazer.NuzlockeTask;
@@ -79,18 +76,8 @@ public class ObtainModule extends AbstractTaskModule
 		"RUNECRAFTING",
 		"HUNTER"
 	);
-
-	// Chat colors for ChunkBlazer messages (matching NPCKillModule)
-	private static final String COLOR_BLUE = "3366ff";        // [ChunkBlazer] branding
-	private static final String COLOR_DARK_BLUE = "1a5276";   // Task Success (dark blue, readable)
-	private static final String COLOR_DARK_GREEN = "228b22";  // Task Progress
-	private static final String COLOR_BLACK = "000000";       // Task name text
-
 	@Inject
 	private ItemManager itemManager;
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	/**
 	 * One "slot" of a task's required items. A slot represents a single
@@ -838,70 +825,4 @@ public class ObtainModule extends AbstractTaskModule
 
 	// ==================== CHAT MESSAGE METHODS ====================
 
-	/**
-	 * Send a task progress message to the player's chatbox.
-	 * Used when progress is made but task is not yet complete.
-	 */
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		// Check config - if showChatProgress is disabled, don't send
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			String detailMessage = "  - " + details;
-
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value(detailMessage)
-				.build());
-		}
-
-	}
-
-	/**
-	 * Send a task success message to the player's chatbox.
-	 * Used when a task is fully completed.
-	 */
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		// Check config - if showChatSuccess is disabled, don't send
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			String detailMessage = "  - " + details;
-
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value(detailMessage)
-				.build());
-		}
-
-	}
 }

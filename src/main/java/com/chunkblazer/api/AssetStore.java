@@ -204,7 +204,6 @@ public class AssetStore
 				{
 					this.manifest = disk;
 					this.loaded = true;
-					log.debug("Loaded cached asset manifest ({} areas)", disk.getAudio().size());
 				}
 			}
 			catch (Exception e)
@@ -327,7 +326,6 @@ public class AssetStore
 			{
 				// Best-effort: a failed warm just means we fall back to bundled
 				// audio and try again next time it's requested.
-				log.debug("Asset warm failed for {}: {}", asset.getPath(), e.getMessage());
 			}
 			finally
 			{
@@ -415,13 +413,11 @@ public class AssetStore
 			{
 				// Unchanged — keep the cached copy, no body, no re-parse. Still
 				// warm, in case the cache was cleared while the manifest wasn't.
-				log.debug("Asset manifest unchanged (304)");
 				warmAll();
 				return;
 			}
 			if (!resp.isSuccessful())
 			{
-				log.debug("Asset manifest fetch returned {}", resp.code());
 				return; // keep last-good
 			}
 
@@ -450,13 +446,11 @@ public class AssetStore
 			}
 			this.manifest = fresh;
 			this.loaded = true;
-			log.debug("Refreshed asset manifest ({} areas)", fresh.getAudio().size());
 			warmAll();
 		}
 		catch (IOException e)
 		{
 			// Offline / server down: a non-event. Keep whatever we already have.
-			log.debug("Asset manifest fetch failed (offline?): {}", e.getMessage());
 		}
 	}
 
@@ -497,7 +491,6 @@ public class AssetStore
 
 			writeAtomic(dest, bytes);
 			enforceCap();
-			log.debug("Cached asset {} ({} bytes)", asset.getPath(), bytes.length);
 		}
 	}
 
@@ -657,7 +650,7 @@ public class AssetStore
 		}
 		catch (Exception e)
 		{
-			log.debug("Cache cap enforcement skipped: {}", e.getMessage());
+			// Trimming the cache is best effort; it retries on the next write.
 		}
 	}
 

@@ -258,14 +258,6 @@ public class TaskCompletionSoundManager
 	}
 
 	/**
-	 * Kept for API compatibility. {@code AudioPlayer} owns its one-shot clips and
-	 * closes each when it finishes, so there is nothing to stop here.
-	 */
-	public void stopCurrentSound()
-	{
-	}
-
-	/**
 	 * Clean up resources. Nothing to release now that playback is fire-and-forget.
 	 */
 	public void shutdown()

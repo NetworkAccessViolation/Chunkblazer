@@ -34,13 +34,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.NuzlockeTask;
 
@@ -66,11 +63,6 @@ import com.chunkblazer.NuzlockeTask;
 public class CombatAchievementModule extends AbstractTaskModule
 {
 	private static final String TYPE = "COMBAT_ACHIEVEMENT";
-
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_BLACK = "000000";
-
 	/**
 	 * The 21 VarPlayers packing CA task completion, in task-id order (index 0..20).
 	 * Grows by one entry each time Jagex crosses a 32-task boundary — the bounds
@@ -99,9 +91,6 @@ public class CombatAchievementModule extends AbstractTaskModule
 		VarPlayerID.CA_TASK_COMPLETED_19,
 		VarPlayerID.CA_TASK_COMPLETED_20
 	};
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// taskId -> the CA ids that must all be complete.
 	private final Map<String, List<Integer>> taskCaIds = new ConcurrentHashMap<>();
@@ -254,7 +243,7 @@ public class CombatAchievementModule extends AbstractTaskModule
 		}
 
 		task.setCompleted(true);
-		sendTaskSuccess(task);
+		sendTaskSuccess(task, null);
 		if (completionCallback != null)
 		{
 			completionCallback.onTaskCompleted(task, done);
@@ -278,20 +267,5 @@ public class CombatAchievementModule extends AbstractTaskModule
 		}
 		int varpValue = client.getVarpValue(CA_TASK_COMPLETED_VARPS[arrayIndex]);
 		return (varpValue & (1 << bitIndex)) != 0;
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> "
-			+ "<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> "
-			+ "<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
 	}
 }

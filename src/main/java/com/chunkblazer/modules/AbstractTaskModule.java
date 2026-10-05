@@ -26,6 +26,9 @@
 
 package com.chunkblazer.modules;
 
+import net.runelite.client.chat.QueuedMessage;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.api.ChatMessageType;
 import com.google.common.hash.Hashing;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -73,6 +76,16 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 	protected int currentProgress;
 
 	protected TaskCompletionCallback completionCallback;
+
+	// Colours of the plugin's chat lines, shared by every module.
+	protected static final String COLOR_BLUE = "3366ff";
+	protected static final String COLOR_DARK_BLUE = "1a5276";
+	protected static final String COLOR_DARK_GREEN = "228b22";
+	protected static final String COLOR_RED = "ff3333";
+	protected static final String COLOR_BLACK = "000000";
+
+	@Inject
+	protected ChatMessageManager chatMessageManager;
 
 	/**
 	 * Set the callback to be invoked when a task is completed.
@@ -257,5 +270,49 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 		 * Called when progress is updated.
 		 */
 		void onProgressUpdated(NuzlockeTask task, int newProgress);
+	}
+
+	/** Queue one line in the game chat. */
+	protected void chatLine(String message)
+	{
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.value(message)
+			.build());
+	}
+
+	/** "[ChunkBlazer] heading task-name suffix", then an indented detail line when there is one. */
+	protected void announce(String headingColor, String heading, NuzlockeTask task, String suffix, String detail)
+	{
+		chatLine("<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> <col=" + headingColor + ">" + heading + "</col> <col="
+			+ COLOR_BLACK + ">" + task.getName() + "</col>" + suffix);
+		if (detail != null && !detail.isEmpty())
+		{
+			chatLine("  - " + detail);
+		}
+	}
+
+	protected void sendTaskSuccess(NuzlockeTask task, String details)
+	{
+		if (config.showChatSuccess())
+		{
+			announce(COLOR_DARK_BLUE, "Task Complete!", task, "", details);
+		}
+	}
+
+	protected void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
+	{
+		if (config.showChatProgress())
+		{
+			announce(COLOR_DARK_GREEN, "Task Progress:", task, " (" + current + "/" + total + ")", details);
+		}
+	}
+
+	protected void sendTaskFailure(NuzlockeTask task, String reason)
+	{
+		if (config.showChatFailed())
+		{
+			announce(COLOR_RED, "Task Failed:", task, "", "Reason: " + reason);
+		}
 	}
 }

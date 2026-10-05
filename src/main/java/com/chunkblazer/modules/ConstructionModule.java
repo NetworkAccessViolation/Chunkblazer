@@ -38,7 +38,6 @@ import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
 import net.runelite.api.Skill;
@@ -50,8 +49,6 @@ import net.runelite.api.events.GroundObjectSpawned;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WallObjectSpawned;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.ChunkBlazerPlugin;
 import com.chunkblazer.NuzlockeTask;
@@ -109,13 +106,6 @@ import com.chunkblazer.RequiredObject;
 public class ConstructionModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "CONSTRUCTION";
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_DARK_GREEN = "228b22";
-	private static final String COLOR_BLACK = "000000";
-
 	// How far apart (in ticks) the watched-object spawn and the Construction
 	// XP gain may land and still count as the same build.
 	private static final int MATCH_WINDOW_TICKS = 5;
@@ -142,9 +132,6 @@ public class ConstructionModule extends AbstractTaskModule
 		MenuAction.GAME_OBJECT_FOURTH_OPTION,
 		MenuAction.GAME_OBJECT_FIFTH_OPTION
 	);
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// Provider (not direct injection) to break the plugin <-> module cycle —
 	// ChunkBlazerPlugin instantiates this module via Guice, so we can't depend
@@ -620,56 +607,4 @@ public class ConstructionModule extends AbstractTaskModule
 		}
 	}
 
-	// ==================== CHAT MESSAGE METHODS ====================
-
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value("  - " + details)
-				.build());
-		}
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value("  - " + details)
-				.build());
-		}
-	}
 }

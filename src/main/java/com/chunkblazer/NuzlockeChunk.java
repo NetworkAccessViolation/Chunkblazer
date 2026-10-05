@@ -158,15 +158,6 @@ public class NuzlockeChunk
 	}
 
 	/**
-	 * @return the boss/raid key for a boss chunk (e.g. "toa"), or null if this is
-	 * not a boss chunk / none was authored.
-	 */
-	public String getBossKey()
-	{
-		return bossKey;
-	}
-
-	/**
 	 * @return every boss key this chunk hosts — the {@code boss_keys} list if authored,
 	 * else the single {@code boss_key} (as a one-element list), else empty. This is the
 	 * accessor the token logic should use so one chunk can carry multiple token-bosses.
