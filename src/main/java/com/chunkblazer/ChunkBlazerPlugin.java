@@ -5763,7 +5763,7 @@ public class ChunkBlazerPlugin extends Plugin
 		javax.swing.SwingUtilities.invokeLater(() -> panel.selectTask(task));
 	}
 
-	/** How the selected task is shown in game (see the "Selected Task Tracker" setting). */
+	/** How the selected task is shown in game (see the "Overlay" setting). */
 	public TaskTrackerStyle getTaskTrackerStyle()
 	{
 		return config.taskTrackerStyle();

@@ -395,10 +395,8 @@ public interface ChunkBlazerConfig extends Config
 
 	@ConfigItem(
 		keyName = "taskTrackerStyle",
-		name = "Selected Task Tracker",
-		description = "How the task you select in the side panel is shown in game. Off keeps it in the side panel.<br>"
-			+ "Simple overlay by Net: an info box with a progress bar.<br>"
-			+ "Yellow paint by Vani: a compact box, plus a Tasks right-click menu on NPCs and objects your tasks need.",
+		name = "Overlay",
+		description = "Choose an overlay template to display your selected task",
 		section = displaySection,
 		position = 7
 	)

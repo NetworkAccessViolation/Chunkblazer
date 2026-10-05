@@ -2270,7 +2270,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		selectedTaskPanel.add(selectedTaskName);
 
 		selectedTaskPanel.setVisible(false); // Hidden until a task is selected
-		// Only shown when the Selected Task Tracker setting is Off; otherwise it's drawn in game.
+		// Only shown when the Overlay setting is Off; otherwise it's drawn in game.
 		taskPanel.add(selectedTaskPanel);
 		taskPanel.add(Box.createVerticalStrut(4));
 
