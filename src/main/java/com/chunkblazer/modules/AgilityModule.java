@@ -26,7 +26,6 @@
 
 package com.chunkblazer.modules;
 
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
@@ -47,8 +46,6 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.util.Text;
 import com.chunkblazer.NuzlockeTask;
@@ -77,13 +74,6 @@ import com.chunkblazer.RequiredObject;
 public class AgilityModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "AGILITY";
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_DARK_GREEN = "228b22";
-	private static final String COLOR_BLACK = "000000";
-
 	// Object-gated tasks (have required_object) credit on the watched-object CLICK
 	// once the player's USE of it is confirmed by an animation or Agility XP (see
 	// onMenuOptionClicked / onAnimationChanged / confirmPendingTraversal).
@@ -108,16 +98,6 @@ public class AgilityModule extends AbstractTaskModule
 	// shortcut and back) takes longer than this.
 	private static final int REUSE_COOLDOWN_TICKS = 10;
 
-	// Menu-option verbs that indicate an agility obstacle / shortcut interaction.
-	// Used only by the diagnostic logger to filter the firehose of GameObject
-	// clicks down to agility-relevant ones, so we can surface the REAL runtime
-	// object id (the OSRS Wiki id often differs — multiloc / varbit-morphed
-	// objects — which is why wiki ids "don't line up" in the task JSON).
-	private static final Set<String> AGILITY_VERB_HINTS = new HashSet<>(Arrays.asList(
-		"climb", "cross", "squeeze", "jump", "leap", "vault", "hurdle", "swing",
-		"balance", "tightrope", "grapple", "hop", "scramble", "crawl", "traverse",
-		"slide", "dive", "walk-across", "run-across", "step", "boulder", "rockslide"));
-
 	// GameObject menu actions — same set used in ThievingModule. Anything else
 	// (examine, walk, cancel) is ignored.
 	private static final Set<MenuAction> GAME_OBJECT_ACTIONS = EnumSet.of(
@@ -127,9 +107,6 @@ public class AgilityModule extends AbstractTaskModule
 		MenuAction.GAME_OBJECT_FOURTH_OPTION,
 		MenuAction.GAME_OBJECT_FIFTH_OPTION
 	);
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// Track Agility XP for detecting gains
 	private int previousAgilityXp = -1;
@@ -327,20 +304,6 @@ public class AgilityModule extends AbstractTaskModule
 		pendingObjectId = objectId;
 		pendingTick = client.getTickCount();
 	}
-
-	private static boolean isAgilityVerb(String option)
-	{
-		String o = option.toLowerCase();
-		for (String hint : AGILITY_VERB_HINTS)
-		{
-			if (o.contains(hint))
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
 	/**
 	 * The player started an animation — proof they're actually performing the
 	 * obstacle they just clicked. Works for obstacles that award NO Agility XP
@@ -515,7 +478,7 @@ public class AgilityModule extends AbstractTaskModule
 
 		task.setCurrentProgress(newProgress);
 
-		sendTaskProgress(task, "Obstacle completed", newProgress, required);
+		sendTaskProgress(task, null, newProgress, required);
 
 		if (completionCallback != null)
 		{
@@ -527,7 +490,7 @@ public class AgilityModule extends AbstractTaskModule
 		{
 			task.setCompleted(true);
 
-			sendTaskSuccess(task, "Course completed!");
+			sendTaskSuccess(task, null);
 
 			if (completionCallback != null)
 			{
@@ -549,42 +512,5 @@ public class AgilityModule extends AbstractTaskModule
 		{
 			watchedObjectIds.addAll(ids);
 		}
-	}
-
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
 	}
 }

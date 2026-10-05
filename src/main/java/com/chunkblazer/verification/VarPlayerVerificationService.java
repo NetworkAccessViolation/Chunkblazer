@@ -32,10 +32,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
-import net.runelite.client.eventbus.EventBus;
-import net.runelite.client.eventbus.Subscribe;
 
 /**
  * Server-side verification using VarPlayer values.
@@ -49,14 +46,8 @@ public class VarPlayerVerificationService
 	@Inject
 	private Client client;
 
-	@Inject
-	private EventBus eventBus;
-
 	// Map boss names to their VarPlayer KC IDs
 	private static final Map<String, Integer> BOSS_KC_VARPS = new HashMap<>();
-
-	// Callbacks for KC changes
-	private KillCountChangeListener kcChangeListener;
 
 	static
 	{
@@ -170,25 +161,6 @@ public class VarPlayerVerificationService
 		BOSS_KC_VARPS.put("THE ROYAL TITANS", VarPlayerID.TOTAL_ROYAL_TITAN_KILLS);
 		BOSS_KC_VARPS.put("YAMA", VarPlayerID.TOTAL_YAMA_KILLS);
 	}
-
-	public void startUp()
-	{
-		eventBus.register(this);
-	}
-
-	public void shutDown()
-	{
-		eventBus.unregister(this);
-	}
-
-	/**
-	 * Set a listener for KC changes (called when VarPlayer updates).
-	 */
-	public void setKillCountChangeListener(KillCountChangeListener listener)
-	{
-		this.kcChangeListener = listener;
-	}
-
 	/**
 	 * Get the current KC for a boss from VarPlayer (server-side value).
 	 */
@@ -210,14 +182,6 @@ public class VarPlayerVerificationService
 		return getVarpIdForBoss(bossName) != null;
 	}
 
-	/**
-	 * Get current slayer task count (server-side).
-	 */
-	public int getSlayerTaskCount()
-	{
-		return client.getVarpValue(VarPlayerID.SLAYER_COUNT);
-	}
-
 	private Integer getVarpIdForBoss(String bossName)
 	{
 		if (bossName == null)
@@ -227,65 +191,4 @@ public class VarPlayerVerificationService
 		return BOSS_KC_VARPS.get(bossName.toUpperCase().trim());
 	}
 
-	@Subscribe
-	public void onVarbitChanged(VarbitChanged event)
-	{
-		int varpId = event.getVarpId();
-
-		// Check if this is a boss KC varp
-		for (Map.Entry<String, Integer> entry : BOSS_KC_VARPS.entrySet())
-		{
-			if (entry.getValue() == varpId)
-			{
-				int newKc = client.getVarpValue(varpId);
-
-				if (kcChangeListener != null)
-				{
-					kcChangeListener.onBossKillCountChanged(entry.getKey(), newKc);
-				}
-				return;
-			}
-		}
-
-		// Check slayer count
-		if (varpId == VarPlayerID.SLAYER_COUNT)
-		{
-			int remaining = event.getValue();
-
-			if (kcChangeListener != null)
-			{
-				kcChangeListener.onSlayerTaskCountChanged(remaining);
-			}
-		}
-	}
-
-	/**
-	 * Listener interface for KC changes.
-	 */
-	public interface KillCountChangeListener
-	{
-		void onBossKillCountChanged(String bossName, int newKc);
-		void onSlayerTaskCountChanged(int remaining);
-	}
-
-	/**
-	 * Verification result for boss kills.
-	 */
-	public static class BossKcVerificationResult
-	{
-		public final boolean verified;
-		public final int previousKc;
-		public final int currentKc;
-		public final String bossName;
-		public final String message;
-
-		public BossKcVerificationResult(boolean verified, int previousKc, int currentKc, String bossName, String message)
-		{
-			this.verified = verified;
-			this.previousKc = previousKc;
-			this.currentKc = currentKc;
-			this.bossName = bossName;
-			this.message = message;
-		}
-	}
 }

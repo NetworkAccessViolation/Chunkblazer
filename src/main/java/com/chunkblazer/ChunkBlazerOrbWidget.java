@@ -54,12 +54,11 @@ public class ChunkBlazerOrbWidget
 	private final TaskBrowserOverlay taskBrowser;
 
 	private final int bossTokenOrbSpriteID = -900;
-	private final int chunksOrbSpriteID = -901;
 
 	private Widget bossTokenOrb = null;
 	private Widget bossTokenText = null;
-	private Widget chunksOrb = null;
-	private Widget chunksText = null;
+	private Widget pointsOrb = null;
+	private Widget pointsText = null;
 	private Widget wikiWidget;
 
 	@Inject
@@ -113,16 +112,16 @@ public class ChunkBlazerOrbWidget
 		{
 			int bossOrbX = 80;
 			int bossOrbY = 148;
-			int chunksOrbX = 139;
-			int chunksOrbY = 148;
+			int pointsOrbX = 139;
+			int pointsOrbY = 148;
 			boolean moveWiki = true;
 			boolean flip = false;
 			if (!client.isResized())
 			{
 				bossOrbX = 190;
 				bossOrbY = 71;
-				chunksOrbX = 190;
-				chunksOrbY = 37;
+				pointsOrbX = 190;
+				pointsOrbY = 37;
 				moveWiki = false;
 				flip = true;
 				//Toplevel.ORBS doesn't extend all the way to the right of the canvas by default
@@ -209,8 +208,22 @@ public class ChunkBlazerOrbWidget
 		text.setOriginalHeight(13);
 		text.revalidate();
 
-		Widget icon = widget.createChild(-1, WidgetType.GRAPHIC);
-		icon.setSpriteId(iconSpriteID);
+		Widget icon;
+		if (label != null)
+		{
+			icon = widget.createChild(-1, WidgetType.TEXT);
+			icon.setText(label);
+			icon.setTextShadowed(true);
+			icon.setTextColor(0xFF981F);
+			icon.setFontId(FontID.BOLD_12);
+			icon.setXTextAlignment(WidgetTextAlignment.CENTER);
+			icon.setYTextAlignment(WidgetTextAlignment.CENTER);
+		}
+		else
+		{
+			icon = widget.createChild(-1, WidgetType.GRAPHIC);
+			icon.setSpriteId(iconSpriteID);
+		}
 		icon.setOriginalWidth(26);
 		icon.setOriginalHeight(26);
 		if (flip)
@@ -257,12 +270,18 @@ public class ChunkBlazerOrbWidget
 
 	private void updateOrbs()
 	{
-		if (bossTokenText == null || chunksText == null)
+		if (bossTokenText == null || pointsText == null)
 		{
 			return;
 		}
 		setTextIfChanged(bossTokenText, String.valueOf(plugin.getBossTokens()));
-		setTextIfChanged(chunksText, String.valueOf(plugin.unlockedRegionIdsView().size()));
+		setTextIfChanged(pointsText, compact(plugin.getTotalPoints()));
+	}
+
+	/** The orb fits about four digits, so 10,000 and up shows as "10k", like the game does. */
+	static String compact(int value)
+	{
+		return value >= 10_000 ? (value / 1000) + "k" : String.valueOf(value);
 	}
 
 	private static void setTextIfChanged(Widget widget, String text)
@@ -291,7 +310,7 @@ public class ChunkBlazerOrbWidget
 			}
 		}
 		removeWidget(bossTokenOrb);
-		removeWidget(chunksOrb);
+		removeWidget(pointsOrb);
 	}
 
 	public void shutDown()
@@ -299,18 +318,15 @@ public class ChunkBlazerOrbWidget
 		taskBrowser.shutDown();
 		eventBus.unregister(this);
 		cleanup();
-		bossTokenOrb = bossTokenText = chunksOrb = chunksText = wikiWidget = null;
+		bossTokenOrb = bossTokenText = pointsOrb = pointsText = wikiWidget = null;
 		client.getSpriteOverrides().remove(bossTokenOrbSpriteID);
-		client.getSpriteOverrides().remove(chunksOrbSpriteID);
 	}
 
 	// Registered here, not in the constructor: plugins are injected at client load even when disabled
 	public void startUp()
 	{
 		BufferedImage bossTokenOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "boss_token_icon.png");
-		BufferedImage chunksOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "chunks_icon.png");
 		client.getSpriteOverrides().put(bossTokenOrbSpriteID, ImageUtil.getImageSpritePixels(bossTokenOrbIcon, client));
-		client.getSpriteOverrides().put(chunksOrbSpriteID, ImageUtil.getImageSpritePixels(chunksOrbIcon, client));
 		eventBus.register(this);
 		taskBrowser.startUp();
 		addOrbWidgets();

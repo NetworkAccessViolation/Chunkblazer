@@ -79,12 +79,6 @@ public class ChunkBlazerPanel extends PluginPanel
 	// pack tighter than the 80px rolled-task rows but are not fixed height —
 	// a long quest name wraps. Height matches the Completed Tasks section.
 	private static final int MAX_GLOBAL_TASKS_HEIGHT = MAX_COMPLETED_TASKS_HEIGHT;
-	// Unlocked chunks render as two-line cards like the task sections, so this
-	// shows roughly 6 before scrolling. Without a cap the expanded list grew
-	// with the unlock count (101 entries ran to thousands of px) and swamped the
-	// side panel — every other section here is a fixed-height scroll area.
-	private static final int MAX_UNLOCKED_CHUNKS_HEIGHT = TASK_ITEM_HEIGHT * 3;
-
 	/**
 	 * Display labels for the Global Tasks type filter, keyed by the raw
 	 * NuzlockeTask.category in the JSON.
@@ -120,8 +114,6 @@ public class ChunkBlazerPanel extends PluginPanel
 
 	// UI Components
 	private JPanel regionUnlockPanel;
-	private JPanel unlockedListPanel;
-	private boolean unlockedListExpanded = false; // Unlocked Chunks list collapsed by default
 	// Pins the top-right region-unlock prompt to a chunk clicked on the world map
 	// (hold U + click), overriding the walk-into-chunk current-region behaviour
 	// until the player confirms or cancels.
@@ -358,13 +350,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		mainPanel.add(taskListPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
-		// Unlocked Chunks — read-only list, tucked below the active tasks so it's
-		// out of the way (it can get long).
-		unlockedListPanel = createUnlockedListSection();
-		mainPanel.add(unlockedListPanel);
-		mainPanel.add(Box.createVerticalStrut(8));
-
-		// Subtle "Show my sync key" link, tucked below Unlocked Chunks so it stays out of the
+		// Subtle "Show my sync key" link, tucked at the bottom so it stays out of the
 		// way. Reads the key from the authoritative per-account store for reliability
 		showKeyButton = new JButton("Show my sync key");
 		showKeyButton.setFont(FontManager.getRunescapeSmallFont());
@@ -1748,137 +1734,6 @@ public class ChunkBlazerPanel extends PluginPanel
 	}
 
 	/**
-	 * Empty container for the read-only "Unlocked Chunks" list; populated by
-	 * {@link #updateUnlockedListSection()}.
-	 */
-	private JPanel createUnlockedListSection()
-	{
-		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(6, 6, 6, 6)
-		));
-		panel.setVisible(false);
-		return panel;
-	}
-
-	/**
-	 * Refresh the read-only "Unlocked Chunks" list from the plugin's unlocked set.
-	 * Display only — not editable (the old editable config field was a free-unlock
-	 * cheat). Safe from any thread.
-	 */
-	public void updateUnlockedListSection()
-	{
-		if (!SwingUtilities.isEventDispatchThread())
-		{
-			SwingUtilities.invokeLater(this::updateUnlockedListSection);
-			return;
-		}
-		if (unlockedListPanel == null)
-		{
-			return;
-		}
-		unlockedListPanel.removeAll();
-
-		java.util.List<String> names = plugin.getUnlockedChunkDisplayNames();
-		if (!plugin.isLoggedIn())
-		{
-			unlockedListPanel.setVisible(false);
-			if (unlockedListPanel.getParent() != null)
-			{
-				unlockedListPanel.getParent().revalidate();
-				unlockedListPanel.getParent().repaint();
-			}
-			return;
-		}
-
-		unlockedListPanel.setAlignmentX(LEFT_ALIGNMENT);
-
-		// Collapsible header: title + count on the left, a toggle on the right.
-		// Collapsed by default so a long unlock list doesn't dominate the panel —
-		// the rows only render when expanded.
-		JPanel headerRow = styledPanel(new BorderLayout(5, 0), ColorScheme.DARKER_GRAY_COLOR);
-		headerRow.setAlignmentX(LEFT_ALIGNMENT);
-		headerRow.setPreferredSize(new Dimension(CONTENT_WIDTH, 25));
-		headerRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 25));
-
-		headerRow.add(styledLabel("Unlocked Chunks (" + names.size() + ")",
-			FontManager.getRunescapeBoldFont(), Color.WHITE), BorderLayout.WEST);
-
-		JToggleButton toggle = new JToggleButton();
-		setToggleArrow(toggle, unlockedListExpanded);
-		toggle.setFont(new Font("Arial", Font.PLAIN, 10));
-		toggle.setPreferredSize(new Dimension(30, 20));
-		toggle.setMaximumSize(new Dimension(30, 20));
-		toggle.setSelected(unlockedListExpanded);
-		toggle.setToolTipText("Show/hide your unlocked chunks");
-		toggle.addActionListener(e ->
-		{
-			unlockedListExpanded = toggle.isSelected();
-			updateUnlockedListSection();
-		});
-		headerRow.add(toggle, BorderLayout.EAST);
-		unlockedListPanel.add(headerRow);
-		unlockedListPanel.add(sectionDivider());
-		unlockedListPanel.add(Box.createVerticalStrut(5));
-
-		if (unlockedListExpanded)
-		{
-			if (names.isEmpty())
-			{
-				addLabel(unlockedListPanel, "No chunks unlocked yet.",
-					FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR);
-			}
-			else
-			{
-				// One card per chunk, same shape as the Global Tasks / Completed
-				// Tasks cards so the whole panel reads as one system.
-				JPanel chunkList = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-				chunkList.setAlignmentX(LEFT_ALIGNMENT);
-				for (String n : names)
-				{
-					chunkList.add(createUnlockedChunkRow(n));
-					chunkList.add(Box.createVerticalStrut(4));
-				}
-
-				// Fixed-height scroll area, matching the task sections.
-				JScrollPane chunkScroll = new JScrollPane(chunkList);
-				chunkScroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
-				chunkScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-				pinToLeftEdge(chunkScroll);
-				chunkScroll.setBorder(null);
-				chunkScroll.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				chunkScroll.getViewport().setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				chunkScroll.setAlignmentX(LEFT_ALIGNMENT);
-				chunkScroll.getVerticalScrollBar().setUnitIncrement(16);
-
-				int height = Math.min(MAX_UNLOCKED_CHUNKS_HEIGHT,
-					Math.max(40, chunkList.getPreferredSize().height + 8));
-				chunkScroll.setMinimumSize(new Dimension(CONTENT_WIDTH, height));
-				chunkScroll.setPreferredSize(new Dimension(CONTENT_WIDTH, height));
-				chunkScroll.setMaximumSize(new Dimension(CONTENT_WIDTH, height));
-
-				unlockedListPanel.add(chunkScroll);
-			}
-		}
-		else if (!names.isEmpty())
-		{
-			// Collapsed hint, matching the other collapsible sections.
-			addLabel(unlockedListPanel, "Click to view " + names.size() + " unlocked chunks",
-				FontManager.getRunescapeSmallFont(), Color.GRAY);
-		}
-
-		unlockedListPanel.setVisible(true);
-		unlockedListPanel.revalidate();
-		unlockedListPanel.repaint();
-		if (unlockedListPanel.getParent() != null)
-		{
-			unlockedListPanel.getParent().revalidate();
-			unlockedListPanel.getParent().repaint();
-		}
-	}
-
-	/**
 	 * Pin the top-right unlock prompt to a specific chunk (from a world-map
 	 * U+click) and refresh, so it shows "Unlock X for Y points? Yes / No" there —
 	 * the same prompt the walk-into-chunk flow uses. Safe from any thread.
@@ -3063,7 +2918,6 @@ public class ChunkBlazerPanel extends PluginPanel
 				// Conditionally-shown sections: hide outright while logged out so
 				// nothing interactive is reachable before there's an account.
 				regionUnlockPanel.setVisible(false);
-				unlockedListPanel.setVisible(false);
 				modeSelectionPanel.setVisible(false);
 				lockedModePanel.setVisible(false);
 				currentTaskPanel.setVisible(false);
@@ -3084,7 +2938,6 @@ public class ChunkBlazerPanel extends PluginPanel
 			updateCompletedTasks();
 			updateGlobalTasks();
 			updateTaskList();
-			updateUnlockedListSection();
 		});
 	}
 
@@ -3478,48 +3331,6 @@ public class ChunkBlazerPanel extends PluginPanel
 	 * tooltip. Laid out by {@link WrapLayout} so chips flow and wrap instead of stacking
 	 * one-per-row.
 	 */
-	/**
-	 * One unlocked-chunk card, mirroring the Global Tasks / Completed Tasks card
-	 * shape so the side panel reads as one system.
-	 *
-	 * Green rather than the tasks' navy: an unlocked chunk is something you own
-	 * outright, not something in progress, and the green keeps it from reading
-	 * as another task list at a glance.
-	 *
-	 * Input is "Chunk Name (regionId)" from getUnlockedChunkDisplayNames(); the
-	 * id is split onto the info line so the name can wrap on its own.
-	 */
-	private JPanel createUnlockedChunkRow(String fullText)
-	{
-		String name = fullText;
-		String region = null;
-		int paren = fullText.lastIndexOf(" (");
-		if (paren > 0 && fullText.endsWith(")"))
-		{
-			name = fullText.substring(0, paren);
-			region = fullText.substring(paren + 2, fullText.length() - 1);
-		}
-
-		JPanel card = createCardPanel(new Color(26, 46, 32), new Color(58, 96, 66));
-		card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-		// Left inset (12) clears the accent bar, same as the task cards.
-		card.setBorder(new EmptyBorder(5, 12, 6, 6));
-		card.setAlignmentX(LEFT_ALIGNMENT);
-		card.setMaximumSize(new Dimension(CONTENT_WIDTH - 10, Integer.MAX_VALUE));
-
-		WrappingTextLabel nameLabel = new WrappingTextLabel(
-			"✓ " + name,
-			FontManager.getRunescapeSmallFont(),
-			new Color(120, 215, 120),
-			TASK_TEXT_WRAP_WIDTH);
-		card.add(nameLabel);
-
-		addLabel(card, region != null ? "Chunk " + region : "Unlocked",
-			FontManager.getRunescapeSmallFont(), new Color(150, 190, 150));
-
-		return card;
-	}
-
 	/**
 	 * FlowLayout that actually wraps to multiple rows and reports the correct preferred
 	 * height for the available width — plain FlowLayout always claims a single row, which

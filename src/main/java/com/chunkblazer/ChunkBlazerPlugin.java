@@ -102,7 +102,6 @@ import com.chunkblazer.api.PlayerLoginResponse;
 import com.chunkblazer.api.PlayerSyncRequest;
 import com.chunkblazer.api.ServerBackoff;
 import com.chunkblazer.modules.TaskModuleManager;
-import com.chunkblazer.verification.VarPlayerVerificationService;
 
 @Slf4j
 @PluginDescriptor(
@@ -156,9 +155,6 @@ public class ChunkBlazerPlugin extends Plugin
 	private ChunkBlazerOrbWidget orbWidget;
 
 	@Inject
-	private ChunkBlazerBossTokenOverlay bossTokenOverlay;
-
-	@Inject
 	private TaskCompletionAnimationOverlay taskCompletionAnimationOverlay;
 
 	@Inject
@@ -166,9 +162,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 	@Inject
 	private TaskModuleManager taskModuleManager;
-
-	@Inject
-	private VarPlayerVerificationService varPlayerService;
 
 	@Inject
 	private TaskCompletionSoundManager soundManager;
@@ -321,9 +314,6 @@ public class ChunkBlazerPlugin extends Plugin
 		syncRejectedKey = null;
 		registrationClosedRsn = null;
 
-		// Start verification service (registers for VarPlayer events)
-		varPlayerService.startUp();
-
 		// Resolve this plugin's OWN sandboxed data directory as a Filepath, rooted
 		// under .runelite/plugin-data/chunkblazer. All disk I/O in the stores goes
 		// through it, so a path can never escape the plugin's folder (RuneLite's
@@ -467,7 +457,6 @@ public class ChunkBlazerPlugin extends Plugin
 		overlayManager.add(taskCardOverlay);
 		mouseManager.registerMouseListener(taskCardInput);
 
-		overlayManager.add(bossTokenOverlay);
 		overlayManager.add(selectedTaskOverlay);
 		overlayManager.add(taskTargetHighlighter);
 		eventBus.register(taskTargetHighlighter);
@@ -507,7 +496,6 @@ public class ChunkBlazerPlugin extends Plugin
 		worldMapUnlockKeyPressed = false;
 		overlayManager.remove(minimapOverlay);
 		overlayManager.remove(sceneOverlay);
-		overlayManager.remove(bossTokenOverlay);
 		overlayManager.remove(selectedTaskOverlay);
 		eventBus.unregister(taskTargetHighlighter);
 		mouseManager.unregisterMouseListener(selectedTaskOverlayInput);
@@ -522,7 +510,6 @@ public class ChunkBlazerPlugin extends Plugin
 		// waiting on the next startup. Revealing here would flip them for free.
 		taskCardOverlay.clear();
 		taskModuleManager.shutDown();
-		varPlayerService.shutDown();
 		if (soundManager != null)
 		{
 			soundManager.shutdown();
@@ -650,8 +637,6 @@ public class ChunkBlazerPlugin extends Plugin
 			{
 				// Expected on any session that logs out before a server merge (e.g. the
 				// cold login screen), so this is normal bookkeeping, not a fault: debug.
-				log.debug("[CHUNKBLAZER] skipping logout sync, server state was never "
-					+ "merged this session, so local progress is not authoritative");
 			}
 			else
 			{
@@ -756,7 +741,6 @@ public class ChunkBlazerPlugin extends Plugin
 	{
 		if (!isAccountStateAvailable())
 		{
-			log.debug("[CHUNKBLAZER] RS profile cleared (logout), dropping in-memory task state");
 			pendingProfileBootstrap = false;
 			loadActiveTasks(); // clears, since state is unavailable
 			if (panel != null)
@@ -1172,8 +1156,6 @@ public class ChunkBlazerPlugin extends Plugin
 			// The start region reads as unlocked ONLY because the config
 			// interface default supplied it. Nothing is on disk, so external
 			// readers see an empty unlock set. Force the write.
-			log.debug("[CHUNKBLAZER] unlockedChunks absent from disk, seeding start region {}",
-				DEFAULT_START_REGION);
 			needsUpdate = true;
 		}
 
@@ -1544,7 +1526,6 @@ public class ChunkBlazerPlugin extends Plugin
 					globalTasks.addAll(group.getTasks());
 				}
 			}
-			log.debug("Global Tasks: loaded {} from {}", globalTasks.size() - before, file);
 		}
 		catch (Exception e)
 		{
@@ -1639,7 +1620,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 		List<NuzlockeTask> backfilled = new ArrayList<>();
 		int backfilledPoints = 0;
-		int progressionSkipped = 0;
 
 		for (NuzlockeTask task : globalTasks)
 		{
@@ -1655,7 +1635,6 @@ public class ChunkBlazerPlugin extends Plugin
 			// scored. Only rungs above the baseline are live.
 			if (isProgressionTask(task) && !isProgressionRungEligible(task, progressionBaseline))
 			{
-				progressionSkipped++;
 				continue;
 			}
 
@@ -1680,11 +1659,6 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 
 			taskModuleManager.registerActiveTask(task);
-		}
-
-		if (progressionSkipped > 0)
-		{
-			log.debug("Progression: {} rungs at or below the frozen baseline, not eligible", progressionSkipped);
 		}
 
 		if (backfilled.isEmpty())
@@ -2893,7 +2867,6 @@ public class ChunkBlazerPlugin extends Plugin
 			.exceptionally(e ->
 			{
 				// Expected when the server is unreachable or sync is mid-toggle; not an error.
-				log.debug("login request failed: {}", e.toString());
 				recordServerOutcome(ApiOutcome.TRANSIENT, 0);
 				serverRollRestoreResolved = true;
 				clientThread.invokeLater(this::loadActiveTasks);
@@ -3830,7 +3803,6 @@ public class ChunkBlazerPlugin extends Plugin
 		if (configManager.getRSProfileConfiguration(CONFIG_GROUP, "unlockedChunks") != null
 			|| configManager.getRSProfileConfiguration(CONFIG_GROUP, "completedTasks") != null)
 		{
-			log.debug("[CHUNKBLAZER] legacy migration: RSProfile already populated, nothing to do");
 			return;
 		}
 		// (2) Nothing in the legacy store: nothing to move.
@@ -3853,7 +3825,6 @@ public class ChunkBlazerPlugin extends Plugin
 		String rsn = getPlayerName();
 		if (rsn == null)
 		{
-			log.debug("[CHUNKBLAZER] legacy migration: name not loaded yet, deferring");
 			return; // name not loaded yet; this fires again once it is
 		}
 		String owner = hashRsn(rsn);
@@ -4677,44 +4648,6 @@ public class ChunkBlazerPlugin extends Plugin
 		return false;
 	}
 
-	/**
-	 * Distinct unlocked chunks as sorted display labels ("Name (regionId)"), one
-	 * per chunk — multi-region chunks (surface + dungeon) collapse to a single
-	 * entry. Backs the read-only "Unlocked Chunks" list in the side panel.
-	 */
-	public List<String> getUnlockedChunkDisplayNames()
-	{
-		java.util.TreeSet<String> labels = new java.util.TreeSet<>();
-		for (String idStr : getUnlockedRegionIds())
-		{
-			try
-			{
-				int id = Integer.parseInt(idStr.trim());
-				NuzlockeChunk chunk = chunksByRegionId.get(id);
-				if (chunk != null && chunk.getRegionIds() != null && !chunk.getRegionIds().isEmpty())
-				{
-					labels.add(chunk.getName() + " (" + chunk.getRegionIds().get(0) + ")");
-				}
-				else if (freeUnlockableNames.get(id) != null)
-				{
-					// Free chunks live only in freeUnlockableNames, not chunksByRegionId,
-					// so surface their Friendly_Name here too (matches getRegionName)
-					// instead of a bare "Region <id>".
-					labels.add(freeUnlockableNames.get(id) + " (" + id + ")");
-				}
-				else
-				{
-					labels.add("Region " + id);
-				}
-			}
-			catch (NumberFormatException ignored)
-			{
-				// skip malformed id
-			}
-		}
-		return new ArrayList<>(labels);
-	}
-
 	// --- Task Methods ---
 
 	/**
@@ -4756,14 +4689,6 @@ public class ChunkBlazerPlugin extends Plugin
 		return rolledTasks;
 	}
 
-	/**
-	 * Check if a task has been assigned (and thus cannot be assigned again).
-	 */
-	public boolean isTaskAssigned(String taskId)
-	{
-		return getAssignedTaskIds().contains(taskId);
-	}
-
 	private void loadOrAssignTask()
 	{
 		// Load all active tasks for the current region
@@ -4787,7 +4712,6 @@ public class ChunkBlazerPlugin extends Plugin
 		// an account switch.
 		if (!isAccountStateAvailable())
 		{
-			log.debug("[CHUNKBLAZER] loadActiveTasks skipped, no account known yet");
 			activeTasks.clear();
 			activeTask = null;
 			taskModuleManager.clearTask();
@@ -5266,8 +5190,6 @@ public class ChunkBlazerPlugin extends Plugin
 				// Expected for any region outside the overworld chunk grid — underground
 				// areas, dungeons, instances. They carry no tasks and are not lockable, so
 				// this is normal, not an error. Debug, deduped per region for a clean log.
-				log.debug("rollTasksForRegion: no chunk for region {} (outside the chunk grid; total {})",
-					regionId, chunksByRegionId.size());
 			}
 			return new HashSet<>();
 		}

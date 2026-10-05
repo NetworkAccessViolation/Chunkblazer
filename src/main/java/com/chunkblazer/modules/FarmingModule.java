@@ -44,8 +44,6 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import com.chunkblazer.NuzlockeTask;
@@ -98,18 +96,8 @@ import net.runelite.client.util.Text;
 public class FarmingModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "FARMING";
-
-	// Chat colors for ChunkBlazer messages
-	private static final String COLOR_BLUE = "3366ff";
-	private static final String COLOR_DARK_BLUE = "1a5276";
-	private static final String COLOR_DARK_GREEN = "228b22";
-	private static final String COLOR_BLACK = "000000";
-
 	@Inject
 	private ItemManager itemManager;
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// Per-task watched item IDs (union of the task's required_items variants).
 	private final Map<String, Set<Integer>> taskWatchedItems = new ConcurrentHashMap<>();
@@ -627,56 +615,4 @@ public class FarmingModule extends AbstractTaskModule
 		}
 	}
 
-	// ==================== CHAT MESSAGE METHODS ====================
-
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value("  - " + details)
-				.build());
-		}
-	}
-
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value("  - " + details)
-				.build());
-		}
-	}
 }

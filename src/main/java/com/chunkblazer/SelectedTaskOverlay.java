@@ -29,8 +29,11 @@ package com.chunkblazer;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.BasicStroke;
+import java.util.ArrayList;
+import java.util.List;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
@@ -53,6 +56,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 {
 	private static final Color FLAME = new Color(255, 140, 0);
 	private static final Color BAR_BACKGROUND = new Color(60, 60, 60, 200);
+	private static final Color REQUIREMENT_TEXT = new Color(200, 200, 200);
+	private static final Color MISSING_LEVEL = new Color(255, 90, 90);
 	private static final int CLOSE_SIZE = 9;
 	private static final int CLOSE_MARGIN = 5;
 	private static final Color CLOSE_IDLE = new Color(200, 200, 200);
@@ -76,6 +81,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 
 		setPosition(OverlayPosition.TOP_LEFT);
 		panelComponent.setPreferredSize(new Dimension(190, 0));
+		// A few pixels between rows, so wrapped text never touches the progress bar.
+		panelComponent.setGap(new Point(0, 3));
 
 		addMenuEntry(MenuAction.RUNELITE_OVERLAY, "Deselect", "ChunkBlazer task",
 				e -> plugin.clearSelectedTask());
@@ -115,6 +122,23 @@ public class SelectedTaskOverlay extends OverlayPanel
 				.left(info)
 				.leftColor(new Color(255, 200, 100))
 				.build());
+
+		// What the task actually asks for, when the name alone doesn't say.
+		for (String requirement : requirementLines(task))
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+					.left(requirement)
+					.leftColor(REQUIREMENT_TEXT)
+					.build());
+		}
+		if (!plugin.meetsLevelRequirement(task))
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+					.left("Needs level " + task.getLevelRequirement() + " "
+							+ NuzlockeTask.displayCategory(task.getCategory()))
+					.leftColor(MISSING_LEVEL)
+					.build());
+		}
 
 		int progress = task.getCurrentProgress();
 		int target = Math.max(1, task.getTargetQuantity());
@@ -160,5 +184,60 @@ public class SelectedTaskOverlay extends OverlayPanel
 	boolean isCloseHovered()
 	{
 		return closeButton != null && closeHovered;
+	}
+
+	/**
+	 * Plain-English requirements for the task. Uses the task's description when it
+	 * has one (challenges and combat achievements, e.g. "Defeat Scurrius with a Green
+	 * d'hide body, chaps, vambraces, and Maple shortbow equipped."); otherwise spells
+	 * out the common restrictions from its constraints.
+	 */
+	static List<String> requirementLines(NuzlockeTask task)
+	{
+		List<String> lines = new ArrayList<>();
+		String description = task.getDescription();
+		if (description != null && !description.trim().isEmpty()
+				&& !simplify(description).equals(simplify(task.getName())))
+		{
+			lines.add(description.trim());
+			return lines;
+		}
+
+		TaskConstraints c = task.getConstraints();
+		if (c == null)
+		{
+			return lines;
+		}
+		if (c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
+		{
+			int seconds = (int) Math.round(c.getTimeInTicks() * 0.6);
+			lines.add(String.format("Within %d:%02d", seconds / 60, seconds % 60));
+		}
+		if (Boolean.TRUE.equals(c.getNoPrayer()))
+		{
+			lines.add("No prayer");
+		}
+		if (Boolean.TRUE.equals(c.getNoFood()))
+		{
+			lines.add("No food");
+		}
+		if (Boolean.TRUE.equals(c.getNoEquipment()) || Boolean.TRUE.equals(c.getEquipNothing()))
+		{
+			lines.add("Nothing equipped");
+		}
+		if (c.getMaxCombatLevel() != null)
+		{
+			lines.add("Combat level " + c.getMaxCombatLevel() + " or lower");
+		}
+		if (c.getMinCombatLevel() != null)
+		{
+			lines.add("Combat level " + c.getMinCombatLevel() + " or higher");
+		}
+		return lines;
+	}
+
+	private static String simplify(String text)
+	{
+		return text == null ? "" : text.toLowerCase().replaceAll("[^a-z0-9]", "");
 	}
 }

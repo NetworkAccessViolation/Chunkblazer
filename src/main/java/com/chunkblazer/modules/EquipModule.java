@@ -35,7 +35,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -43,8 +42,6 @@ import net.runelite.api.Player;
 import net.runelite.api.Skill;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.ItemManager;
 import com.chunkblazer.NuzlockeTask;
@@ -64,23 +61,12 @@ import java.util.ArrayList;
 public class EquipModule extends AbstractTaskModule
 {
 	private static final String COMPLETION_TYPE = "EQUIP";
-
-	// Chat colors for ChunkBlazer messages (matching other modules)
-	private static final String COLOR_BLUE = "3366ff";        // [ChunkBlazer] branding
-	private static final String COLOR_DARK_BLUE = "1a5276";   // Task Success (dark blue, readable)
-	private static final String COLOR_DARK_GREEN = "228b22";  // Task Progress
-	private static final String COLOR_RED = "ff3333";         // Task Failed
-	private static final String COLOR_BLACK = "000000";       // Task name text
-
 	// The 11 valid equipment slot indices (some indices are skipped in the game)
 	// HEAD=0, CAPE=1, AMULET=2, WEAPON=3, BODY=4, SHIELD=5, LEGS=7, GLOVES=9, BOOTS=10, RING=12, AMMO=13
 	private static final int[] VALID_EQUIPMENT_SLOTS = {0, 1, 2, 3, 4, 5, 7, 9, 10, 12, 13};
 
 	@Inject
 	private ItemManager itemManager;
-
-	@Inject
-	private ChatMessageManager chatMessageManager;
 
 	// Track task-specific data
 	// Map: taskId -> (Map: itemId -> required)
@@ -852,91 +838,4 @@ public class EquipModule extends AbstractTaskModule
 
 	// ==================== CHAT MESSAGE METHODS ====================
 
-	/**
-	 * Send a task progress message to the player's chatbox.
-	 */
-	private void sendTaskProgress(NuzlockeTask task, String details, int current, int total)
-	{
-		if (!config.showChatProgress())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_GREEN + ">Task Progress:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col> " +
-			"(" + current + "/" + total + ")";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			String detailMessage = "  - " + details;
-
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value(detailMessage)
-				.build());
-		}
-	}
-
-	/**
-	 * Send a task success message to the player's chatbox.
-	 */
-	private void sendTaskSuccess(NuzlockeTask task, String details)
-	{
-		if (!config.showChatSuccess())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_DARK_BLUE + ">Task Complete!</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		if (details != null && !details.isEmpty())
-		{
-			String detailMessage = "  - " + details;
-
-			chatMessageManager.queue(QueuedMessage.builder()
-				.type(ChatMessageType.GAMEMESSAGE)
-				.value(detailMessage)
-				.build());
-		}
-	}
-
-	/**
-	 * Send a task failure message to the player's chatbox.
-	 */
-	private void sendTaskFailure(NuzlockeTask task, String reason)
-	{
-		if (!config.showChatFailed())
-		{
-			return;
-		}
-
-		String message = "<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> " +
-			"<col=" + COLOR_RED + ">Task Failed:</col> " +
-			"<col=" + COLOR_BLACK + ">" + task.getName() + "</col>";
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(message)
-			.build());
-
-		String reasonMessage = "  - Reason: " + reason;
-
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.value(reasonMessage)
-			.build());
-	}
 }
