@@ -155,9 +155,6 @@ public class ChunkBlazerPlugin extends Plugin
 	private ChunkBlazerOrbWidget orbWidget;
 
 	@Inject
-	private ChunkBlazerBossTokenOverlay bossTokenOverlay;
-
-	@Inject
 	private TaskCompletionAnimationOverlay taskCompletionAnimationOverlay;
 
 	@Inject
@@ -460,7 +457,6 @@ public class ChunkBlazerPlugin extends Plugin
 		overlayManager.add(taskCardOverlay);
 		mouseManager.registerMouseListener(taskCardInput);
 
-		overlayManager.add(bossTokenOverlay);
 		overlayManager.add(selectedTaskOverlay);
 		overlayManager.add(taskTargetHighlighter);
 		eventBus.register(taskTargetHighlighter);
@@ -500,7 +496,6 @@ public class ChunkBlazerPlugin extends Plugin
 		worldMapUnlockKeyPressed = false;
 		overlayManager.remove(minimapOverlay);
 		overlayManager.remove(sceneOverlay);
-		overlayManager.remove(bossTokenOverlay);
 		overlayManager.remove(selectedTaskOverlay);
 		eventBus.unregister(taskTargetHighlighter);
 		mouseManager.unregisterMouseListener(selectedTaskOverlayInput);
@@ -4651,44 +4646,6 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * Distinct unlocked chunks as sorted display labels ("Name (regionId)"), one
-	 * per chunk — multi-region chunks (surface + dungeon) collapse to a single
-	 * entry. Backs the read-only "Unlocked Chunks" list in the side panel.
-	 */
-	public List<String> getUnlockedChunkDisplayNames()
-	{
-		java.util.TreeSet<String> labels = new java.util.TreeSet<>();
-		for (String idStr : getUnlockedRegionIds())
-		{
-			try
-			{
-				int id = Integer.parseInt(idStr.trim());
-				NuzlockeChunk chunk = chunksByRegionId.get(id);
-				if (chunk != null && chunk.getRegionIds() != null && !chunk.getRegionIds().isEmpty())
-				{
-					labels.add(chunk.getName() + " (" + chunk.getRegionIds().get(0) + ")");
-				}
-				else if (freeUnlockableNames.get(id) != null)
-				{
-					// Free chunks live only in freeUnlockableNames, not chunksByRegionId,
-					// so surface their Friendly_Name here too (matches getRegionName)
-					// instead of a bare "Region <id>".
-					labels.add(freeUnlockableNames.get(id) + " (" + id + ")");
-				}
-				else
-				{
-					labels.add("Region " + id);
-				}
-			}
-			catch (NumberFormatException ignored)
-			{
-				// skip malformed id
-			}
-		}
-		return new ArrayList<>(labels);
 	}
 
 	// --- Task Methods ---

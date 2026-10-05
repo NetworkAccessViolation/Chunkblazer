@@ -443,18 +443,6 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showBossTokenCounter",
-		name = "Show Boss Token Counter",
-		description = "Show the Boss Token currency icon + count above the chatbox (bottom-left)",
-		section = displaySection,
-		position = 5
-	)
-	default boolean showBossTokenCounter()
-	{
-		return true;
-	}
-
-	@ConfigItem(
 		keyName = "taskTrackerStyle",
 		name = "Overlay",
 		description = "Choose an overlay template to display your selected task",
@@ -517,7 +505,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showMinimapOrbs",
 		name = "Show Minimap Orbs",
-		description = "Show the Boss Token and unlocked chunks minimap orbs",
+		description = "Show the Boss Token and Points minimap orbs",
 		section = displaySection,
 		position = 6
 	)
