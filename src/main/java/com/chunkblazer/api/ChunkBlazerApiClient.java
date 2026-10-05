@@ -32,6 +32,7 @@ import com.google.gson.JsonObject;
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.Getter;
@@ -110,6 +111,60 @@ public class ChunkBlazerApiClient
 		httpClient.newCall(req).enqueue(cb);
 	}
 
+	/** A POST of {@code json} to our API, carrying the account key when there is one. */
+	private Request request(String path, String apiKey, String json)
+	{
+		Request.Builder b = new Request.Builder()
+			.url(config.apiBaseUrl() + path)
+			.post(RequestBody.create(JSON, json));
+		if (apiKey != null)
+		{
+			b.addHeader("X-API-Key", apiKey);
+		}
+		return b.build();
+	}
+
+	/**
+	 * POST {@code body} as JSON and parse a 2xx answer as {@code type}. Anything else completes
+	 * with {@code fallback}, given the HTTP status and body (status 0 when no usable answer came).
+	 */
+	private <T> CompletableFuture<T> postJson(String path, String apiKey, Object body, Class<T> type,
+		BiFunction<Integer, String, T> fallback)
+	{
+		CompletableFuture<T> future = new CompletableFuture<>();
+		enqueueGated(request(path, apiKey, gson.toJson(body)), new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.warn("{} request failed: {}", path, e.getMessage());
+				future.complete(fallback.apply(0, ""));
+			}
+
+			@Override
+			public void onResponse(Call call, Response response)
+			{
+				try (response)
+				{
+					String text = response.body() != null ? response.body().string() : "";
+					if (response.isSuccessful())
+					{
+						future.complete(gson.fromJson(text, type));
+						return;
+					}
+					log.warn("{} returned {}: {}", path, response.code(), text);
+					future.complete(fallback.apply(response.code(), text));
+				}
+				catch (IOException | RuntimeException e)
+				{
+					log.warn("{} response unreadable: {}", path, e.toString());
+					future.complete(fallback.apply(0, ""));
+				}
+			}
+		});
+		return future;
+	}
+
 	/** The key authenticated calls send. Never null. */
 	public String currentApiKey()
 	{
@@ -159,9 +214,10 @@ public class ChunkBlazerApiClient
 	 *
 	 * @param rsn The player's RuneScape name
 	 * @param rsnHash SHA-256 hash of the lowercase RSN
+	 * @param accountHash SHA-256 of the account id, or null before it is known
 	 * @return CompletableFuture with the login response
 	 */
-	public CompletableFuture<PlayerLoginResponse> login(String rsn, String rsnHash)
+	public CompletableFuture<PlayerLoginResponse> login(String rsn, String rsnHash, String accountHash)
 	{
 		if (!config.apiEnabled())
 		{
@@ -181,16 +237,11 @@ public class ChunkBlazerApiClient
 			.rsnHash(rsnHash)
 			.clientVersion(CLIENT_VERSION)
 			.apiKey(storedKey != null && !storedKey.isEmpty() ? storedKey : null)
+			.accountHash(accountHash)
 			.build();
 
-		String url = config.apiBaseUrl() + "/api/player/login";
-		String json = gson.toJson(request);
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("Content-Type", "application/json")
+		Request httpRequest = request("/api/player/login", null, gson.toJson(request)).newBuilder()
 			.addHeader("X-Client-Version", CLIENT_VERSION)
-			.post(RequestBody.create(JSON, json))
 			.build();
 
 		enqueueGated(httpRequest, new Callback()
@@ -255,53 +306,13 @@ public class ChunkBlazerApiClient
 	 */
 	public CompletableFuture<VerifyStartResponse> verifyStart()
 	{
-		if (!config.apiEnabled())
+		String key = currentApiKey();
+		if (!config.apiEnabled() || key.isEmpty())
 		{
 			return CompletableFuture.completedFuture(VerifyStartResponse.offline());
 		}
-		String apiKey = playerApiKey != null && !playerApiKey.isEmpty() ? playerApiKey : config.apiKey();
-		if (apiKey == null || apiKey.isEmpty())
-		{
-			return CompletableFuture.completedFuture(VerifyStartResponse.offline());
-		}
-
-		CompletableFuture<VerifyStartResponse> future = new CompletableFuture<>();
-		String url = config.apiBaseUrl() + "/api/player/verify/start";
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("X-API-Key", apiKey)
-			.post(RequestBody.create(JSON, "{}"))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.warn("verify/start request failed: {}", e.getMessage());
-				future.complete(VerifyStartResponse.offline());
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (response)
-				{
-					String body = response.body() != null ? response.body().string() : "";
-					if (response.isSuccessful())
-					{
-						future.complete(gson.fromJson(body, VerifyStartResponse.class));
-					}
-					else
-					{
-						log.warn("verify/start returned {}: {}", response.code(), body);
-						future.complete(VerifyStartResponse.offline());
-					}
-				}
-			}
-		});
-
-		return future;
+		return postJson("/api/player/verify/start", key, new JsonObject(), VerifyStartResponse.class,
+			(code, text) -> VerifyStartResponse.offline());
 	}
 
 	/**
@@ -311,59 +322,22 @@ public class ChunkBlazerApiClient
 	 */
 	public CompletableFuture<VerifyResponse> verify(String nonce)
 	{
-		if (!config.apiEnabled())
+		String key = currentApiKey();
+		if (!config.apiEnabled() || key.isEmpty())
 		{
 			return CompletableFuture.completedFuture(VerifyResponse.offline());
 		}
-		String apiKey = playerApiKey != null && !playerApiKey.isEmpty() ? playerApiKey : config.apiKey();
-		if (apiKey == null || apiKey.isEmpty())
+		return postJson("/api/player/verify", key, new VerifyRequestBody(nonce), VerifyResponse.class, (code, text) ->
 		{
-			return CompletableFuture.completedFuture(VerifyResponse.offline());
-		}
-
-		CompletableFuture<VerifyResponse> future = new CompletableFuture<>();
-		String url = config.apiBaseUrl() + "/api/player/verify";
-		String json = gson.toJson(new VerifyRequestBody(nonce));
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("Content-Type", "application/json")
-			.addHeader("X-API-Key", apiKey)
-			.post(RequestBody.create(JSON, json))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
+			if (code == 0)
 			{
-				log.warn("verify request failed: {}", e.getMessage());
-				future.complete(VerifyResponse.offline());
+				return VerifyResponse.offline();
 			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (response)
-				{
-					String body = response.body() != null ? response.body().string() : "";
-					if (response.isSuccessful())
-					{
-						future.complete(gson.fromJson(body, VerifyResponse.class));
-					}
-					else
-					{
-						log.warn("verify returned {}: {}", response.code(), body);
-						VerifyResponse r = new VerifyResponse();
-						r.setVerified(false);
-						r.setMessage("server rejected: " + response.code());
-						future.complete(r);
-					}
-				}
-			}
+			VerifyResponse r = new VerifyResponse();
+			r.setVerified(false);
+			r.setMessage("server rejected: " + code);
+			return r;
 		});
-
-		return future;
 	}
 
 	private static class VerifyRequestBody
@@ -386,56 +360,13 @@ public class ChunkBlazerApiClient
 	 */
 	public CompletableFuture<NuzlockeEligibilityResponse> checkNuzlockeEligibility(EligibilitySnapshot snapshot)
 	{
-		if (!config.apiEnabled())
+		String key = currentApiKey();
+		if (!config.apiEnabled() || key.isEmpty())
 		{
 			return CompletableFuture.completedFuture(NuzlockeEligibilityResponse.offline());
 		}
-		String apiKey = playerApiKey != null && !playerApiKey.isEmpty() ? playerApiKey : config.apiKey();
-		if (apiKey == null || apiKey.isEmpty())
-		{
-			return CompletableFuture.completedFuture(NuzlockeEligibilityResponse.offline());
-		}
-
-		CompletableFuture<NuzlockeEligibilityResponse> future = new CompletableFuture<>();
-		String url = config.apiBaseUrl() + "/api/player/nuzlocke/eligibility";
-		String json = gson.toJson(new EligibilityRequestBody(snapshot));
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("Content-Type", "application/json")
-			.addHeader("X-API-Key", apiKey)
-			.post(RequestBody.create(JSON, json))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.warn("nuzlocke/eligibility request failed: {}", e.getMessage());
-				future.complete(NuzlockeEligibilityResponse.offline());
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (response)
-				{
-					String body = response.body() != null ? response.body().string() : "";
-					if (response.isSuccessful())
-					{
-						future.complete(gson.fromJson(body, NuzlockeEligibilityResponse.class));
-					}
-					else
-					{
-						log.warn("nuzlocke/eligibility returned {}: {}", response.code(), body);
-						future.complete(NuzlockeEligibilityResponse.offline());
-					}
-				}
-			}
-		});
-
-		return future;
+		return postJson("/api/player/nuzlocke/eligibility", key, new EligibilityRequestBody(snapshot),
+			NuzlockeEligibilityResponse.class, (code, text) -> NuzlockeEligibilityResponse.offline());
 	}
 
 	private static class EligibilityRequestBody
@@ -472,72 +403,37 @@ public class ChunkBlazerApiClient
 		{
 			return CompletableFuture.completedFuture(LockModeResponse.offline(mode));
 		}
-
-		String apiKey = playerApiKey != null && !playerApiKey.isEmpty() ? playerApiKey : config.apiKey();
-		if (apiKey == null || apiKey.isEmpty())
+		String key = currentApiKey();
+		if (key.isEmpty())
 		{
 			log.warn("Cannot lock mode: no API key (neither login-issued nor configured)");
-			return CompletableFuture.completedFuture(
-				LockModeResponse.error("Not logged in to server"));
+			return CompletableFuture.completedFuture(LockModeResponse.error("Not logged in to server"));
 		}
-
-		CompletableFuture<LockModeResponse> future = new CompletableFuture<>();
-
 		LockModeRequest request = LockModeRequest.builder()
 			.gameMode(mode.name())
 			.eligibility(eligibility)
 			.build();
-
-		String url = config.apiBaseUrl() + "/api/player/lock-mode";
-		String json = gson.toJson(request);
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("Content-Type", "application/json")
-			.addHeader("X-API-Key", apiKey)
-			.post(RequestBody.create(JSON, json))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
+		return postJson("/api/player/lock-mode", key, request, LockModeResponse.class, (code, text) ->
 		{
-			@Override
-			public void onFailure(Call call, IOException e)
+			if (code == 0)
 			{
-				log.error("Lock mode request failed: {}", e.getMessage());
-				future.complete(LockModeResponse.offline(mode));
+				return LockModeResponse.offline(mode);
 			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
+			// The server explains a refused lock in the same shape.
+			try
 			{
-				try (response)
+				LockModeResponse refused = gson.fromJson(text, LockModeResponse.class);
+				if (refused != null)
 				{
-					String body = response.body() != null ? response.body().string() : "";
-
-					if (response.isSuccessful())
-					{
-						LockModeResponse lockResponse = gson.fromJson(body, LockModeResponse.class);
-						future.complete(lockResponse);
-					}
-					else
-					{
-						log.warn("Lock mode returned error {}: {}", response.code(), body);
-						// Try to parse error response
-						try
-						{
-							LockModeResponse errorResponse = gson.fromJson(body, LockModeResponse.class);
-							future.complete(errorResponse);
-						}
-						catch (Exception e)
-						{
-							future.complete(LockModeResponse.error("Server error: " + response.code()));
-						}
-					}
+					return refused;
 				}
 			}
+			catch (RuntimeException e)
+			{
+				// not JSON: report the status instead
+			}
+			return LockModeResponse.error("Server error: " + code);
 		});
-
-		return future;
 	}
 
 	// ==================== Task/Event Reporting Endpoints ====================
@@ -558,12 +454,7 @@ public class ChunkBlazerApiClient
 			future.complete(false);
 			return future;
 		}
-		Request httpRequest = new Request.Builder()
-			.url(config.apiBaseUrl() + "/api/player/death")
-			.addHeader("X-API-Key", currentApiKey())
-			.addHeader("Content-Type", "application/json")
-			.post(RequestBody.create(JSON, gson.toJson(report)))
-			.build();
+		Request httpRequest = request("/api/player/death", currentApiKey(), gson.toJson(report));
 		enqueueGated(httpRequest, new Callback()
 		{
 			@Override
@@ -584,58 +475,9 @@ public class ChunkBlazerApiClient
 		});
 		return future;
 	}
-
 	public CompletableFuture<TaskVerificationResponse> reportNpcKill(NpcKillReport report)
 	{
-		if (!config.apiEnabled())
-		{
-			return CompletableFuture.completedFuture(
-				TaskVerificationResponse.offlineSuccess(report.getTaskId())
-			);
-		}
-
-		CompletableFuture<TaskVerificationResponse> future = new CompletableFuture<>();
-
-		String url = config.apiBaseUrl() + "/api/v1/events/npc-kill";
-		String json = gson.toJson(report);
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("X-API-Key", playerApiKey != null ? playerApiKey : config.apiKey())
-			.addHeader("Content-Type", "application/json")
-			.post(RequestBody.create(JSON, json))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.error("NPC kill report failed: {}", e.getMessage());
-				future.complete(TaskVerificationResponse.error("Network error"));
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (response)
-				{
-					String body = response.body() != null ? response.body().string() : "";
-
-					if (response.isSuccessful())
-					{
-						TaskVerificationResponse verifyResponse = gson.fromJson(body, TaskVerificationResponse.class);
-						future.complete(verifyResponse);
-					}
-					else
-					{
-						future.complete(TaskVerificationResponse.error("Server error: " + response.code()));
-					}
-				}
-			}
-		});
-
-		return future;
+		return reportTask("/api/v1/events/npc-kill", report, report.getTaskId());
 	}
 
 	/**
@@ -643,55 +485,7 @@ public class ChunkBlazerApiClient
 	 */
 	public CompletableFuture<TaskVerificationResponse> reportSkillChange(SkillChangeReport report)
 	{
-		if (!config.apiEnabled())
-		{
-			return CompletableFuture.completedFuture(
-				TaskVerificationResponse.offlineSuccess(report.getTaskId())
-			);
-		}
-
-		CompletableFuture<TaskVerificationResponse> future = new CompletableFuture<>();
-
-		String url = config.apiBaseUrl() + "/api/v1/events/skill-change";
-		String json = gson.toJson(report);
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("X-API-Key", playerApiKey != null ? playerApiKey : config.apiKey())
-			.addHeader("Content-Type", "application/json")
-			.post(RequestBody.create(JSON, json))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.error("Skill change report failed: {}", e.getMessage());
-				future.complete(TaskVerificationResponse.error("Network error"));
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (response)
-				{
-					String body = response.body() != null ? response.body().string() : "";
-
-					if (response.isSuccessful())
-					{
-						TaskVerificationResponse verifyResponse = gson.fromJson(body, TaskVerificationResponse.class);
-						future.complete(verifyResponse);
-					}
-					else
-					{
-						future.complete(TaskVerificationResponse.error("Server error: " + response.code()));
-					}
-				}
-			}
-		});
-
-		return future;
+		return reportTask("/api/v1/events/skill-change", report, report.getTaskId());
 	}
 
 	/**
@@ -704,56 +498,17 @@ public class ChunkBlazerApiClient
 	 */
 	public CompletableFuture<TaskVerificationResponse> reportItemEquipped(ItemEquippedReport report)
 	{
+		return reportTask("/api/v1/events/item-equipped", report, report.getTaskId());
+	}
+
+	private CompletableFuture<TaskVerificationResponse> reportTask(String path, Object report, String taskId)
+	{
 		if (!config.apiEnabled())
 		{
-			return CompletableFuture.completedFuture(
-				TaskVerificationResponse.offlineSuccess(report.getTaskId())
-			);
+			return CompletableFuture.completedFuture(TaskVerificationResponse.offlineSuccess(taskId));
 		}
-
-		CompletableFuture<TaskVerificationResponse> future = new CompletableFuture<>();
-
-		String url = config.apiBaseUrl() + "/api/v1/events/item-equipped";
-		String json = gson.toJson(report);
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("X-API-Key", playerApiKey != null ? playerApiKey : config.apiKey())
-			.addHeader("Content-Type", "application/json")
-			.post(RequestBody.create(JSON, json))
-			.build();
-
-		enqueueGated(httpRequest, new Callback()
-		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.error("Item equipped report failed: {}", e.getMessage());
-				future.complete(TaskVerificationResponse.error("Network error"));
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (response)
-				{
-					String body = response.body() != null ? response.body().string() : "";
-
-					if (response.isSuccessful())
-					{
-						TaskVerificationResponse verifyResponse = gson.fromJson(body, TaskVerificationResponse.class);
-						future.complete(verifyResponse);
-					}
-					else
-					{
-						log.warn("Item equipped report returned error {}: {}", response.code(), body);
-						future.complete(TaskVerificationResponse.error("Server error: " + response.code()));
-					}
-				}
-			}
-		});
-
-		return future;
+		return postJson(path, currentApiKey(), report, TaskVerificationResponse.class,
+			(code, text) -> TaskVerificationResponse.error(code == 0 ? "Network error" : "Server error: " + code));
 	}
 
 	/**
@@ -768,15 +523,7 @@ public class ChunkBlazerApiClient
 
 		CompletableFuture<PlayerSyncResponse> future = new CompletableFuture<>();
 
-		String url = config.apiBaseUrl() + "/api/v1/player/sync";
-		String json = gson.toJson(request);
-
-		Request httpRequest = new Request.Builder()
-			.url(url)
-			.addHeader("X-API-Key", playerApiKey != null ? playerApiKey : config.apiKey())
-			.addHeader("Content-Type", "application/json")
-			.post(RequestBody.create(JSON, json))
-			.build();
+		Request httpRequest = request("/api/v1/player/sync", currentApiKey(), gson.toJson(request));
 
 		enqueueGated(httpRequest, new Callback()
 		{

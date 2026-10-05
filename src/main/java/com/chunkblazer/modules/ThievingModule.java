@@ -26,7 +26,6 @@
 
 package com.chunkblazer.modules;
 
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,7 +34,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Skill;
 import net.runelite.api.events.InteractingChanged;
@@ -69,15 +67,6 @@ public class ThievingModule extends AbstractTaskModule
 	// How many ticks after interacting with an NPC we consider XP gains as pickpockets
 	private static final int INTERACTION_TIMEOUT_TICKS = 5;
 
-	// Menu actions that count as an actual interaction with a GameObject (not just hovering/examine).
-	private static final Set<MenuAction> GAME_OBJECT_ACTIONS = EnumSet.of(
-		MenuAction.GAME_OBJECT_FIRST_OPTION,
-		MenuAction.GAME_OBJECT_SECOND_OPTION,
-		MenuAction.GAME_OBJECT_THIRD_OPTION,
-		MenuAction.GAME_OBJECT_FOURTH_OPTION,
-		MenuAction.GAME_OBJECT_FIFTH_OPTION
-	);
-
 	// Per-task NPC IDs (pickpocket tasks).
 	private final Map<String, Set<Integer>> taskTargetNpcs = new ConcurrentHashMap<>();
 
@@ -106,13 +95,6 @@ public class ThievingModule extends AbstractTaskModule
 	public String getCompletionType()
 	{
 		return COMPLETION_TYPE;
-	}
-
-	@Override
-	public boolean canHandle(NuzlockeTask task)
-	{
-		String type = task.getCompletionType();
-		return type != null && type.equalsIgnoreCase(COMPLETION_TYPE);
 	}
 
 	@Override

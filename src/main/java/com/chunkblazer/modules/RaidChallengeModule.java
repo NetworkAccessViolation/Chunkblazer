@@ -26,6 +26,7 @@
 
 package com.chunkblazer.modules;
 
+import java.util.function.ToIntFunction;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
@@ -1767,101 +1768,45 @@ public class RaidChallengeModule extends AbstractTaskModule
 	/** Summed Prayer bonus of every equipped item (from its equipment stats). */
 	private int equippedPrayerBonus()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
-		if (eq == null)
-		{
-			return 0;
-		}
-		int total = 0;
-		for (Item it : eq.getItems())
-		{
-			if (it == null || it.getId() <= 0)
-			{
-				continue;
-			}
-			ItemStats stats = itemManager.getItemStats(it.getId());
-			if (stats != null && stats.getEquipment() != null)
-			{
-				total += stats.getEquipment().getPrayer();
-			}
-		}
-		return total;
+		return equippedStat(ItemEquipmentStats::getPrayer);
 	}
 
 	/** Summed Crush defence bonus of every equipped item (from its equipment stats). */
 	private int equippedCrushDefence()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
-		if (eq == null)
-		{
-			return 0;
-		}
-		int total = 0;
-		for (Item it : eq.getItems())
-		{
-			if (it == null || it.getId() <= 0)
-			{
-				continue;
-			}
-			ItemStats stats = itemManager.getItemStats(it.getId());
-			if (stats != null && stats.getEquipment() != null)
-			{
-				total += stats.getEquipment().getDcrush();
-			}
-		}
-		return total;
+		return equippedStat(ItemEquipmentStats::getDcrush);
 	}
-
 	private int equippedRangedDefence()
 	{
-		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
-		if (eq == null)
-		{
-			return 0;
-		}
-		int total = 0;
-		for (Item it : eq.getItems())
-		{
-			if (it == null || it.getId() <= 0)
-			{
-				continue;
-			}
-			ItemStats stats = itemManager.getItemStats(it.getId());
-			if (stats != null && stats.getEquipment() != null)
-			{
-				total += stats.getEquipment().getDrange();
-			}
-		}
-		return total;
+		return equippedStat(ItemEquipmentStats::getDrange);
 	}
 
 	/** The highest of the five summed equipped defence bonuses (stab/slash/crush/magic/ranged). */
 	private int equippedMaxDefenceBonus()
 	{
+		return Math.max(Math.max(Math.max(equippedStat(ItemEquipmentStats::getDstab), equippedStat(ItemEquipmentStats::getDslash)),
+			Math.max(equippedStat(ItemEquipmentStats::getDcrush), equippedStat(ItemEquipmentStats::getDmagic))),
+			equippedStat(ItemEquipmentStats::getDrange));
+	}
+
+	/** One equipment stat (e.g. the Prayer bonus) summed over every worn item. */
+	private int equippedStat(ToIntFunction<ItemEquipmentStats> stat)
+	{
 		ItemContainer eq = client.getItemContainer(InventoryID.WORN);
 		if (eq == null)
 		{
 			return 0;
 		}
-		int stab = 0, slash = 0, crush = 0, magic = 0, ranged = 0;
+		int total = 0;
 		for (Item it : eq.getItems())
 		{
-			if (it == null || it.getId() <= 0)
-			{
-				continue;
-			}
-			ItemStats stats = itemManager.getItemStats(it.getId());
+			ItemStats stats = it == null || it.getId() <= 0 ? null : itemManager.getItemStats(it.getId());
 			if (stats != null && stats.getEquipment() != null)
 			{
-				ItemEquipmentStats e = stats.getEquipment();
-				stab += e.getDstab();
-				slash += e.getDslash();
-				crush += e.getDcrush();
-				magic += e.getDmagic();
-				ranged += e.getDrange();
+				total += stat.applyAsInt(stats.getEquipment());
 			}
 		}
-		return Math.max(Math.max(Math.max(stab, slash), Math.max(crush, magic)), ranged);
+		return total;
 	}
 
 	/** Free (empty) inventory slots, 0-28. */

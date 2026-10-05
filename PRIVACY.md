@@ -30,6 +30,7 @@ Sent **only while "Enable Server Verification" is ON** in the plugin settings:
 | Data | Why |
 |---|---|
 | Your RuneScape name (RSN) | Identifies your account and shows your name on leaderboards |
+| A one-way hash of RuneLite's account id | Tells a real name change apart from a different account using your sync key, so nobody else's progress can land on your account. The id itself is never sent |
 | Your IP address | Sent automatically with every web request, as with any website. Used only for ordinary server logs and abuse prevention |
 | Your current world and map region | Powers "players online" and region-based features |
 | Progress events: NPC kills, XP / skill changes, items obtained or equipped, task completions | Verifies task completions server-side and updates your save |

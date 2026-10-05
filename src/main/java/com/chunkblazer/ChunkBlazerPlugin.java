@@ -2678,6 +2678,17 @@ public class ChunkBlazerPlugin extends Plugin
 	}
 
 	/**
+	 * SHA-256 of RuneLite's per-account id, or null while no account is logged in (the
+	 * client reports -1 then). Unlike the name it survives a rename, which is how the
+	 * server tells a name change from a different account holding this account's key.
+	 */
+	private String hashedAccountId()
+	{
+		long id = client.getAccountHash();
+		return id == -1 ? null : Hashing.sha256().hashString(Long.toString(id), StandardCharsets.UTF_8).toString();
+	}
+
+	/**
 	 * Full 64-char SHA-256 of the lowercase RSN. Used as the server-side
 	 * stable identity (rsn_hash) when calling /api/player/login. The truncated
 	 * 16-char form from hashRsn() is for in-game/local audit fields only.
@@ -2768,7 +2779,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// key only on first claim (security C1), so a returning account authenticates
 		// with the copy it persisted, not one re-fetched every login.
 		loadPersistedApiKey();
-		apiClient.login(rsn, fullHashRsn(rsn))
+		apiClient.login(rsn, fullHashRsn(rsn), hashedAccountId())
 			.thenAccept(resp ->
 			{
 				ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
@@ -4530,6 +4541,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		return PlayerSyncRequest.builder()
 			.playerHash(hashRsn(rsn))
+			.accountHash(hashedAccountId())
 			.displayName(rsn)
 			.accountType("NORMAL")
 			.gameMode(modeName)

@@ -396,7 +396,7 @@ public class TaskBrowserOverlay extends Overlay
 		eventBus.unregister(this);
 	}
 
-	/** Open or close the window (the Chunks orb's "Tasks" option). */
+	/** Open or close the window (the Points orb's "Tasks" option). */
 	public void toggle()
 	{
 		open = !open;
@@ -757,55 +757,8 @@ public class TaskBrowserOverlay extends Overlay
 	/** Plain-English requirements: the description if it adds anything, else common constraints. */
 	private List<String> requirementsFor(NuzlockeTask task)
 	{
-		return requirements.computeIfAbsent(task.getTaskId(), id ->
-		{
-			List<String> lines = new ArrayList<>();
-			String description = task.getDescription();
-			if (description != null && !description.trim().isEmpty()
-				&& !simplify(description).equals(simplify(task.getName())))
-			{
-				lines.add(description.trim());
-				return lines;
-			}
-			TaskConstraints c = task.getConstraints();
-			if (c == null)
-			{
-				return lines;
-			}
-			if (c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
-			{
-				int seconds = (int) Math.round(c.getTimeInTicks() * 0.6);
-				lines.add(String.format("Within %d:%02d", seconds / 60, seconds % 60));
-			}
-			if (Boolean.TRUE.equals(c.getNoPrayer()))
-			{
-				lines.add("No prayer");
-			}
-			if (Boolean.TRUE.equals(c.getNoFood()))
-			{
-				lines.add("No food");
-			}
-			if (Boolean.TRUE.equals(c.getNoEquipment()) || Boolean.TRUE.equals(c.getEquipNothing()))
-			{
-				lines.add("Nothing equipped");
-			}
-			if (c.getMaxCombatLevel() != null)
-			{
-				lines.add("Combat level " + c.getMaxCombatLevel() + " or lower");
-			}
-			if (c.getMinCombatLevel() != null)
-			{
-				lines.add("Combat level " + c.getMinCombatLevel() + " or higher");
-			}
-			return lines;
-		});
+		return requirements.computeIfAbsent(task.getTaskId(), id -> SelectedTaskOverlay.requirementLines(task));
 	}
-
-	private static String simplify(String text)
-	{
-		return text == null ? "" : text.toLowerCase().replaceAll("[^a-z0-9]", "");
-	}
-
 	private String chunkName(NuzlockeTask task)
 	{
 		if (plugin.isGlobalTask(task.getTaskId()))

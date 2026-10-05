@@ -102,12 +102,6 @@ public class ProgressionModule extends AbstractTaskModule
 	}
 
 	@Override
-	public boolean canHandle(NuzlockeTask task)
-	{
-		return PROGRESSION_TYPE.equalsIgnoreCase(task.getCompletionType());
-	}
-
-	@Override
 	public void startUp()
 	{
 		eventBus.register(this);

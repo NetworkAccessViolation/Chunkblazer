@@ -42,6 +42,9 @@ public class PlayerSyncRequest
 	/** Player RSN hash */
 	private String playerHash;
 
+	/** SHA-256 of RuneLite's per-account id; the server refuses a sync from a different account. */
+	private String accountHash;
+
 	/** Current RSN (for display, not verification) */
 	private String displayName;
 

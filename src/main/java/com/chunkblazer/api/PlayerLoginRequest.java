@@ -62,4 +62,12 @@ public class PlayerLoginRequest
 	 */
 	@SerializedName("api_key")
 	private String apiKey;
+
+	/**
+	 * SHA-256 of RuneLite's per-account id. It stays the same through a name change and
+	 * differs per account, so the server can tell a real rename from a different account
+	 * holding this key. Null before the client knows the account.
+	 */
+	@SerializedName("account_hash")
+	private String accountHash;
 }

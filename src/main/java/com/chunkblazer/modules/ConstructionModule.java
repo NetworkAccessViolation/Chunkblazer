@@ -28,7 +28,6 @@ package com.chunkblazer.modules;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,7 +38,6 @@ import javax.inject.Provider;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GameState;
-import net.runelite.api.MenuAction;
 import net.runelite.api.Skill;
 import net.runelite.api.TileObject;
 import net.runelite.api.events.DecorativeObjectSpawned;
@@ -123,16 +121,6 @@ public class ConstructionModule extends AbstractTaskModule
 	// animation — same allowance as AgilityModule's traversal timeout.
 	private static final int BUILD_CLICK_WINDOW_TICKS = 12;
 
-	// GameObject menu actions — same set as Agility/Thieving. Anything else
-	// (examine, walk, cancel) is ignored.
-	private static final Set<MenuAction> GAME_OBJECT_ACTIONS = EnumSet.of(
-		MenuAction.GAME_OBJECT_FIRST_OPTION,
-		MenuAction.GAME_OBJECT_SECOND_OPTION,
-		MenuAction.GAME_OBJECT_THIRD_OPTION,
-		MenuAction.GAME_OBJECT_FOURTH_OPTION,
-		MenuAction.GAME_OBJECT_FIFTH_OPTION
-	);
-
 	// Provider (not direct injection) to break the plugin <-> module cycle —
 	// ChunkBlazerPlugin instantiates this module via Guice, so we can't depend
 	// on it eagerly. Lazy fetch via Provider.get() at use time.
@@ -181,13 +169,6 @@ public class ConstructionModule extends AbstractTaskModule
 	public String getCompletionType()
 	{
 		return COMPLETION_TYPE;
-	}
-
-	@Override
-	public boolean canHandle(NuzlockeTask task)
-	{
-		String type = task.getCompletionType();
-		return type != null && type.equalsIgnoreCase(COMPLETION_TYPE);
 	}
 
 	@Override

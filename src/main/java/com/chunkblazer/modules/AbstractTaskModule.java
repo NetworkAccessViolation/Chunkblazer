@@ -26,6 +26,9 @@
 
 package com.chunkblazer.modules;
 
+import net.runelite.api.MenuAction;
+import java.util.Set;
+import java.util.EnumSet;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.api.ChatMessageType;
@@ -83,6 +86,15 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 	protected static final String COLOR_DARK_GREEN = "228b22";
 	protected static final String COLOR_RED = "ff3333";
 	protected static final String COLOR_BLACK = "000000";
+
+	// The left-click/right-click options on a game object (climb, steal, build...).
+	protected static final Set<MenuAction> GAME_OBJECT_ACTIONS = EnumSet.of(
+		MenuAction.GAME_OBJECT_FIRST_OPTION,
+		MenuAction.GAME_OBJECT_SECOND_OPTION,
+		MenuAction.GAME_OBJECT_THIRD_OPTION,
+		MenuAction.GAME_OBJECT_FOURTH_OPTION,
+		MenuAction.GAME_OBJECT_FIFTH_OPTION
+	);
 
 	@Inject
 	protected ChatMessageManager chatMessageManager;

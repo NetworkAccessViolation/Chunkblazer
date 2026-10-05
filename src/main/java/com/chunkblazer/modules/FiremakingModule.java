@@ -178,13 +178,6 @@ public class FiremakingModule extends AbstractTaskModule
 	}
 
 	@Override
-	public boolean canHandle(NuzlockeTask task)
-	{
-		String type = task.getCompletionType();
-		return type != null && type.equalsIgnoreCase(COMPLETION_TYPE);
-	}
-
-	@Override
 	public void startUp()
 	{
 		eventBus.register(this);

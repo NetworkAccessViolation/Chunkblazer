@@ -93,14 +93,6 @@ public class EquipModule extends AbstractTaskModule
 	}
 
 	@Override
-	public boolean canHandle(NuzlockeTask task)
-	{
-		// Handle both "EQUIP" completion type and "Equip" in name
-		String type = task.getCompletionType();
-		return (type != null && type.equalsIgnoreCase(COMPLETION_TYPE));
-	}
-
-	@Override
 	public void startUp()
 	{
 		eventBus.register(this);

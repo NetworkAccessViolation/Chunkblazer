@@ -26,7 +26,6 @@
 
 package com.chunkblazer.modules;
 
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -98,16 +97,6 @@ public class AgilityModule extends AbstractTaskModule
 	// shortcut and back) takes longer than this.
 	private static final int REUSE_COOLDOWN_TICKS = 10;
 
-	// GameObject menu actions — same set used in ThievingModule. Anything else
-	// (examine, walk, cancel) is ignored.
-	private static final Set<MenuAction> GAME_OBJECT_ACTIONS = EnumSet.of(
-		MenuAction.GAME_OBJECT_FIRST_OPTION,
-		MenuAction.GAME_OBJECT_SECOND_OPTION,
-		MenuAction.GAME_OBJECT_THIRD_OPTION,
-		MenuAction.GAME_OBJECT_FOURTH_OPTION,
-		MenuAction.GAME_OBJECT_FIFTH_OPTION
-	);
-
 	// Track Agility XP for detecting gains
 	private int previousAgilityXp = -1;
 
@@ -144,13 +133,6 @@ public class AgilityModule extends AbstractTaskModule
 	public String getCompletionType()
 	{
 		return COMPLETION_TYPE;
-	}
-
-	@Override
-	public boolean canHandle(NuzlockeTask task)
-	{
-		String type = task.getCompletionType();
-		return type != null && type.equalsIgnoreCase(COMPLETION_TYPE);
 	}
 
 	@Override
