@@ -366,6 +366,10 @@ public class ChunkBlazerPlugin extends Plugin
 			@Override
 			public void onTaskCompleted(NuzlockeTask task, int progress)
 			{
+				if (!countedWorld)
+				{
+					return;
+				}
 				// Coalesce: enqueue and let flushPendingCompletions() (onGameTick) do
 				// the expensive settle-up ONCE for the whole batch. Completing tasks
 				// one-by-one here — two config writes + a disk flush + five panel
@@ -394,6 +398,10 @@ public class ChunkBlazerPlugin extends Plugin
 			@Override
 			public void onProgressUpdated(NuzlockeTask task, int newProgress)
 			{
+				if (!countedWorld)
+				{
+					return;
+				}
 				// Pass the live task's target directly. The 2-arg overload re-looks
 				// up the task via findTaskById, which scans allChunks and can return
 				// a different instance for taskIDs that appear in multiple chunks
@@ -468,7 +476,11 @@ public class ChunkBlazerPlugin extends Plugin
 		// Load or assign a task if player is logged in
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
-			loadOrAssignTask();
+			countedWorld = onCountedWorld();
+			if (countedWorld)
+			{
+				loadOrAssignTask();
+			}
 			panel.updatePanel();
 			// The plugin was enabled (or hot-reloaded) while already logged in,
 			// so there's no LOGGED_IN transition coming to kick off the server
@@ -535,6 +547,23 @@ public class ChunkBlazerPlugin extends Plugin
 
 	private volatile boolean pendingServerLogin = false;
 
+	// Whether the world we're logged into counts for ChunkBlazer; see onCountedWorld().
+	private volatile boolean countedWorld = true;
+
+	/**
+	 * Deadman, Leagues, beta, quest-speedrunning, PvP Arena, tournament and LMS worlds give
+	 * boosted or throwaway progress, so nothing done there may count. RuneLite gives the first
+	 * five their own profile type; tournament and LMS worlds are checked by world type.
+	 */
+	boolean onCountedWorld()
+	{
+		java.util.Set<net.runelite.api.WorldType> types = client.getWorldType();
+		return net.runelite.client.config.RuneScapeProfileType.getCurrent(client)
+			== net.runelite.client.config.RuneScapeProfileType.STANDARD
+			&& !types.contains(net.runelite.api.WorldType.TOURNAMENT_WORLD)
+			&& !types.contains(net.runelite.api.WorldType.LAST_MAN_STANDING);
+	}
+
 	// The RS profile becomes available (account HASH known) before the display name
 	// loads (the LOGGED_IN race), so name-gated bootstrap steps — the legacy→RSProfile
 	// migration and any per-account heal — skip when onRuneScapeProfileChanged fires.
@@ -586,10 +615,22 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		if (event.getGameState() == GameState.LOGGED_IN)
 		{
+			countedWorld = onCountedWorld();
 			// Small delay to ensure client is ready
 			clientThread.invokeLater(() ->
 			{
-				loadOrAssignTask();
+				if (countedWorld)
+				{
+					loadOrAssignTask();
+				}
+				else
+				{
+					// Nothing done here may count: drop the loaded tasks so no module credits them.
+					activeTasks.clear();
+					taskModuleManager.clearTask();
+					addPluginChatMessage("ChunkBlazer is paused on this world. Deadman, Leagues and other "
+						+ "special worlds don't count. Hop to a normal world to keep blazing.");
+				}
 				panel.updatePanel();
 			});
 			// Defer the server login until onGameTick sees a non-null player name;
@@ -621,7 +662,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// vs this), and with reads coming from RSProfile a null key makes buildSyncRequest
 			// read EMPTY and push it over the server record. Skipping a logout sync loses at
 			// most one unsynced session (re-synced next login); pushing empty is unrecoverable.
-			PlayerSyncRequest finalSync = (serverStateMerged && isAccountStateAvailable())
+			PlayerSyncRequest finalSync = (serverStateMerged && countedWorld && isAccountStateAvailable())
 				? buildSyncRequest() : null;
 			if (finalSync != null && config.apiEnabled())
 			{
@@ -804,7 +845,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// (see completeTasks()). Coalescing keeps it to a single settle-up per tick.
 		flushPendingCompletions();
 
-		if (pendingServerLogin && player.getName() != null)
+		if (pendingServerLogin && player.getName() != null && countedWorld)
 		{
 			pendingServerLogin = false;
 			loginToServer();
@@ -4378,7 +4419,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	private void syncToServer()
 	{
-		if (!config.apiEnabled())
+		if (!config.apiEnabled() || !countedWorld)
 		{
 			return;
 		}
@@ -6993,7 +7034,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	public void unlockBossRegion(int regionId)
 	{
-		if (isRegionUnlocked(regionId))
+		if (!countedWorld || isRegionUnlocked(regionId))
 		{
 			return;
 		}
@@ -7521,6 +7562,11 @@ public class ChunkBlazerPlugin extends Plugin
 
 	public void unlockRegion(int regionId)
 	{
+		if (!countedWorld)
+		{
+			addPluginChatMessage("Chunks can't be unlocked on this world. Hop to a normal world first.");
+			return;
+		}
 		// Idempotency guard: if the region is already unlocked, do not deduct
 		// points or re-append the regionId. Without this, two near-simultaneous
 		// unlock paths (e.g. side-panel "Yes" + the still-open chatbox popup)
