@@ -89,6 +89,7 @@ import net.runelite.client.util.Text;
  *
  * The outline is the normal colour if at least one of the target's tasks is
  * doable (level requirement met), and the "unavailable" colour if none are.
+ * Archived tasks (see TaskArchive) are left out entirely: no outline, no menu entry.
  */
 @Singleton
 public class TaskTargetHighlighter extends Overlay
@@ -316,6 +317,7 @@ public class TaskTargetHighlighter extends Overlay
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
 	private final ModelOutlineRenderer outlineRenderer;
+	private final TaskArchive archive;
 
 	// What the active tasks want. Rebuilt every game tick (cheap: ~100 tasks), so
 	// newly unlocked or completed tasks show up within a tick.
@@ -337,12 +339,14 @@ public class TaskTargetHighlighter extends Overlay
 	private final Set<TileObject> trackedObjects = new HashSet<>();
 
 	@Inject
-	public TaskTargetHighlighter(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, ModelOutlineRenderer outlineRenderer)
+	public TaskTargetHighlighter(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
+		ModelOutlineRenderer outlineRenderer, TaskArchive archive)
 	{
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
 		this.outlineRenderer = outlineRenderer;
+		this.archive = archive;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_SCENE);
@@ -400,9 +404,11 @@ public class TaskTargetHighlighter extends Overlay
 		Map<Rule, List<NuzlockeTask>> objectRuleMap = new HashMap<>();
 		Map<Integer, List<NuzlockeTask>> bossTasks = new HashMap<>();
 
+		Set<String> archived = archive.ids();
 		for (NuzlockeTask task : plugin.getActiveTasks())
 		{
-			if (task == null || task.isCompleted())
+			// Archived tasks are put aside: they don't outline anything or appear in menus.
+			if (task == null || task.isCompleted() || archived.contains(task.getTaskId()))
 			{
 				continue;
 			}

@@ -50,6 +50,8 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  * progress bar that updates live. It re-reads the task every frame, so any
  * progress change made by the task modules shows up immediately.
  * Alt + drag to move it; click the X (or right-click, then Deselect) to stop tracking.
+ * Click the book in the top-left corner to archive the task (see TaskArchive), which
+ * also stops tracking it.
  */
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
@@ -62,22 +64,29 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private static final int CLOSE_MARGIN = 5;
 	private static final Color CLOSE_IDLE = new Color(200, 200, 200);
 	private static final Color CLOSE_HOVER = new Color(255, 90, 90);
+	private static final Color ARCHIVE_HOVER = new Color(190, 140, 90);
 
 	// Where the X was last drawn, relative to the overlay's top-left. Null while hidden.
 	private volatile Rectangle closeButton;
 	private volatile boolean closeHovered;
+	// Same for the archive book in the opposite corner, plus the task it would archive.
+	private volatile Rectangle archiveButton;
+	private volatile boolean archiveHovered;
+	private volatile String shownTaskId;
 
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
+	private final TaskArchive archive;
 
 	@Inject
-	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
+	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, TaskArchive archive)
 	{
 		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
+		this.archive = archive;
 
 		setPosition(OverlayPosition.TOP_LEFT);
 		panelComponent.setPreferredSize(new Dimension(190, 0));
@@ -93,16 +102,14 @@ public class SelectedTaskOverlay extends OverlayPanel
 	{
 		if (config.taskTrackerStyle() != TaskTrackerStyle.VANI || client.getGameState() != GameState.LOGGED_IN)
 		{
-			closeButton = null;
-			closeHovered = false;
+			hideButtons();
 			return null;
 		}
 
 		NuzlockeTask task = plugin.getSelectedTask();
 		if (task == null)
 		{
-			closeButton = null;
-			closeHovered = false;
+			hideButtons();
 			return null;
 		}
 
@@ -155,35 +162,74 @@ public class SelectedTaskOverlay extends OverlayPanel
 		Dimension size = super.render(graphics);
 		if (size == null)
 		{
-			closeButton = null;
-			closeHovered = false;
+			hideButtons();
 			return null;
 		}
 
-		// Close X in the top-right corner, drawn over the panel just painted.
+		// Close X in the top-right corner and the archive book in the top-left, drawn
+		// over the panel just painted.
 		Rectangle box = new Rectangle(size.width - CLOSE_SIZE - CLOSE_MARGIN, CLOSE_MARGIN, CLOSE_SIZE, CLOSE_SIZE);
+		Rectangle book = new Rectangle(CLOSE_MARGIN, CLOSE_MARGIN - 1, CLOSE_SIZE, CLOSE_SIZE + 2);
 
 		// Hover test using the game's own mouse position, which is in the same
 		// coordinate space the overlay is drawn in (works in stretched/resized
 		// modes too). The click handler just asks "is the X hovered right now?".
 		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
 		Rectangle bounds = getBounds();
-		closeHovered = mouse != null && bounds != null
-				&& new Rectangle(bounds.x + box.x - 4, bounds.y + box.y - 4, box.width + 8, box.height + 8)
-				.contains(mouse.getX(), mouse.getY());
+		closeHovered = isHovered(mouse, bounds, box);
+		archiveHovered = isHovered(mouse, bounds, book);
 
 		graphics.setColor(closeHovered ? CLOSE_HOVER : CLOSE_IDLE);
 		graphics.setStroke(new BasicStroke(2));
 		graphics.drawLine(box.x, box.y, box.x + box.width, box.y + box.height);
 		graphics.drawLine(box.x, box.y + box.height, box.x + box.width, box.y);
+		TaskArchive.drawBook(graphics, book.x, book.y, book.width, book.height,
+				archiveHovered ? ARCHIVE_HOVER : CLOSE_IDLE, false);
+
 		closeButton = box;
+		archiveButton = book;
+		shownTaskId = task.getTaskId();
 		return size;
+	}
+
+	/** Mouse over a corner button, with a few pixels of slack around it. */
+	private static boolean isHovered(net.runelite.api.Point mouse, Rectangle bounds, Rectangle button)
+	{
+		return mouse != null && bounds != null
+				&& new Rectangle(bounds.x + button.x - 4, bounds.y + button.y - 4, button.width + 8, button.height + 8)
+				.contains(mouse.getX(), mouse.getY());
+	}
+
+	private void hideButtons()
+	{
+		closeButton = null;
+		closeHovered = false;
+		archiveButton = null;
+		archiveHovered = false;
+		shownTaskId = null;
 	}
 
 	/** True while the mouse is over the close X (updated every frame in render). */
 	boolean isCloseHovered()
 	{
 		return closeButton != null && closeHovered;
+	}
+
+	/** True while the mouse is over the archive book (updated every frame in render). */
+	boolean isArchiveHovered()
+	{
+		return archiveButton != null && archiveHovered;
+	}
+
+	/** Archive the task this box is showing and stop tracking it. */
+	void archiveShownTask()
+	{
+		String taskId = shownTaskId;
+		if (taskId != null)
+		{
+			archive.archive(taskId);
+			plugin.clearSelectedTask();
+		}
 	}
 
 	/**
