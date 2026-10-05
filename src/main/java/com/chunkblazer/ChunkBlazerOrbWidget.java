@@ -34,6 +34,7 @@ import net.runelite.api.events.PostClientTick;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.SpriteID;
+import net.runelite.api.widgets.JavaScriptCallback;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
 import net.runelite.api.widgets.WidgetType;
@@ -50,6 +51,7 @@ public class ChunkBlazerOrbWidget
 	private final EventBus eventBus;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
+	private final TaskBrowserOverlay taskBrowser;
 
 	private final int bossTokenOrbSpriteID = -900;
 
@@ -60,13 +62,15 @@ public class ChunkBlazerOrbWidget
 	private Widget wikiWidget;
 
 	@Inject
-	private ChunkBlazerOrbWidget(Client client, ClientThread clientThread, EventBus eventBus, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
+	private ChunkBlazerOrbWidget(Client client, ClientThread clientThread, EventBus eventBus, ChunkBlazerPlugin plugin,
+		ChunkBlazerConfig config, TaskBrowserOverlay taskBrowser)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
 		this.eventBus = eventBus;
 		this.plugin = plugin;
 		this.config = config;
+		this.taskBrowser = taskBrowser;
 	}
 
 	@Subscribe
@@ -126,9 +130,10 @@ public class ChunkBlazerOrbWidget
 				parentOrbsWidget.getParent().revalidate();
 			}
 			bossTokenOrb = parentOrbsWidget.createChild(-1, WidgetType.LAYER);
-			bossTokenText = createOrbWidget(bossTokenOrb, bossTokenOrbSpriteID, null, bossOrbX, bossOrbY, flip);
-			pointsOrb = parentOrbsWidget.createChild(-1, WidgetType.LAYER);
-			pointsText = createOrbWidget(pointsOrb, -1, "Pts", pointsOrbX, pointsOrbY, flip);
+			bossTokenText = createOrbWidget(bossTokenOrb, bossTokenOrbSpriteID, bossOrbX, bossOrbY, flip);
+			chunksOrb = parentOrbsWidget.createChild(-1, WidgetType.LAYER);
+			chunksText = createOrbWidget(chunksOrb, chunksOrbSpriteID, chunksOrbX, chunksOrbY, flip);
+			makeTaskButton(chunksOrb);
 			wikiWidget = client.getWidget(InterfaceID.Orbs.WIKI);
 			if (wikiWidget != null)
 			{
@@ -145,8 +150,35 @@ public class ChunkBlazerOrbWidget
 		}
 	}
 
-	/** One orb: frame, value text, and either an icon sprite or (when {@code label} is set) a short text label. */
-	private Widget createOrbWidget(Widget widget, int iconSpriteID, String label, int x, int y, boolean flip)
+	/** Clicking the Chunks orb opens the task window, like the Leagues orb. */
+	private void makeTaskButton(Widget orb)
+	{
+		Widget[] parts = orb.getDynamicChildren();
+		if (parts == null || parts.length == 0)
+		{
+			return;
+		}
+		Widget frame = parts[0];
+		frame.setName("<col=ff9040>ChunkBlazer</col>");
+		frame.setAction(0, "Tasks");
+		frame.setHasListener(true);
+		frame.setNoClickThrough(true);
+		frame.setOnOpListener((JavaScriptCallback) event -> taskBrowser.toggle());
+		// Light up on hover, like the game's own minimap orbs.
+		frame.setOnMouseOverListener((JavaScriptCallback) event ->
+		{
+			frame.setSpriteId(SpriteID.MINIMAP_ORB_FRAME_HOVERED);
+			frame.revalidate();
+		});
+		frame.setOnMouseLeaveListener((JavaScriptCallback) event ->
+		{
+			frame.setSpriteId(SpriteID.MINIMAP_ORB_FRAME);
+			frame.revalidate();
+		});
+		frame.revalidate();
+	}
+
+	private Widget createOrbWidget(Widget widget, int iconSpriteID, int x, int y, boolean flip)
 	{
 		Widget backing = widget.createChild(-1, WidgetType.GRAPHIC);
 		backing.setFlippedHorizontally(flip);
@@ -283,6 +315,7 @@ public class ChunkBlazerOrbWidget
 
 	public void shutDown()
 	{
+		taskBrowser.shutDown();
 		eventBus.unregister(this);
 		cleanup();
 		bossTokenOrb = bossTokenText = pointsOrb = pointsText = wikiWidget = null;
@@ -295,6 +328,7 @@ public class ChunkBlazerOrbWidget
 		BufferedImage bossTokenOrbIcon = ImageUtil.loadImageResource(ChunkBlazerPlugin.class, "boss_token_icon.png");
 		client.getSpriteOverrides().put(bossTokenOrbSpriteID, ImageUtil.getImageSpritePixels(bossTokenOrbIcon, client));
 		eventBus.register(this);
+		taskBrowser.startUp();
 		addOrbWidgets();
 	}
 }
