@@ -130,10 +130,10 @@ public class ChunkBlazerOrbWidget
 				parentOrbsWidget.getParent().revalidate();
 			}
 			bossTokenOrb = parentOrbsWidget.createChild(-1, WidgetType.LAYER);
-			bossTokenText = createOrbWidget(bossTokenOrb, bossTokenOrbSpriteID, bossOrbX, bossOrbY, flip);
-			chunksOrb = parentOrbsWidget.createChild(-1, WidgetType.LAYER);
-			chunksText = createOrbWidget(chunksOrb, chunksOrbSpriteID, chunksOrbX, chunksOrbY, flip);
-			makeTaskButton(chunksOrb);
+			bossTokenText = createOrbWidget(bossTokenOrb, bossTokenOrbSpriteID, null, bossOrbX, bossOrbY, flip);
+			pointsOrb = parentOrbsWidget.createChild(-1, WidgetType.LAYER);
+			pointsText = createOrbWidget(pointsOrb, -1, "Pts", pointsOrbX, pointsOrbY, flip);
+			makeTaskButton(pointsOrb);
 			wikiWidget = client.getWidget(InterfaceID.Orbs.WIKI);
 			if (wikiWidget != null)
 			{
@@ -150,7 +150,7 @@ public class ChunkBlazerOrbWidget
 		}
 	}
 
-	/** Clicking the Chunks orb opens the task window, like the Leagues orb. */
+	/** Clicking the Points orb opens the task window, like the Leagues orb. */
 	private void makeTaskButton(Widget orb)
 	{
 		Widget[] parts = orb.getDynamicChildren();
@@ -178,7 +178,8 @@ public class ChunkBlazerOrbWidget
 		frame.revalidate();
 	}
 
-	private Widget createOrbWidget(Widget widget, int iconSpriteID, int x, int y, boolean flip)
+	/** One orb: frame, value text, and either an icon sprite or (when {@code label} is set) a short text label. */
+	private Widget createOrbWidget(Widget widget, int iconSpriteID, String label, int x, int y, boolean flip)
 	{
 		Widget backing = widget.createChild(-1, WidgetType.GRAPHIC);
 		backing.setFlippedHorizontally(flip);
