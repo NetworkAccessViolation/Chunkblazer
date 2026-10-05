@@ -316,6 +316,43 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showChunkWalls",
+		name = "Locked Chunk Walls",
+		description = "Draw a see-through wall in the game world along the border between unlocked and locked chunks",
+		section = displaySection,
+		position = 3
+	)
+	default boolean showChunkWalls()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showChunkNamePopups",
+		name = "Chunk Name Popups",
+		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
+		section = displaySection,
+		position = 3
+	)
+	default boolean showChunkNamePopups()
+	{
+		return true;
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "chunkWallColor",
+		name = "Locked Chunk Wall Colour",
+		description = "Colour of the locked chunk walls; transparency sets how see-through they are",
+		section = displaySection,
+		position = 3
+	)
+	default java.awt.Color chunkWallColor()
+	{
+		return new java.awt.Color(255, 60, 60, 110);
+	}
+
+	@ConfigItem(
 		keyName = "showWorldMapChunks",
 		name = "Show Chunk Borders (World Map)",
 		description = "Draw chunk/region borders on the world map. Independent of the scene and minimap toggles.",
@@ -329,6 +366,30 @@ public interface ChunkBlazerConfig extends Config
 		// world map clear, and someone who had it on keeps it. Once they set this
 		// toggle explicitly, it takes its own stored value.
 		return showSceneChunks();
+	}
+
+	@ConfigItem(
+			keyName = "showChunkCostLabels",
+			name = "Show Chunk Costs (World Map)",
+			description = "Write what each unlockable chunk costs (FREE, points or a Boss Token) inside it on the world map",
+			section = displaySection,
+			position = 4
+	)
+	default boolean showChunkCostLabels()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+			keyName = "showChunkLegend",
+			name = "Show Chunk Legend (World Map)",
+			description = "Show a key explaining the chunk colours in the corner of the world map",
+			section = displaySection,
+			position = 4
+	)
+	default boolean showChunkLegend()
+	{
+		return true;
 	}
 
 	@ConfigItem(

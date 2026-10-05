@@ -54,16 +54,14 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	private static final int REGION_TRUNCATE = ~((1 << 6) - 1);
 
 	// Colors
-	private static final Color UNLOCKED_BORDER = new Color(0, 255, 0, 180);
-	private static final Color UNLOCKED_FILL = new Color(0, 255, 0, 35); // Owned chunks are filled in
 	private static final Color LOCKED_BORDER = new Color(255, 0, 0, 120);
-	private static final Color LOCKED_FILL = new Color(0, 0, 0, 100);
-	// Yellow outline = "you can unlock this" — the baseline unlock marker for
-	// every unlockable chunk (adjacent neighbours AND charter ports). Outline
-	// only: unlockable chunks are never filled or highlighted, so owned (filled)
-	// vs available (outlined) reads at a glance.
-	private static final Color UNLOCKABLE_BORDER = new Color(255, 215, 0, 220);
+	// The chunk you're standing in gets its own outline colour.
 	private static final Color CURRENT_BORDER = new Color(0, 200, 255, 255);
+	// One outline colour for every chunk, so neighbouring edges never clash; the
+	// chunk's type is shown by its fill instead (see ChunkUnlockType).
+	private static final Color CHUNK_BORDER = new Color(255, 255, 255, 70);
+	// Below this many pixels per chunk the cost text won't fit, so it's skipped.
+	private static final int MIN_LABEL_CHUNK_PIXELS = 48;
 
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
@@ -181,20 +179,10 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 					}
 				}
 
-				// Draw fills first. Owned chunks are filled in (green); everything
-				// not yet owned gets the SAME dark wash — including unlockable
-				// chunks, so they don't stand out as "highlighted". The only thing
-				// that marks an unlockable chunk is its yellow outline (border pass).
-				if (isUnlocked)
-				{
-					graphics.setColor(UNLOCKED_FILL);
-					graphics.fillRect(xPos, yPos, regionPixelSize, regionPixelSize);
-				}
-				else
-				{
-					graphics.setColor(LOCKED_FILL);
-					graphics.fillRect(xPos, yPos, regionPixelSize, regionPixelSize);
-				}
+				// Each chunk gets a faint tint for its type: green owned, gold/teal/
+				// blue/purple for the ways it can be unlocked, dark for locked.
+				graphics.setColor(ChunkUnlockType.of(plugin, regionId, isUnlocked, isNeighbor).fill);
+				graphics.fillRect(xPos, yPos, regionPixelSize, regionPixelSize);
 			}
 		}
 
@@ -212,8 +200,6 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 				boolean isUnlocked = unlockedRegions.contains(String.valueOf(regionId))
 					|| plugin.isFreeRegion(regionId);
 				boolean isNeighbor = neighborRegions.contains(regionId);
-				boolean isCharter = plugin.isCharterRegion(regionId);
-				boolean isFreeUnlockable = plugin.isFreeUnlockableRegion(regionId);
 				boolean isCurrent = regionId == currentRegionId;
 
 				int yTileOffset = -(yTileMin - y);
@@ -223,40 +209,30 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 				int yPos = (worldMapRect.height - (int) (yTileOffset * pixelsPerTile)) + (int) worldMapRect.getY();
 				yPos -= regionPixelSize;
 
-				// Choose border color based on state
-				if (isCurrent)
-				{
-					graphics.setColor(CURRENT_BORDER);
-				}
-				else if (isUnlocked)
-				{
-					graphics.setColor(UNLOCKED_BORDER);
-				}
-				else if (isNeighbor || isCharter || isFreeUnlockable)
-				{
-					graphics.setColor(UNLOCKABLE_BORDER);
-				}
-				else
-				{
-					graphics.setColor(LOCKED_BORDER);
-				}
+				ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, isUnlocked, isNeighbor);
 
-				// Draw border
+				// Uniform outline everywhere; only the chunk you're standing in stands out.
+				graphics.setColor(isCurrent ? CURRENT_BORDER : CHUNK_BORDER);
 				graphics.drawRect(xPos, yPos, regionPixelSize, regionPixelSize);
 
 				// Thicker border for the current region, and a hover emphasis on
-				// unlockable chunks (still outline-only — no fill/highlight).
-				if (isCurrent)
-				{
-					graphics.drawRect(xPos + 1, yPos + 1, regionPixelSize - 2, regionPixelSize - 2);
-				}
-				else if ((isNeighbor || isCharter || isFreeUnlockable) && regionId == hoveredRegionId)
+				// unlockable chunks (still outline-only, no fill/highlight).
+				if (isCurrent || (type.isUnlockable() && regionId == hoveredRegionId))
 				{
 					graphics.drawRect(xPos + 1, yPos + 1, regionPixelSize - 2, regionPixelSize - 2);
 				}
 
-				// Draw region ID in top-left corner of each chunk (only if chunk is large enough to show text)
-				if (regionPixelSize > 20)
+				// What it costs, written in the middle of every unlockable chunk.
+				if (config.showChunkCostLabels() && type.isUnlockable() && regionPixelSize >= MIN_LABEL_CHUNK_PIXELS)
+				{
+					drawCostLabel(graphics, xPos, yPos, regionPixelSize,
+						ChunkUnlockType.costLabel(plugin, regionId, type), type.color);
+					graphics.setFont(regionFont);
+				}
+
+				// Region ID in the top-left corner, only on the chunk under the mouse, so the
+				// zoomed-out map isn't covered in numbers.
+				if (regionId == hoveredRegionId)
 				{
 					String idText = String.valueOf(regionId);
 					int textX = xPos + 4;
@@ -269,19 +245,8 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 						graphics.setColor(Color.BLACK);
 						graphics.drawString(idText, textX + 1, textY + 1);
 
-						// Draw text in green for unlocked, gold for neighbor, red for locked
-						if (isUnlocked)
-						{
-							graphics.setColor(new Color(0, 255, 0));
-						}
-						else if (isNeighbor)
-						{
-							graphics.setColor(new Color(255, 215, 0));
-						}
-						else
-						{
-							graphics.setColor(new Color(255, 80, 80));
-						}
+						// Same colour family as the chunk's tint, solid so it stays readable.
+						graphics.setColor(type.color);
 						graphics.drawString(idText, textX, textY);
 					}
 				}
@@ -295,6 +260,11 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		if (isHoveredUnlockable && hoveredRegionId > 0)
 		{
 			drawHoverTooltip(graphics, mousePos, hoveredRegionId);
+		}
+
+		if (config.showChunkLegend())
+		{
+			drawLegend(graphics, worldMapRect);
 		}
 
 		// Draw region ID in top-left corner of world map
@@ -375,7 +345,11 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		// Build tooltip text
 		String line1 = regionName;
 		String line2, line3 = "";
-		if (plugin.isFreeUnlockableRegion(regionId))
+		if (plugin.isCharterRegion(regionId))
+		{
+			line2 = "Cost: FREE (charter port)";
+		}
+		else if (plugin.isFreeUnlockableRegion(regionId) || (!isBoss && unlockCost == 0))
 		{
 			line2 = "Cost: FREE";
 		}
@@ -417,7 +391,8 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		graphics.fillRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
 
 		// Draw border
-		graphics.setColor(canAfford ? UNLOCKABLE_BORDER : LOCKED_BORDER);
+		ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, false, true);
+		graphics.setColor(canAfford ? type.color : LOCKED_BORDER);
 		graphics.drawRect(tooltipX, tooltipY, tooltipWidth, tooltipHeight);
 
 		// Draw text
@@ -437,4 +412,70 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	}
 
 
+	/** Cost text centred in a chunk, on a dark backing so it reads on any map colour. */
+	private void drawCostLabel(Graphics2D graphics, int xPos, int yPos, int size, String text, Color color)
+	{
+		if (text == null)
+		{
+			return;
+		}
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+		int width = fm.stringWidth(text);
+		int x = xPos + (size - width) / 2;
+		int y = yPos + (size + fm.getAscent()) / 2 - 2;
+
+		graphics.setColor(new Color(0, 0, 0, 170));
+		graphics.fillRect(x - 3, y - fm.getAscent(), width + 6, fm.getHeight());
+		graphics.setColor(color);
+		graphics.drawString(text, x, y);
+	}
+
+	/** Key in the bottom-left of the world map explaining each chunk colour. */
+	private void drawLegend(Graphics2D graphics, Rectangle worldMapRect)
+	{
+		ChunkUnlockType[] rows = {
+			ChunkUnlockType.UNLOCKED, ChunkUnlockType.PAID, ChunkUnlockType.FREE,
+			ChunkUnlockType.CHARTER, ChunkUnlockType.BOSS, ChunkUnlockType.LOCKED
+		};
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+
+		int padding = 6;
+		int swatch = 10;
+		int lineHeight = Math.max(fm.getHeight(), swatch + 4);
+		int textWidth = 0;
+		for (ChunkUnlockType row : rows)
+		{
+			textWidth = Math.max(textWidth, fm.stringWidth(row.legend));
+		}
+		int width = padding * 3 + swatch + textWidth;
+		int height = padding * 2 + lineHeight * rows.length;
+		int x = (int) worldMapRect.getX() + 8;
+		int y = (int) (worldMapRect.getY() + worldMapRect.getHeight()) - height - 8;
+
+		graphics.setColor(new Color(30, 30, 30, 220));
+		graphics.fillRect(x, y, width, height);
+		graphics.setColor(new Color(90, 90, 90));
+		graphics.drawRect(x, y, width, height);
+
+		int rowY = y + padding;
+		for (ChunkUnlockType row : rows)
+		{
+			int sx = x + padding;
+			int sy = rowY + (lineHeight - swatch) / 2;
+			// The swatch is drawn over the map's own dark backing so it matches the
+			// faint tint players see on the chunks.
+			graphics.setColor(new Color(110, 110, 90));
+			graphics.fillRect(sx, sy, swatch, swatch);
+			graphics.setColor(row.fill);
+			graphics.fillRect(sx, sy, swatch, swatch);
+			graphics.setColor(CHUNK_BORDER);
+			graphics.drawRect(sx, sy, swatch, swatch);
+
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(row.legend, sx + swatch + padding, rowY + (lineHeight + fm.getAscent()) / 2 - 2);
+			rowY += lineHeight;
+		}
+	}
 }
