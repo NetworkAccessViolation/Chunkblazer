@@ -34,8 +34,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Actor;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.NPC;
+import net.runelite.api.Player;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.widgets.Widget;
@@ -187,20 +189,14 @@ public class NpcDialogueModule extends AbstractTaskModule
 		// Detect dialogue opening (edge detection: was closed, now open)
 		if (isDialogueOpen && !wasDialogueOpen)
 		{
-
-			// Check if we recently interacted with a watched NPC
-			int currentTick = client.getTickCount();
-			boolean recentInteraction = lastInteractionNpcId > 0 &&
-				(currentTick - lastInteractionTick) <= INTERACTION_TIMEOUT_TICKS;
-
-			if (recentInteraction && watchedNpcIds.contains(lastInteractionNpcId))
+			int npcId = dialogueNpcId();
+			if (npcId > 0)
 			{
-
 				// Credit progress to matching tasks
 				for (NuzlockeTask task : new HashSet<>(activeTasks))
 				{
 					Set<Integer> taskNpcs = taskTargetNpcs.get(task.getTaskId());
-					if (taskNpcs != null && taskNpcs.contains(lastInteractionNpcId))
+					if (taskNpcs != null && taskNpcs.contains(npcId))
 					{
 						creditTaskProgress(task);
 					}
@@ -209,6 +205,30 @@ public class NpcDialogueModule extends AbstractTaskModule
 		}
 
 		wasDialogueOpen = isDialogueOpen;
+	}
+
+	/**
+	 * The watched NPC the dialogue that just opened belongs to, or -1. Either the one we
+	 * clicked a few ticks ago, or the one we are interacting with right now. The second
+	 * matters because the target is set on the CLICK: clicking Talk-to from across a room
+	 * means the walk alone outlasts the short window, and the talk was never credited
+	 * (the Varrock estate agent report).
+	 */
+	int dialogueNpcId()
+	{
+		int currentTick = client.getTickCount();
+		if (lastInteractionNpcId > 0 && (currentTick - lastInteractionTick) <= INTERACTION_TIMEOUT_TICKS
+			&& watchedNpcIds.contains(lastInteractionNpcId))
+		{
+			return lastInteractionNpcId;
+		}
+		Player me = client.getLocalPlayer();
+		Actor target = me != null ? me.getInteracting() : null;
+		if (target instanceof NPC && watchedNpcIds.contains(((NPC) target).getId()))
+		{
+			return ((NPC) target).getId();
+		}
+		return -1;
 	}
 
 	@Subscribe
