@@ -51,11 +51,8 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  * progress bar that updates live. It re-reads the task every frame, so any
  * progress change made by the task modules shows up immediately.
  * Alt + drag to move it; click the X (or right-click, then Deselect) to stop tracking.
- *
- * Timed kill tasks ("Defeat a level 5 frog in 21 seconds") show a countdown instead
- * of the usual progress bar. It starts when the kill tracker starts its own clock
- * (our first hit on a matching NPC) and changes colour as time runs out. Tasks with
- * a 1-tick limit ("in the first hit") keep the normal bar, as there's nothing to time.
+ * Click the book in the top-left corner to archive the task (see TaskArchive), which
+ * also stops tracking it.
  */
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
@@ -68,6 +65,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private static final int CLOSE_MARGIN = 5;
 	private static final Color CLOSE_IDLE = new Color(200, 200, 200);
 	private static final Color CLOSE_HOVER = new Color(255, 90, 90);
+	private static final Color ARCHIVE_HOVER = new Color(190, 140, 90);
 
 	// Countdown colours, from plenty of time left to out of time.
 	private static final Color TIMER_OK = new Color(90, 200, 90);
@@ -79,6 +77,10 @@ public class SelectedTaskOverlay extends OverlayPanel
 	// Where the X was last drawn, relative to the overlay's top-left. Null while hidden.
 	private volatile Rectangle closeButton;
 	private volatile boolean closeHovered;
+	// Same for the archive book in the opposite corner, plus the task it would archive.
+	private volatile Rectangle archiveButton;
+	private volatile boolean archiveHovered;
+	private volatile String shownTaskId;
 
 	// The game only advances in 0.6s ticks; remembering when the current tick began
 	// lets the countdown move smoothly between them instead of jumping.
@@ -88,16 +90,16 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
-	private final NPCKillModule kills;
+	private final TaskArchive archive;
 
 	@Inject
-	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, NPCKillModule kills)
+	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, TaskArchive archive)
 	{
 		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
-		this.kills = kills;
+		this.archive = archive;
 
 		setPosition(OverlayPosition.TOP_LEFT);
 		panelComponent.setPreferredSize(new Dimension(190, 0));
@@ -113,16 +115,14 @@ public class SelectedTaskOverlay extends OverlayPanel
 	{
 		if (config.taskTrackerStyle() != TaskTrackerStyle.VANI || client.getGameState() != GameState.LOGGED_IN)
 		{
-			closeButton = null;
-			closeHovered = false;
+			hideButtons();
 			return null;
 		}
 
 		NuzlockeTask task = plugin.getSelectedTask();
 		if (task == null)
 		{
-			closeButton = null;
-			closeHovered = false;
+			hideButtons();
 			return null;
 		}
 
@@ -163,23 +163,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 		int progress = task.getCurrentProgress();
 		int target = Math.max(1, task.getTargetQuantity());
 
-		int limitTicks = timeLimitTicks(task);
-		if (limitTicks > 1 && task.getTargetNpc() != null)
-		{
-			// Timed kill: countdown bar, with the kill count on its own line if the
-			// task needs more than one.
-			if (target > 1)
-			{
-				panelComponent.getChildren().add(LineComponent.builder()
-						.left("Kills")
-						.right(Math.min(progress, target) + "/" + target)
-						.leftColor(REQUIREMENT_TEXT)
-						.rightColor(Color.WHITE)
-						.build());
-			}
-			panelComponent.getChildren().add(timerBar(task, limitTicks));
-		}
-		else
+		// One-off tasks (a target of 1) get no bar: "0/1" says nothing useful.
+		if (target > 1)
 		{
 			ProgressBarComponent bar = new ProgressBarComponent();
 			bar.setMinimum(0);
@@ -194,105 +179,74 @@ public class SelectedTaskOverlay extends OverlayPanel
 		Dimension size = super.render(graphics);
 		if (size == null)
 		{
-			closeButton = null;
-			closeHovered = false;
+			hideButtons();
 			return null;
 		}
 
-		// Close X in the top-right corner, drawn over the panel just painted.
+		// Close X in the top-right corner and the archive book in the top-left, drawn
+		// over the panel just painted.
 		Rectangle box = new Rectangle(size.width - CLOSE_SIZE - CLOSE_MARGIN, CLOSE_MARGIN, CLOSE_SIZE, CLOSE_SIZE);
+		Rectangle book = new Rectangle(CLOSE_MARGIN, CLOSE_MARGIN - 1, CLOSE_SIZE, CLOSE_SIZE + 2);
 
 		// Hover test using the game's own mouse position, which is in the same
 		// coordinate space the overlay is drawn in (works in stretched/resized
 		// modes too). The click handler just asks "is the X hovered right now?".
 		net.runelite.api.Point mouse = client.getMouseCanvasPosition();
 		Rectangle bounds = getBounds();
-		closeHovered = mouse != null && bounds != null
-				&& new Rectangle(bounds.x + box.x - 4, bounds.y + box.y - 4, box.width + 8, box.height + 8)
-				.contains(mouse.getX(), mouse.getY());
+		closeHovered = isHovered(mouse, bounds, box);
+		archiveHovered = isHovered(mouse, bounds, book);
 
 		graphics.setColor(closeHovered ? CLOSE_HOVER : CLOSE_IDLE);
 		graphics.setStroke(new BasicStroke(2));
 		graphics.drawLine(box.x, box.y, box.x + box.width, box.y + box.height);
 		graphics.drawLine(box.x, box.y + box.height, box.x + box.width, box.y);
+		TaskArchive.drawBook(graphics, book.x, book.y, book.width, book.height,
+				archiveHovered ? ARCHIVE_HOVER : CLOSE_IDLE, false);
+
 		closeButton = box;
+		archiveButton = book;
+		shownTaskId = task.getTaskId();
 		return size;
 	}
 
-	/** The task's time limit in ticks, or 0 if it has none. */
-	private static int timeLimitTicks(NuzlockeTask task)
+	/** Mouse over a corner button, with a few pixels of slack around it. */
+	private static boolean isHovered(net.runelite.api.Point mouse, Rectangle bounds, Rectangle button)
 	{
-		TaskConstraints c = task.getConstraints();
-		if (c == null || !c.hasTimeLimit() || c.getTimeInTicks() == null)
-		{
-			return 0;
-		}
-		return c.getTimeInTicks();
+		return mouse != null && bounds != null
+				&& new Rectangle(bounds.x + button.x - 4, bounds.y + button.y - 4, button.width + 8, button.height + 8)
+				.contains(mouse.getX(), mouse.getY());
 	}
 
-	/**
-	 * Countdown for a timed kill. Full and waiting until the fight starts, then
-	 * draining live: green, yellow under half, orange under a quarter, red under a
-	 * tenth, and "Too slow" once the limit has passed (until that fight ends).
-	 */
-	private ProgressBarComponent timerBar(NuzlockeTask task, int limitTicks)
+	private void hideButtons()
 	{
-		int tick = client.getTickCount();
-		long now = System.currentTimeMillis();
-		if (tick != lastTick)
-		{
-			lastTick = tick;
-			lastTickAt = now;
-		}
-
-		long limitMs = (long) limitTicks * TICK_MS;
-		int startTick = kills.getActiveFightStartTick(task.getTargetNpc());
-
-		ProgressBarComponent bar = new ProgressBarComponent();
-		bar.setMinimum(0);
-		bar.setMaximum(limitMs);
-		bar.setBackgroundColor(BAR_BACKGROUND);
-		bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.TEXT_ONLY);
-
-		if (startTick < 0)
-		{
-			// Not fighting a matching NPC yet: show the full allowance.
-			bar.setValue(limitMs);
-			bar.setForegroundColor(TIMER_OK);
-			bar.setCenterLabel(seconds(limitMs) + " limit");
-			return bar;
-		}
-
-		long elapsed = (long) (tick - startTick) * TICK_MS + Math.min(TICK_MS, now - lastTickAt);
-		long remaining = limitMs - elapsed;
-		if (remaining <= 0)
-		{
-			bar.setValue(limitMs);
-			bar.setForegroundColor(TIMER_FAIL);
-			bar.setCenterLabel("Too slow");
-			return bar;
-		}
-
-		double fraction = remaining / (double) limitMs;
-		Color color = fraction > 0.5 ? TIMER_OK
-				: fraction > 0.25 ? TIMER_WARN
-				: fraction > 0.1 ? TIMER_LATE
-				: TIMER_FAIL;
-		bar.setValue(remaining);
-		bar.setForegroundColor(color);
-		bar.setCenterLabel(seconds(remaining) + " left");
-		return bar;
-	}
-
-	private static String seconds(long millis)
-	{
-		return String.format("%.1fs", millis / 1000.0);
+		closeButton = null;
+		closeHovered = false;
+		archiveButton = null;
+		archiveHovered = false;
+		shownTaskId = null;
 	}
 
 	/** True while the mouse is over the close X (updated every frame in render). */
 	boolean isCloseHovered()
 	{
 		return closeButton != null && closeHovered;
+	}
+
+	/** True while the mouse is over the archive book (updated every frame in render). */
+	boolean isArchiveHovered()
+	{
+		return archiveButton != null && archiveHovered;
+	}
+
+	/** Archive the task this box is showing and stop tracking it. */
+	void archiveShownTask()
+	{
+		String taskId = shownTaskId;
+		if (taskId != null)
+		{
+			archive.archive(taskId);
+			plugin.clearSelectedTask();
+		}
 	}
 
 	/**

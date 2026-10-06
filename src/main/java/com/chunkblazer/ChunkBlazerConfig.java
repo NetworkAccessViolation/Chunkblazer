@@ -33,12 +33,21 @@ import net.runelite.client.config.Range;
 import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Keybind;
 
+/**
+ * Settings, grouped by what they affect: Server Sync, Tasks, World Map, Minimap,
+ * In Game, Sounds, Chat Messages and Region Unlock.
+ *
+ * Only the names, descriptions, sections and positions are about presentation. Every
+ * keyName is unchanged, so players' saved choices carry across any reshuffle here.
+ */
 @ConfigGroup("chunkblazer")
 public interface ChunkBlazerConfig extends Config
 {
 	/** Plugin Hub's required wording for a 3rd-party-server toggle. */
 	String SERVER_SYNC_WARNING = "This feature submits your IP address to a 3rd-party server "
 		+ "not controlled or verified by RuneLite developers";
+
+	// ── Internal state (hidden; managed by the plugin) ───────────────────
 
 	@ConfigItem(
 		keyName = "unlockedChunks",
@@ -235,6 +244,15 @@ public interface ChunkBlazerConfig extends Config
 		return "https://api.chunkblazer.com";
 	}
 
+	// ── Server Sync ──────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "Server Sync",
+		description = "Save your progress to chunkblazer.com for cross-device saves and leaderboards",
+		position = 0
+	)
+	String syncSection = "sync";
+
 	/**
 	 * Master switch for ALL server communication — login, sync, event reports, and the
 	 * catalog/sound fetches all gate on this. OFF by default: nothing is sent, or even
@@ -245,14 +263,14 @@ public interface ChunkBlazerConfig extends Config
 	 * old always-on build, so everyone starts opted-out. The in-panel prompt explains
 	 * what enabling gains; PRIVACY.md carries the full data-use disclosure.
 	 */
-
 	@ConfigItem(
 		keyName = "serverSyncEnabled",
 		name = "Enable Server Sync",
 		description = "Save your progress to chunkblazer.com for cross-device saves and leaderboards. "
 			+ "Nothing is sent until you enable it.",
 		warning = SERVER_SYNC_WARNING,
-		position = 1
+		section = syncSection,
+		position = 0
 	)
 	default boolean apiEnabled()
 	{
@@ -264,7 +282,8 @@ public interface ChunkBlazerConfig extends Config
 		name = "Sync recovery key",
 		description = "Paste a saved key here to restore sync on a new device. Your key is stored per "
 			+ "account and is cleared from this box once applied. Keep it private.",
-		position = 2,
+		section = syncSection,
+		position = 1,
 		secret = true
 	)
 	default String apiKey()
@@ -272,18 +291,20 @@ public interface ChunkBlazerConfig extends Config
 		return "";
 	}
 
+	// ── Tasks ────────────────────────────────────────────────────────────
+
 	@ConfigSection(
-		name = "Display",
-		description = "Display settings",
-		position = 2
+		name = "Tasks",
+		description = "How new tasks appear, the on-screen task tracker, and task highlighting",
+		position = 1
 	)
-	String displaySection = "display";
+	String taskSection = "tasks";
 
 	@ConfigItem(
 		keyName = "showTaskCards",
-		name = "Task Reveal Cards",
-		description = "New tasks arrive as face-down cards you flip to reveal.",
-		section = displaySection,
+		name = "Reveal New Tasks as Cards",
+		description = "New tasks arrive as face-down cards you flip to reveal",
+		section = taskSection,
 		position = 0
 	)
 	default boolean showTaskCards()
@@ -292,72 +313,81 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showMinimapChunks",
-		name = "Show Minimap Chunks",
-		description = "Highlight chunk borders on the minimap. Click on neighbor chunks to unlock them.",
-		section = displaySection,
+		keyName = "taskTrackerStyle",
+		name = "Task Tracker",
+		description = "How the task you select is shown in game. Off shows it in the side panel instead",
+		section = taskSection,
+		position = 1
+	)
+	default TaskTrackerStyle taskTrackerStyle()
+	{
+		return TaskTrackerStyle.OFF;
+	}
+
+	@ConfigItem(
+		keyName = "taskRightClickMenu",
+		name = "Right-Click Tasks Menu",
+		description = "Add a Tasks submenu when right-clicking NPCs and objects your tasks need "
+			+ "(needs the Yellow paint by Vani task tracker)",
+		section = taskSection,
 		position = 2
 	)
-	default boolean showMinimapChunks()
+	default boolean taskRightClickMenu()
 	{
 		return true;
 	}
 
 	@ConfigItem(
-		keyName = "showSceneChunks",
-		name = "Show Chunk Borders (Scene)",
-		description = "Draw chunk/region borders on the 3D game scene. Locked chunks get a translucent grey wash. Turn this off to keep borders on the minimap/world map only.",
-		section = displaySection,
+		keyName = "highlightTaskTargets",
+		name = "Outline Task Targets",
+		description = "Outline NPCs and objects that one of your active tasks needs",
+		section = taskSection,
 		position = 3
 	)
-	default boolean showSceneChunks()
+	default boolean highlightTaskTargets()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
-		keyName = "showChunkWalls",
-		name = "Locked Chunk Walls",
-		description = "Draw a see-through wall in the game world along the border between unlocked and locked chunks",
-		section = displaySection,
-		position = 3
+		keyName = "taskHighlightColor",
+		name = "Outline Colour",
+		description = "Outline colour for task NPCs and objects you can do now",
+		section = taskSection,
+		position = 4
 	)
-	default boolean showChunkWalls()
+	default java.awt.Color taskHighlightColor()
 	{
-		return true;
+		return new java.awt.Color(255, 140, 0);
 	}
 
 	@ConfigItem(
-		keyName = "showChunkNamePopups",
-		name = "Chunk Name Popups",
-		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
-		section = displaySection,
-		position = 3
+		keyName = "taskHighlightUnavailableColor",
+		name = "Outline Colour (Level Too Low)",
+		description = "Outline colour when you don't have the level for any of that target's tasks",
+		section = taskSection,
+		position = 5
 	)
-	default boolean showChunkNamePopups()
+	default java.awt.Color taskHighlightUnavailableColor()
 	{
-		return true;
+		return new java.awt.Color(255, 60, 60);
 	}
 
-	@net.runelite.client.config.Alpha
-	@ConfigItem(
-		keyName = "chunkWallColor",
-		name = "Locked Chunk Wall Colour",
-		description = "Colour of the locked chunk walls; transparency sets how see-through they are",
-		section = displaySection,
-		position = 3
+	// ── World Map ────────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "World Map",
+		description = "What the world map shows about your chunks",
+		position = 2
 	)
-	default java.awt.Color chunkWallColor()
-	{
-		return new java.awt.Color(255, 60, 60, 110);
-	}
+	String worldMapSection = "worldMap";
 
 	@ConfigItem(
 		keyName = "showWorldMapChunks",
-		name = "Show Chunk Borders (World Map)",
-		description = "Draw chunk/region borders on the world map. Independent of the scene and minimap toggles.",
-		section = displaySection,
-		position = 4
+		name = "Chunk Borders",
+		description = "Draw chunk borders and tints on the world map",
+		section = worldMapSection,
+		position = 0
 	)
 	default boolean showWorldMapChunks()
 	{
@@ -369,11 +399,11 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = "showChunkCostLabels",
-			name = "Show Chunk Costs (World Map)",
-			description = "Write what each unlockable chunk costs (FREE, points or a Boss Token) inside it on the world map",
-			section = displaySection,
-			position = 4
+		keyName = "showChunkCostLabels",
+		name = "Chunk Costs",
+		description = "Write what each unlockable chunk costs (FREE, points or a Boss Token) inside it",
+		section = worldMapSection,
+		position = 1
 	)
 	default boolean showChunkCostLabels()
 	{
@@ -381,35 +411,135 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-			keyName = "showChunkLegend",
-			name = "Show Chunk Legend (World Map)",
-			description = "Show a key explaining the chunk colours in the corner of the world map",
-			section = displaySection,
-			position = 4
+		keyName = "showChunkLegend",
+		name = "Colour Legend",
+		description = "Show a key explaining the chunk colours in the corner of the world map",
+		section = worldMapSection,
+		position = 2
 	)
 	default boolean showChunkLegend()
 	{
 		return true;
 	}
 
+	// ── Minimap ──────────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "Minimap",
+		description = "Chunk borders and orbs around the minimap",
+		position = 3
+	)
+	String minimapSection = "minimap";
+
+	@ConfigItem(
+		keyName = "showMinimapChunks",
+		name = "Chunk Borders & Tints",
+		description = "Show chunk borders and tints on the minimap. Click a neighbouring chunk to unlock it.",
+		section = minimapSection,
+		position = 0
+	)
+	default boolean showMinimapChunks()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showMinimapOrbs",
+		name = "Minimap Orbs",
+		description = "Show the Boss Token and Points minimap orbs",
+		section = minimapSection,
+		position = 1
+	)
+	default boolean showMinimapOrbs()
+	{
+		return true;
+	}
+
+	// ── In Game ──────────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "In Game",
+		description = "What's drawn in the game world and on screen",
+		position = 4
+	)
+	String inGameSection = "inGame";
+
+	@ConfigItem(
+		keyName = "showSceneChunks",
+		name = "Chunk Borders",
+		description = "Draw chunk borders on the ground in the game world",
+		section = inGameSection,
+		position = 0
+	)
+	default boolean showSceneChunks()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showChunkWalls",
+		name = "Locked Chunk Walls",
+		description = "Draw a see-through wall along the border between unlocked and locked chunks",
+		section = inGameSection,
+		position = 1
+	)
+	default boolean showChunkWalls()
+	{
+		return true;
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "chunkWallColor",
+		name = "Wall Colour",
+		description = "Colour of the locked chunk walls; transparency sets how see-through they are",
+		section = inGameSection,
+		position = 2
+	)
+	default java.awt.Color chunkWallColor()
+	{
+		return new java.awt.Color(255, 60, 60, 110);
+	}
+
+	@ConfigItem(
+		keyName = "showChunkNamePopups",
+		name = "Chunk Name Banner",
+		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
+		section = inGameSection,
+		position = 3
+	)
+	default boolean showChunkNamePopups()
+	{
+		return true;
+	}
+
 	@ConfigItem(
 		keyName = "showTaskCompletionPopup",
-		name = "Show Task Completion Popup",
-		description = "Display a popup notification when you complete a task",
-		section = displaySection,
-		position = 2
+		name = "Task Completion Popup",
+		description = "Display a popup when you complete a task",
+		section = inGameSection,
+		position = 4
 	)
 	default boolean showTaskCompletionPopup()
 	{
 		return true;
 	}
 
+	// ── Sounds ───────────────────────────────────────────────────────────
+
+	@ConfigSection(
+		name = "Sounds",
+		description = "Task completion sounds and chunk unlock jingles",
+		position = 5
+	)
+	String soundSection = "sounds";
+
 	@ConfigItem(
 		keyName = "playTaskCompletionSound",
-		name = "Play Task Completion Sound",
+		name = "Task Completion Sound",
 		description = "Play a region-specific sound when you complete a task",
-		section = displaySection,
-		position = 3
+		section = soundSection,
+		position = 0
 	)
 	default boolean playTaskCompletionSound()
 	{
@@ -420,8 +550,8 @@ public interface ChunkBlazerConfig extends Config
 		keyName = "taskCompletionSoundVolume",
 		name = "Task Sound Volume",
 		description = "Volume of the task completion sound (0 = silent, 100 = full)",
-		section = displaySection,
-		position = 4
+		section = soundSection,
+		position = 1
 	)
 	@Range(min = 0, max = 100)
 	default int taskCompletionSoundVolume()
@@ -432,96 +562,27 @@ public interface ChunkBlazerConfig extends Config
 
 	@ConfigItem(
 		keyName = "playRegionUnlockSound",
-		name = "Play Region Unlock Jingle",
+		name = "Region Unlock Jingle",
 		description = "Play a region-specific jingle the first time you unlock a chunk",
-		section = displaySection,
-		position = 4
+		section = soundSection,
+		position = 2
 	)
 	default boolean playRegionUnlockSound()
 	{
 		return true;
 	}
 
-	@ConfigItem(
-		keyName = "taskTrackerStyle",
-		name = "Overlay",
-		description = "Choose an overlay template to display your selected task",
-		section = displaySection,
-		position = 7
-	)
-	default TaskTrackerStyle taskTrackerStyle()
-	{
-		return TaskTrackerStyle.OFF;
-	}
-
-	@ConfigItem(
-		keyName = "highlightTaskTargets",
-		name = "Highlight Tasks On Screen",
-		description = "Outline NPCs and objects that one of your active tasks needs",
-		section = displaySection,
-		position = 8
-	)
-	default boolean highlightTaskTargets()
-	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "taskHighlightColor",
-		name = "Task Highlight Colour",
-		description = "Outline colour for task NPCs and objects (Highlight Tasks On Screen)",
-		section = displaySection,
-		position = 9
-	)
-	default java.awt.Color taskHighlightColor()
-	{
-		return new java.awt.Color(255, 140, 0);
-	}
-
-	@ConfigItem(
-		keyName = "taskHighlightUnavailableColor",
-		name = "Task Highlight (No Level)",
-		description = "Outline colour when you don't have the level for any of that target's tasks (Highlight Tasks On Screen)",
-		section = displaySection,
-		position = 10
-	)
-	default java.awt.Color taskHighlightUnavailableColor()
-	{
-		return new java.awt.Color(255, 60, 60);
-	}
-
-	@ConfigItem(
-		keyName = "taskRightClickMenu",
-		name = "Tasks Right-Click Menu",
-		description = "Yellow paint by Vani: add a Tasks submenu when right-clicking NPCs and objects your tasks need",
-		section = displaySection,
-		position = 11
-	)
-	default boolean taskRightClickMenu()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "showMinimapOrbs",
-		name = "Show Minimap Orbs",
-		description = "Show the Boss Token and Points minimap orbs",
-		section = displaySection,
-		position = 6
-	)
-	default boolean showMinimapOrbs()
-	{
-		return true;
-	}
 	// NOTE: the locked-chunk GPU greyscale settings moved into the standalone
 	// "ChunkBlazer GPU" plugin's own config (group "chunkblazergpu") when that
 	// plugin was split out of this repo. That plugin reads our unlockedChunks
 	// config value by string key — no compile-time coupling in either direction.
 
+	// ── Chat Messages ────────────────────────────────────────────────────
+
 	@ConfigSection(
 		name = "Chat Messages",
 		description = "Control which task messages appear in chat",
-		position = 4
+		position = 6
 	)
 	String chatSection = "chat";
 
@@ -561,19 +622,21 @@ public interface ChunkBlazerConfig extends Config
 		return true;
 	}
 
+	// ── Region Unlock ────────────────────────────────────────────────────
+
 	@ConfigSection(
 		name = "Region Unlock",
 		description = "Region unlock settings",
-		position = 4
+		position = 7
 	)
 	String regionSection = "region";
 
 	@ConfigItem(
 		keyName = "showUnlockPopup",
 		name = "Show Unlock Popup",
-		description = "Show an in-game popup to unlock regions when you walk into them (when Auto-Unlock is disabled).",
+		description = "Show an in-game popup to unlock regions when you walk into them",
 		section = regionSection,
-		position = 2
+		position = 0
 	)
 	default boolean showUnlockPopup()
 	{
@@ -583,9 +646,10 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "worldMapUnlockKey",
 		name = "Map Unlock Key",
-		description = "Hold this key (Shift by default) and click a neighbouring chunk on the world map to unlock it.",
+		description = "Hold this key (Shift by default) and click a neighbouring chunk on the world map to unlock it, "
+			+ "or an unlocked chunk to see its tasks",
 		section = regionSection,
-		position = 3
+		position = 1
 	)
 	default Keybind worldMapUnlockKey()
 	{

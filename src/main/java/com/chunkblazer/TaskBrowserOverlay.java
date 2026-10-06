@@ -46,6 +46,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -55,10 +56,12 @@ import net.runelite.api.Skill;
 import net.runelite.api.events.FocusChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.SkillIconManager;
+import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseAdapter;
@@ -74,14 +77,15 @@ import net.runelite.client.ui.overlay.OverlayPriority;
 /**
  * Leagues-style task window, opened from the Chunks minimap orb.
  *
- * Tabs: Active (everything you can work on now) and Saved (tasks you've starred).
+ * Tabs: Active (everything you can work on now), Saved (tasks you've starred) and
+ * Archived (tasks put aside with the book button; see TaskArchive).
  * Search matches name, description, category and chunk. "Current chunk" limits the
  * list to the chunk you're standing in and follows you as you move. Holding the map
  * unlock key (Shift by default) and clicking an unlocked chunk on the world map opens
  * the window on that chunk's tasks. Filter narrows the list (a
  * skill, talk-to tasks, quests, boss chunks...); Sort only changes the order, each
  * option ascending or descending. Click a star to save a task, the arrow to expand
- * its requirements, the row to track it. Mouse wheel scrolls; Esc closes.
+ * its requirements, the row to track it (or stop tracking it). Mouse wheel scrolls; Esc closes.
  *
  * Opened, closed and registered by ChunkBlazerOrbWidget. Hover is worked out while
  * drawing (from the game's own mouse position), so clicks never depend on mouse
@@ -99,6 +103,8 @@ public class TaskBrowserOverlay extends Overlay
 	private static final int TABS = 26;
 	private static final int ROW = 38;
 	private static final int PAD = 8;
+	// Width kept empty where a one-off task would have had its progress bar.
+	private static final int ONE_OFF_BLANK = 100;
 	private static final int MENU_ROW = 20;
 	private static final int SKILL_CELL = 30;
 	private static final int SKILL_COLUMNS = 6;
@@ -123,10 +129,12 @@ public class TaskBrowserOverlay extends Overlay
 	private static final Color BAR_FILL = new Color(255, 140, 0);
 	private static final Color SEARCH_BACK = new Color(20, 18, 15);
 	private static final Color DETAIL = new Color(200, 195, 180);
+	private static final Color TRACKED_FILL = new Color(255, 140, 0, 45);
+	private static final Color BOOK_ON = new Color(190, 140, 90);
 
 	enum Tab
 	{
-		ACTIVE, SAVED
+		ACTIVE, SAVED, ARCHIVED
 	}
 
 	/** Ordering only. Each has a natural default direction. */
@@ -230,6 +238,9 @@ public class TaskBrowserOverlay extends Overlay
 	private final EventBus eventBus;
 	private final ChunkBlazerConfig config;
 	private final ChunkBlazerWorldMapOverlay worldMap;
+	private final TaskArchive archive;
+	private final ChatboxPanelManager chatboxPanelManager;
+	private final ClientThread clientThread;
 
 	private volatile boolean open;
 	private volatile String search = "";
@@ -290,23 +301,16 @@ public class TaskBrowserOverlay extends Overlay
 		return event;
 	};
 
-	/** Esc closes the window; while the search box is focused, typing goes into it, not the game. */
+	/**
+	 * Esc closes the window. Search typing happens in a chatbox input (see startSearch),
+	 * not here, so other plugins that remap keys (Key Remapping's WASD camera) don't
+	 * eat the letters. While that input is open, Esc closes the input, not the window.
+	 */
 	private final KeyListener keys = new KeyListener()
 	{
 		@Override
 		public void keyTyped(KeyEvent event)
 		{
-			if (!open || !searchFocused)
-			{
-				return;
-			}
-			char c = event.getKeyChar();
-			if (!Character.isISOControl(c) && search.length() < MAX_SEARCH)
-			{
-				search = search + c;
-				refresh();
-			}
-			event.consume();
 		}
 
 		@Override
@@ -316,30 +320,11 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				unlockKeyHeld = true;
 			}
-			if (!open)
-			{
-				return;
-			}
-			if (event.getKeyCode() == KeyEvent.VK_ESCAPE)
+			if (open && !searchFocused && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 			{
 				close();
 				event.consume();
-				return;
 			}
-			if (!searchFocused)
-			{
-				return;
-			}
-			if (event.getKeyCode() == KeyEvent.VK_BACK_SPACE && !search.isEmpty())
-			{
-				search = search.substring(0, search.length() - 1);
-				refresh();
-			}
-			else if (event.getKeyCode() == KeyEvent.VK_ENTER)
-			{
-				searchFocused = false;
-			}
-			event.consume();
 		}
 
 		@Override
@@ -349,17 +334,14 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				unlockKeyHeld = false;
 			}
-			if (open && searchFocused)
-			{
-				event.consume();
-			}
 		}
 	};
 
 	@Inject
 	public TaskBrowserOverlay(Client client, ChunkBlazerPlugin plugin, ConfigManager configManager,
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
-		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap)
+		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
+		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread)
 	{
 		this.client = client;
 		this.plugin = plugin;
@@ -371,6 +353,9 @@ public class TaskBrowserOverlay extends Overlay
 		this.eventBus = eventBus;
 		this.config = config;
 		this.worldMap = worldMap;
+		this.archive = archive;
+		this.chatboxPanelManager = chatboxPanelManager;
+		this.clientThread = clientThread;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -402,7 +387,7 @@ public class TaskBrowserOverlay extends Overlay
 		open = !open;
 		pinnedChunk = null;
 		menu = Menu.NONE;
-		searchFocused = false;
+		stopSearch();
 		scroll = 0;
 		rowsBuiltAt = 0;
 	}
@@ -411,7 +396,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		open = false;
 		menu = Menu.NONE;
-		searchFocused = false;
+		stopSearch();
 		pinnedChunk = null;
 	}
 
@@ -458,6 +443,41 @@ public class TaskBrowserOverlay extends Overlay
 		}
 	}
 
+	/**
+	 * Type the search in a chatbox input, like the bank search. Key Remapping steps
+	 * aside while a chatbox input is open, so every key types normally. The list
+	 * filters live as you type; Enter keeps the search, Esc closes the input.
+	 */
+	private void startSearch()
+	{
+		if (searchFocused)
+		{
+			return;
+		}
+		searchFocused = true;
+		String current = search;
+		clientThread.invoke(() -> chatboxPanelManager.openTextInput("Search tasks")
+			.value(current)
+			.onChanged(text ->
+			{
+				search = text.length() > MAX_SEARCH ? text.substring(0, MAX_SEARCH) : text;
+				refresh();
+			})
+			.onDone((Consumer<String>) text -> searchFocused = false)
+			.onClose(() -> searchFocused = false)
+			.build());
+	}
+
+	/** Close the chatbox search input if it's open (the search text is kept). */
+	private void stopSearch()
+	{
+		if (searchFocused)
+		{
+			searchFocused = false;
+			clientThread.invoke(() -> chatboxPanelManager.close());
+		}
+	}
+
 	private void refresh()
 	{
 		scroll = 0;
@@ -495,6 +515,19 @@ public class TaskBrowserOverlay extends Overlay
 			ids.add(taskId);
 		}
 		configManager.setRSProfileConfiguration(CONFIG_GROUP, SAVED_KEY, String.join(",", ids));
+		rowsBuiltAt = 0;
+	}
+
+	/** Archive or restore a task. Archiving the task you're tracking also stops tracking it. */
+	private void toggleArchived(NuzlockeTask task)
+	{
+		boolean archiving = !archive.isArchived(task);
+		archive.toggle(task.getTaskId());
+		NuzlockeTask tracked = plugin.getSelectedTask();
+		if (archiving && tracked != null && task.getTaskId().equals(tracked.getTaskId()))
+		{
+			plugin.clearSelectedTask();
+		}
 		rowsBuiltAt = 0;
 	}
 
@@ -635,14 +668,20 @@ public class TaskBrowserOverlay extends Overlay
 		String query = search.trim().toLowerCase();
 		String here = pinnedChunk != null ? pinnedChunk : currentChunkOnly ? currentChunkName() : null;
 		List<NuzlockeTask> list = new ArrayList<>();
-		for (NuzlockeTask task : pool(globalFilter || tab == Tab.SAVED))
+		Set<String> archived = archive.ids();
+		for (NuzlockeTask task : pool(globalFilter || tab != Tab.ACTIVE))
 		{
+			// Archived tasks live only in their own tab.
+			if ((tab == Tab.ARCHIVED) != archived.contains(task.getTaskId()))
+			{
+				continue;
+			}
 			if (tab == Tab.SAVED && !saved.contains(task.getTaskId()))
 			{
 				continue;
 			}
-			// Saved tasks always show: the filter only applies to the Active tab.
-			if (tab != Tab.SAVED && !test.test(task))
+			// Saved and archived tasks always show: the filter only applies to the Active tab.
+			if (tab == Tab.ACTIVE && !test.test(task))
 			{
 				continue;
 			}
@@ -843,18 +882,22 @@ public class TaskBrowserOverlay extends Overlay
 		// Tabs, then Filter and Sort buttons.
 		int barY = y + HEADER;
 		int buttonHeight = TABS - 4;
-		drawTab(graphics, regular, new Rectangle(x + PAD, barY, 92, buttonHeight),
-			"Active (" + plugin.getActiveTasks().size() + ")", Tab.ACTIVE, mx, my, menuOpen);
-		drawTab(graphics, regular, new Rectangle(x + PAD + 96, barY, 92, buttonHeight),
+		int tabWidth = 80;
+		drawTab(graphics, small, new Rectangle(x + PAD, barY, tabWidth, buttonHeight),
+			"Active (" + countActive() + ")", Tab.ACTIVE, mx, my, menuOpen);
+		drawTab(graphics, small, new Rectangle(x + PAD + tabWidth + 4, barY, tabWidth, buttonHeight),
 			"Saved (" + countSaved() + ")", Tab.SAVED, mx, my, menuOpen);
+		drawTab(graphics, small, new Rectangle(x + PAD + (tabWidth + 4) * 2, barY, tabWidth, buttonHeight),
+			"Archived (" + countArchived() + ")", Tab.ARCHIVED, mx, my, menuOpen);
 
-		int buttonWidth = Math.max(80, (width - PAD * 2 - 196 - 8) / 2);
+		int tabsWidth = tabWidth * 3 + 8;
+		int buttonWidth = Math.max(70, (width - PAD * 2 - tabsWidth - 8) / 2);
 		Rectangle sortButton = new Rectangle(x + width - PAD - buttonWidth, barY, buttonWidth, buttonHeight);
 		Rectangle filterButton = new Rectangle(sortButton.x - 4 - buttonWidth, barY, buttonWidth, buttonHeight);
 		String filterLabel;
-		if (tab == Tab.SAVED)
+		if (tab != Tab.ACTIVE)
 		{
-			filterLabel = "off (Saved)";
+			filterLabel = "off";
 		}
 		else if (filter == Filter.SKILL && filterSkill != null)
 		{
@@ -868,8 +911,8 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			filterLabel = shortLabel(filter);
 		}
-		// The Saved tab shows every saved task, so its filter button does nothing.
-		Runnable openFilter = tab == Tab.SAVED ? () ->
+		// The Saved and Archived tabs show all their tasks, so the filter button does nothing there.
+		Runnable openFilter = tab != Tab.ACTIVE ? () ->
 		{
 		} : () -> menu = menu == Menu.NONE ? Menu.FILTER : Menu.NONE;
 		drawButton(graphics, small, filterButton, "Filter: " + filterLabel,
@@ -918,7 +961,11 @@ public class TaskBrowserOverlay extends Overlay
 				String here = currentChunkName();
 				message = here.isEmpty() ? "You're not in a chunk with tasks." : "No tasks here in " + here + ".";
 			}
-			else if (tab == Tab.SAVED && filter == Filter.ALL && search.isEmpty())
+			else if (tab == Tab.ARCHIVED && search.isEmpty())
+			{
+				message = "Click a task's book icon to archive it here.";
+			}
+			else if (tab == Tab.SAVED && search.isEmpty())
 			{
 				message = "Star tasks in the Active tab to save them here.";
 			}
@@ -987,17 +1034,7 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			hovered = menuOpen ? () -> menu = Menu.NONE : firstHit(hits, mx, my);
 		}
-		// Clicking anywhere other than the search box takes focus away from it.
-		Runnable action = hovered;
-		boolean onSearch = !menuOpen && searchBox.contains(mx, my);
-		hoveredAction = onSearch ? action : () ->
-		{
-			searchFocused = false;
-			if (action != null)
-			{
-				action.run();
-			}
-		};
+		hoveredAction = hovered;
 		return null;
 	}
 
@@ -1095,13 +1132,14 @@ public class TaskBrowserOverlay extends Overlay
 
 	private void drawSearch(Graphics2D graphics, Font font, Rectangle box, int mx, int my, boolean menuOpen)
 	{
-		hits.add(0, new Hit(box, () -> searchFocused = true));
+		hits.add(0, new Hit(box, this::startSearch));
 		Rectangle clear = new Rectangle(box.x + box.width - 16, box.y + 2, 14, box.height - 4);
 		if (!search.isEmpty())
 		{
 			hits.add(0, new Hit(clear, () ->
 			{
 				search = "";
+				stopSearch();
 				refresh();
 			}));
 		}
@@ -1474,7 +1512,19 @@ public class TaskBrowserOverlay extends Overlay
 		Set<String> saved, Rectangle list, int mx, int my, Font regular, Font small, boolean menuOpen)
 	{
 		boolean mouseOverList = !menuOpen && list.contains(mx, my);
-		if (mouseOverList && row.contains(mx, my))
+		String taskId = task.getTaskId();
+		NuzlockeTask tracked = plugin.getSelectedTask();
+		boolean isTracked = tracked != null && taskId != null && taskId.equals(tracked.getTaskId());
+		if (isTracked)
+		{
+			// The task shown in the task box: warm fill, orange edge bar and outline.
+			graphics.setColor(TRACKED_FILL);
+			graphics.fillRect(row.x, row.y, row.width, row.height);
+			graphics.setColor(TITLE);
+			graphics.fillRect(row.x, row.y, 3, row.height);
+			graphics.drawRect(row.x, row.y, row.width - 1, row.height - 1);
+		}
+		else if (mouseOverList && row.contains(mx, my))
 		{
 			graphics.setColor(ROW_HOVER);
 			graphics.fillRect(row.x, row.y, row.width, row.height);
@@ -1485,13 +1535,14 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.fillRect(row.x, row.y, row.width, row.height);
 		}
 
-		String taskId = task.getTaskId();
 		boolean isSaved = saved.contains(taskId);
 
-		// Expand arrow (only for tasks with requirements), then the star. Both are
-		// added before the row so they win the click.
+		// Expand arrow (only for tasks with requirements), the star, then the archive
+		// book. All are added before the row so they win the click.
 		Rectangle arrow = new Rectangle(row.x + 2, row.y + (ROW - 18) / 2, 14, 18);
 		Rectangle star = new Rectangle(row.x + 18, row.y + (ROW - 18) / 2, 18, 18);
+		Rectangle book = new Rectangle(row.x + 38, row.y + (ROW - 18) / 2, 14, 18);
+		boolean isArchived = archive.isArchived(task);
 		boolean expandable = !requirementsFor(task).isEmpty();
 		if (list.contains(mx, my))
 		{
@@ -1506,7 +1557,19 @@ public class TaskBrowserOverlay extends Overlay
 				}));
 			}
 			hits.add(new Hit(star.intersection(list), () -> toggleSaved(taskId)));
-			hits.add(new Hit(row.intersection(list), () -> plugin.selectTaskFromGame(task)));
+			hits.add(new Hit(book.intersection(list), () -> toggleArchived(task)));
+			// Clicking the tracked task again stops tracking it; any other row tracks that task.
+			hits.add(new Hit(row.intersection(list), () ->
+			{
+				if (isTracked)
+				{
+					plugin.clearSelectedTask();
+				}
+				else
+				{
+					plugin.selectTaskFromGame(task);
+				}
+			}));
 		}
 		if (expandable)
 		{
@@ -1522,8 +1585,11 @@ public class TaskBrowserOverlay extends Overlay
 		}
 		boolean starHover = mouseOverList && star.contains(mx, my);
 		drawStar(graphics, star.x + 9, star.y + 9, 8, isSaved || starHover ? STAR_ON : STAR_OFF, isSaved);
+		boolean bookHover = mouseOverList && book.contains(mx, my);
+		TaskArchive.drawBook(graphics, book.x + 2, book.y + 3, 10, 12,
+			isArchived || bookHover ? BOOK_ON : STAR_OFF, isArchived);
 
-		int textX = star.x + star.width + 8;
+		int textX = book.x + book.width + 6;
 		int rightEdge = row.x + row.width - 8;
 
 		// Line 1: name, points.
@@ -1543,8 +1609,8 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.drawString(fit(fm, name, rightEdge - pointsWidth - 10 - textX), textX, row.y + 16);
 
 		// Line 2: category and chunk, then progress. Counted tasks get a bar and
-		// "7/19"; one-off tasks (target of 1) get a simple "Do once" tag and an empty
-		// checkbox instead of a "0/1" bar, which says nothing useful.
+		// "7/19"; one-off tasks (target of 1) leave that space blank, since a "0/1"
+		// bar says nothing useful.
 		graphics.setFont(small);
 		FontMetrics sm = graphics.getFontMetrics();
 		int target = Math.max(1, task.getTargetQuantity());
@@ -1554,15 +1620,8 @@ public class TaskBrowserOverlay extends Overlay
 		int progressStart;
 		if (target <= 1)
 		{
-			int box = 9;
-			int boxX = rightEdge - box;
-			int boxY = row.y + 22;
-			graphics.setColor(SUBTEXT);
-			graphics.drawRect(boxX, boxY, box, box);
-			String tag = "Do once";
-			int tagWidth = sm.stringWidth(tag);
-			graphics.drawString(tag, boxX - 5 - tagWidth, row.y + 30);
-			progressStart = boxX - 5 - tagWidth;
+			// Same space a bar would take, left empty so the rows still line up.
+			progressStart = rightEdge - ONE_OFF_BLANK;
 		}
 		else
 		{
@@ -1599,10 +1658,40 @@ public class TaskBrowserOverlay extends Overlay
 	private int countSaved()
 	{
 		Set<String> saved = savedIds();
+		Set<String> archived = archive.ids();
 		int count = 0;
 		for (NuzlockeTask task : pool(true))
 		{
-			if (saved.contains(task.getTaskId()))
+			if (saved.contains(task.getTaskId()) && !archived.contains(task.getTaskId()))
+			{
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/** Chunk tasks you can work on, not counting archived ones. */
+	private int countActive()
+	{
+		Set<String> archived = archive.ids();
+		int count = 0;
+		for (NuzlockeTask task : pool(false))
+		{
+			if (!archived.contains(task.getTaskId()))
+			{
+				count++;
+			}
+		}
+		return count;
+	}
+
+	private int countArchived()
+	{
+		Set<String> archived = archive.ids();
+		int count = 0;
+		for (NuzlockeTask task : pool(true))
+		{
+			if (archived.contains(task.getTaskId()))
 			{
 				count++;
 			}

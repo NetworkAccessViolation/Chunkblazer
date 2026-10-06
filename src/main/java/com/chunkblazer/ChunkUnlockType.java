@@ -35,7 +35,8 @@ import java.awt.Color;
  */
 enum ChunkUnlockType
 {
-	UNLOCKED("Unlocked", new Color(0, 255, 0), new Color(0, 255, 0, 35)),
+	// No tint: chunks you own show the plain map.
+	UNLOCKED("Unlocked", new Color(0, 255, 0), new Color(0, 0, 0, 0)),
 	PAID("Unlock with points", new Color(255, 215, 0), new Color(255, 215, 0, 55)),
 	FREE("Free: walk in to unlock", new Color(80, 230, 230), new Color(80, 230, 230, 55)),
 	CHARTER("Charter port: free", new Color(90, 150, 255), new Color(90, 150, 255, 60)),
