@@ -163,6 +163,10 @@ public class PlayerLoginResponse
 		@SerializedName("points_spent")
 		private int pointsSpent;
 
+		/** Spendable Boss Tokens as the server works them out. Null from older servers. */
+		@SerializedName("boss_tokens")
+		private Integer bossTokens;
+
 		@SerializedName("unlocked_regions")
 		private List<Integer> unlockedRegions = new ArrayList<>();
 
