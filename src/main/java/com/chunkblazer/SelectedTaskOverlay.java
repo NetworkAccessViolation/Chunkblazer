@@ -150,14 +150,18 @@ public class SelectedTaskOverlay extends OverlayPanel
 		int progress = task.getCurrentProgress();
 		int target = Math.max(1, task.getTargetQuantity());
 
-		ProgressBarComponent bar = new ProgressBarComponent();
-		bar.setMinimum(0);
-		bar.setMaximum(target);
-		bar.setValue(Math.min(progress, target));
-		bar.setForegroundColor(FLAME);
-		bar.setBackgroundColor(BAR_BACKGROUND);
-		bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
-		panelComponent.getChildren().add(bar);
+		// One-off tasks (a target of 1) get no bar: "0/1" says nothing useful.
+		if (target > 1)
+		{
+			ProgressBarComponent bar = new ProgressBarComponent();
+			bar.setMinimum(0);
+			bar.setMaximum(target);
+			bar.setValue(Math.min(progress, target));
+			bar.setForegroundColor(FLAME);
+			bar.setBackgroundColor(BAR_BACKGROUND);
+			bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
+			panelComponent.getChildren().add(bar);
+		}
 
 		Dimension size = super.render(graphics);
 		if (size == null)
