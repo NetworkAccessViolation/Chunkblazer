@@ -26,6 +26,7 @@
 
 package com.chunkblazer;
 
+import com.chunkblazer.modules.NPCKillModule;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
@@ -66,6 +67,13 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private static final Color CLOSE_HOVER = new Color(255, 90, 90);
 	private static final Color ARCHIVE_HOVER = new Color(190, 140, 90);
 
+	// Countdown colours, from plenty of time left to out of time.
+	private static final Color TIMER_OK = new Color(90, 200, 90);
+	private static final Color TIMER_WARN = new Color(230, 200, 60);
+	private static final Color TIMER_LATE = new Color(255, 140, 0);
+	private static final Color TIMER_FAIL = new Color(220, 50, 50);
+	private static final int TICK_MS = 600;
+
 	// Where the X was last drawn, relative to the overlay's top-left. Null while hidden.
 	private volatile Rectangle closeButton;
 	private volatile boolean closeHovered;
@@ -73,6 +81,11 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private volatile Rectangle archiveButton;
 	private volatile boolean archiveHovered;
 	private volatile String shownTaskId;
+
+	// The game only advances in 0.6s ticks; remembering when the current tick began
+	// lets the countdown move smoothly between them instead of jumping.
+	private int lastTick = -1;
+	private long lastTickAt;
 
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
