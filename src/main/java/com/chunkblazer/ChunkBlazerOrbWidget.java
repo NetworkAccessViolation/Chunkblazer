@@ -271,6 +271,9 @@ public class ChunkBlazerOrbWidget
 
 	private void updateOrbs()
 	{
+		// Tell the task window where its button is, so it can point new tasks out.
+		taskBrowser.setTaskButtonBounds(pointsOrb != null && !pointsOrb.isHidden() ? pointsOrb.getBounds() : null);
+
 		if (bossTokenText == null || pointsText == null)
 		{
 			return;
@@ -312,6 +315,9 @@ public class ChunkBlazerOrbWidget
 		}
 		removeWidget(bossTokenOrb);
 		removeWidget(pointsOrb);
+		// Forget the removed orbs, so nothing (like the task window's new-task glow)
+		// keeps pointing at where they used to be.
+		bossTokenOrb = bossTokenText = pointsOrb = pointsText = null;
 	}
 
 	public void shutDown()
