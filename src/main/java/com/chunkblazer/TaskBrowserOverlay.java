@@ -261,6 +261,7 @@ public class TaskBrowserOverlay extends Overlay
 	private final TaskArchive archive;
 	private final ChatboxPanelManager chatboxPanelManager;
 	private final ClientThread clientThread;
+	private final SavedTaskTracker savedTracker;
 
 	private volatile boolean open;
 	private volatile String search = "";
@@ -370,7 +371,7 @@ public class TaskBrowserOverlay extends Overlay
 	public TaskBrowserOverlay(Client client, ChunkBlazerPlugin plugin, ConfigManager configManager,
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
 		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
-		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread)
+		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker)
 	{
 		this.client = client;
 		this.plugin = plugin;
@@ -385,6 +386,7 @@ public class TaskBrowserOverlay extends Overlay
 		this.archive = archive;
 		this.chatboxPanelManager = chatboxPanelManager;
 		this.clientThread = clientThread;
+		this.savedTracker = savedTracker;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -398,6 +400,7 @@ public class TaskBrowserOverlay extends Overlay
 		mouseManager.registerMouseWheelListener(wheel);
 		keyManager.registerKeyListener(keys);
 		eventBus.register(this);
+		savedTracker.startUp();
 	}
 
 	public void shutDown()
@@ -408,6 +411,7 @@ public class TaskBrowserOverlay extends Overlay
 		mouseManager.unregisterMouseWheelListener(wheel);
 		keyManager.unregisterKeyListener(keys);
 		eventBus.unregister(this);
+		savedTracker.shutDown();
 	}
 
 	/** Open or close the window (the Points orb's "Tasks" option). */
@@ -1115,6 +1119,10 @@ public class TaskBrowserOverlay extends Overlay
 		} : () -> menu = menu == Menu.NONE ? Menu.FILTER : Menu.NONE;
 		drawButton(graphics, small, filterButton, "Filter: " + filterLabel,
 			menu == Menu.FILTER || menu == Menu.SKILLS || menu == Menu.TIERS, mx, my, menuOpen, openFilter);
+		if (tab == Tab.ACTIVE && filter != Filter.ALL)
+		{
+			drawActiveFilter(graphics, small, filterButton, filterLabel, mx, my, menuOpen);
+		}
 		drawButton(graphics, small, sortButton, "Sort: " + sortField.label, menu == Menu.SORT,
 			mx, my, menuOpen, () -> menu = menu == Menu.NONE ? Menu.SORT : Menu.NONE);
 		drawArrow(graphics, sortButton.x + sortButton.width - 10, sortButton.y + sortButton.height / 2, ascending, SUBTEXT);
@@ -1499,6 +1507,39 @@ public class TaskBrowserOverlay extends Overlay
 		FontMetrics fm = graphics.getFontMetrics();
 		String text = fit(fm, label, area.width - 18);
 		graphics.drawString(text, area.x + 6, area.y + (area.height + fm.getAscent()) / 2 - 2);
+	}
+
+	/**
+	 * A filter is narrowing the list: outline the Filter button in orange, colour its
+	 * label, and add a small x that clears it, so it's obvious why tasks are missing.
+	 */
+	private void drawActiveFilter(Graphics2D graphics, Font font, Rectangle button, String label,
+		int mx, int my, boolean menuOpen)
+	{
+		Rectangle clear = new Rectangle(button.x + button.width - 16, button.y + 2, 14, button.height - 4);
+		hits.add(0, new Hit(clear, () ->
+		{
+			filter = Filter.ALL;
+			filterSkill = null;
+			filterTier = null;
+			refresh();
+		}));
+
+		graphics.setColor(TAB_ON);
+		graphics.fillRect(button.x, button.y, button.width, button.height);
+		graphics.setColor(TITLE);
+		graphics.drawRect(button.x, button.y, button.width - 1, button.height - 1);
+		graphics.setFont(font);
+		FontMetrics fm = graphics.getFontMetrics();
+		graphics.drawString(fit(fm, "Filter: " + label, button.width - 24), button.x + 6,
+			button.y + (button.height + fm.getAscent()) / 2 - 2);
+
+		boolean hover = !menuOpen && clear.contains(mx, my);
+		graphics.setColor(hover ? NO_LEVEL : SUBTEXT);
+		int cx = clear.x + clear.width / 2;
+		int cy = clear.y + clear.height / 2;
+		graphics.drawLine(cx - 3, cy - 3, cx + 3, cy + 3);
+		graphics.drawLine(cx - 3, cy + 3, cx + 3, cy - 3);
 	}
 
 	/** Sort dropdown: each option with an up and a down arrow. Clicking the name uses its usual direction. */
