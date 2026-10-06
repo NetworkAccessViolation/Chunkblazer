@@ -46,13 +46,21 @@ import net.runelite.client.ui.FontManager;
  * banner with the chunk's name slides down from the top of the game view, holds for a
  * moment, then slides back up. A second line says whether the chunk is unlocked or,
  * if not, what it costs. Drawn by ChunkBlazerSceneOverlay.
+ *
+ * In a chunk you haven't unlocked, the banner stays up for as long as you're there.
+ * It only goes once you unlock the chunk (it flashes "Unlocked!" first) or walk into
+ * another chunk; when one banner replaces another, the old one slides away quickly
+ * before the new one comes in.
  */
 @Singleton
 public class ChunkNameBanner
 {
 	private static final long SLIDE_MS = 350;
+	// Quicker exit when another banner is waiting to come in.
+	private static final long SWAP_SLIDE_MS = 220;
 	private static final long HOLD_MS = 2500;
-	private static final long TOTAL_MS = SLIDE_MS + HOLD_MS + SLIDE_MS;
+	private static final long UNLOCKED_HOLD_MS = 2000;
+	private static final long FLASH_MS = 700;
 	private static final int TOP_MARGIN = 12;
 	private static final int PAD_X = 18;
 	private static final int PAD_Y = 8;
@@ -61,16 +69,52 @@ public class ChunkNameBanner
 	private static final Color BORDER = new Color(200, 160, 70);
 	private static final Color TITLE = new Color(255, 230, 170);
 
+	private enum Phase
+	{
+		HIDDEN, ENTER, HOLD, LEAVE
+	}
+
+	/** What one banner says, and whether it waits for the chunk to be unlocked. */
+	private static final class Banner
+	{
+		final String title;
+		final String subtitle;
+		final Color color;
+		final int regionId;
+		final boolean sticky;
+
+		Banner(String title, String subtitle, Color color, int regionId, boolean sticky)
+		{
+			this.title = title;
+			this.subtitle = subtitle;
+			this.color = color;
+			this.regionId = regionId;
+			this.sticky = sticky;
+		}
+	}
+
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
 
 	private int lastRegionId = -1;
 	private String lastName;
+
+	// The banner on screen and where it is in its animation.
+	private Phase phase = Phase.HIDDEN;
+	private long phaseStart;
+	private long holdMs;
+	private long leaveMs;
+	private double leaveFrom;
+	private long flashAt = -1;
 	private String title;
 	private String subtitle;
 	private Color subtitleColor;
-	private long shownAt;
+	private int bannerRegion;
+	private boolean sticky;
+
+	// The next banner, shown once the current one has slid away.
+	private Banner pending;
 
 	@Inject
 	public ChunkNameBanner(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
@@ -85,22 +129,123 @@ public class ChunkNameBanner
 	{
 		if (!config.showChunkNamePopups())
 		{
-			title = null;
+			phase = Phase.HIDDEN;
+			pending = null;
 			return;
 		}
 		checkForNewChunk();
-		if (title == null)
+		long now = System.currentTimeMillis();
+		advance(now);
+		if (phase == Phase.HIDDEN)
 		{
 			return;
 		}
+		double flash = flashAt < 0 ? 0 : Math.max(0, 1 - (now - flashAt) / (double) FLASH_MS);
+		draw(graphics, shownAmount(now), flash);
+	}
 
-		long age = System.currentTimeMillis() - shownAt;
-		if (age >= TOTAL_MS)
+	/** Move the animation along: finish sliding in, wait, react to an unlock, slide out. */
+	private void advance(long now)
+	{
+		long t = now - phaseStart;
+		switch (phase)
 		{
-			title = null;
+			case ENTER:
+				if (t >= SLIDE_MS)
+				{
+					phase = Phase.HOLD;
+					phaseStart = now;
+				}
+				break;
+			case HOLD:
+				if (sticky)
+				{
+					// Waiting in a locked chunk: the moment it's unlocked, say so, then leave.
+					if (plugin.isRegionUnlocked(bannerRegion))
+					{
+						subtitle = "Unlocked!";
+						subtitleColor = ChunkUnlockType.UNLOCKED.color;
+						sticky = false;
+						holdMs = UNLOCKED_HOLD_MS;
+						flashAt = now;
+						phaseStart = now;
+					}
+				}
+				else if (t >= holdMs)
+				{
+					leave(now, SLIDE_MS);
+				}
+				break;
+			case LEAVE:
+				if (t >= leaveMs)
+				{
+					phase = Phase.HIDDEN;
+					if (pending != null)
+					{
+						Banner next = pending;
+						pending = null;
+						show(next, now);
+					}
+				}
+				break;
+			default:
+				break;
+		}
+	}
+
+	/** 0 = hidden above the screen, 1 = fully shown. Eases in and out. */
+	private double shownAmount(long now)
+	{
+		double t = now - phaseStart;
+		switch (phase)
+		{
+			case ENTER:
+				return ease(Math.min(1, t / SLIDE_MS));
+			case LEAVE:
+				// Leaves from wherever it was, even part-way through sliding in.
+				return leaveFrom * (1 - ease(Math.min(1, t / leaveMs)));
+			case HOLD:
+				return 1;
+			default:
+				return 0;
+		}
+	}
+
+	private void show(Banner banner, long now)
+	{
+		title = banner.title;
+		subtitle = banner.subtitle;
+		subtitleColor = banner.color;
+		bannerRegion = banner.regionId;
+		sticky = banner.sticky;
+		holdMs = HOLD_MS;
+		flashAt = -1;
+		phase = Phase.ENTER;
+		phaseStart = now;
+	}
+
+	private void leave(long now, long duration)
+	{
+		leaveFrom = shownAmount(now);
+		leaveMs = duration;
+		phase = Phase.LEAVE;
+		phaseStart = now;
+	}
+
+	/** Show a banner now, or after the current one has slid away. */
+	private void queue(Banner banner)
+	{
+		long now = System.currentTimeMillis();
+		if (phase == Phase.HIDDEN)
+		{
+			show(banner, now);
 			return;
 		}
-		draw(graphics, progress(age));
+		pending = banner;
+		if (phase != Phase.LEAVE)
+		{
+			leave(now, SWAP_SLIDE_MS);
+		}
 	}
 
 	private void checkForNewChunk()
@@ -124,9 +269,9 @@ public class ChunkNameBanner
 		lastRegionId = regionId;
 
 		String name = chunkName(regionId);
-		// No sign on login, for unnamed areas, or when moving between two regions of
-		// the same chunk (a surface and its dungeon share a name).
-		if (firstLook || name == null || name.equals(lastName))
+		// Nothing for unnamed areas, or when moving between two regions of the same
+		// chunk (a surface and its dungeon share a name).
+		if (name == null || name.equals(lastName))
 		{
 			lastName = name;
 			return;
@@ -134,13 +279,15 @@ public class ChunkNameBanner
 		lastName = name;
 
 		boolean unlocked = plugin.isRegionUnlocked(regionId);
+		// On login, only a locked chunk gets a sign (it's the one asking to be unlocked).
+		if (firstLook && unlocked)
+		{
+			return;
+		}
 		boolean neighbor = !unlocked && plugin.getNeighborRegionIds().contains(regionId);
 		ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, unlocked, neighbor);
-
-		title = name;
-		subtitle = statusText(type, ChunkUnlockType.costLabel(plugin, regionId, type));
-		subtitleColor = type.color;
-		shownAt = System.currentTimeMillis();
+		queue(new Banner(name, statusText(type, ChunkUnlockType.costLabel(plugin, regionId, type)),
+			type.color, regionId, !unlocked));
 	}
 
 	/** "Lumbridge (12850)" -> "Lumbridge"; null for regions without a chunk name. */
@@ -172,26 +319,13 @@ public class ChunkNameBanner
 		}
 	}
 
-	/** 0 = hidden above the screen, 1 = fully shown. Eases in and out. */
-	private static double progress(long age)
-	{
-		if (age < SLIDE_MS)
-		{
-			return ease(age / (double) SLIDE_MS);
-		}
-		if (age < SLIDE_MS + HOLD_MS)
-		{
-			return 1;
-		}
-		return ease(1 - (age - SLIDE_MS - HOLD_MS) / (double) SLIDE_MS);
-	}
-
 	private static double ease(double t)
 	{
 		return 1 - Math.pow(1 - t, 3);
 	}
 
-	private void draw(Graphics2D graphics, double shown)
+	/** {@code flash} (0 to 1) brightens the border for a moment when the chunk is unlocked. */
+	private void draw(Graphics2D graphics, double shown, double flash)
 	{
 		Font titleFont = FontManager.getRunescapeBoldFont().deriveFont(20f);
 		Font subtitleFont = FontManager.getRunescapeSmallFont();
@@ -213,7 +347,15 @@ public class ChunkNameBanner
 
 		graphics.setColor(BACKGROUND);
 		graphics.fillRoundRect(x, y, width, height, 12, 12);
-		graphics.setColor(BORDER);
+		if (flash > 0)
+		{
+			// Unlock flash: a glow around the sign that fades away.
+			Color glow = ChunkUnlockType.UNLOCKED.color;
+			graphics.setColor(new Color(glow.getRed(), glow.getGreen(), glow.getBlue(), (int) (120 * flash)));
+			graphics.setStroke(new BasicStroke(6f));
+			graphics.drawRoundRect(x - 2, y - 2, width + 4, height + 4, 14, 14);
+		}
+		graphics.setColor(flash > 0 ? blend(BORDER, ChunkUnlockType.UNLOCKED.color, flash) : BORDER);
 		graphics.setStroke(new BasicStroke(2f));
 		graphics.drawRoundRect(x, y, width, height, 12, 12);
 
@@ -231,5 +373,14 @@ public class ChunkNameBanner
 
 		graphics.setComposite(previousComposite);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, previousAntialias);
+	}
+
+	private static Color blend(Color from, Color to, double amount)
+	{
+		double k = Math.max(0, Math.min(1, amount));
+		return new Color(
+			(int) Math.round(from.getRed() + (to.getRed() - from.getRed()) * k),
+			(int) Math.round(from.getGreen() + (to.getGreen() - from.getGreen()) * k),
+			(int) Math.round(from.getBlue() + (to.getBlue() - from.getBlue()) * k));
 	}
 }

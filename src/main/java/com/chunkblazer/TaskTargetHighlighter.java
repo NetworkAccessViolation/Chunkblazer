@@ -32,6 +32,7 @@ import java.awt.Graphics2D;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -63,6 +64,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GroundObjectDespawned;
 import net.runelite.api.events.GroundObjectSpawned;
 import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.WallObjectDespawned;
 import net.runelite.api.events.WallObjectSpawned;
 import net.runelite.client.eventbus.Subscribe;
@@ -90,6 +92,11 @@ import net.runelite.client.util.Text;
  * The outline is the normal colour if at least one of the target's tasks is
  * doable (level requirement met), and the "unavailable" colour if none are.
  * Archived tasks (see TaskArchive) are left out entirely: no outline, no menu entry.
+ *
+ * Auto-tracking (setting "Auto-Track Tasks"): using a task target (attack, talk,
+ * chop, mine, cook on it...) tracks that target's lowest-points task in the task box.
+ * It only ever replaces a task it tracked itself: a task you chose (right-click menu,
+ * task window, tracker or side panel) stays until you change or clear it.
  */
 @Singleton
 public class TaskTargetHighlighter extends Overlay
@@ -319,6 +326,10 @@ public class TaskTargetHighlighter extends Overlay
 	private final ModelOutlineRenderer outlineRenderer;
 	private final TaskArchive archive;
 
+	// The task auto-tracking last put in the task box. If the tracked task is anything
+	// else, the player chose it, and auto-tracking leaves it alone.
+	private volatile String autoTrackedId;
+
 	// What the active tasks want. Rebuilt every game tick (cheap: ~100 tasks), so
 	// newly unlocked or completed tasks show up within a tick.
 	private Map<Integer, List<NuzlockeTask>> npcTasks = Collections.emptyMap();
@@ -388,7 +399,7 @@ public class TaskTargetHighlighter extends Overlay
 	/** The outlines have their own checkbox; the Tasks menu belongs to the Yellow paint style. */
 	private boolean isEnabled()
 	{
-		return config.highlightTaskTargets() || isMenuEnabled();
+		return config.highlightTaskTargets() || isMenuEnabled() || config.autoTrackTasks();
 	}
 
 	private boolean isMenuEnabled()
@@ -883,6 +894,125 @@ public class TaskTargetHighlighter extends Overlay
 			}
 		}
 		return null;
+	}
+
+	// --- Auto-tracking -------------------------------------------------------
+
+	/**
+	 * Using an NPC or object that has tasks tracks one of them. Our own Tasks submenu
+	 * entries are RUNELITE-type, so picking a task from it (a manual choice) never
+	 * lands here.
+	 */
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		if (!config.autoTrackTasks())
+		{
+			return;
+		}
+		MenuAction action = event.getMenuAction();
+		List<NuzlockeTask> tasks;
+		if (isNpcAction(action))
+		{
+			NPC npc = event.getMenuEntry().getNpc();
+			if (npc == null)
+			{
+				return;
+			}
+			tasks = tasksForNpc(npc);
+		}
+		else if (isObjectAction(action))
+		{
+			tasks = tasksForObject(event.getId());
+		}
+		else
+		{
+			return;
+		}
+		autoTrack(tasks);
+	}
+
+	private static boolean isNpcAction(MenuAction action)
+	{
+		switch (action)
+		{
+			case NPC_FIRST_OPTION:
+			case NPC_SECOND_OPTION:
+			case NPC_THIRD_OPTION:
+			case NPC_FOURTH_OPTION:
+			case NPC_FIFTH_OPTION:
+			case WIDGET_TARGET_ON_NPC:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	private static boolean isObjectAction(MenuAction action)
+	{
+		switch (action)
+		{
+			case GAME_OBJECT_FIRST_OPTION:
+			case GAME_OBJECT_SECOND_OPTION:
+			case GAME_OBJECT_THIRD_OPTION:
+			case GAME_OBJECT_FOURTH_OPTION:
+			case GAME_OBJECT_FIFTH_OPTION:
+			case WIDGET_TARGET_ON_GAME_OBJECT:
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	/**
+	 * Track the lowest-points task you have the level for (then the one furthest along).
+	 * Never replaces a task you chose yourself; only one auto-tracking put there (or an
+	 * empty task box). Also leaves it alone if it already belongs to this target.
+	 */
+	private void autoTrack(List<NuzlockeTask> tasks)
+	{
+		if (tasks == null || tasks.isEmpty())
+		{
+			return;
+		}
+		NuzlockeTask tracked = plugin.getSelectedTask();
+		if (tracked != null && tracked.getTaskId() != null)
+		{
+			if (!tracked.getTaskId().equals(autoTrackedId))
+			{
+				return; // chosen by the player: keep it
+			}
+			for (NuzlockeTask task : tasks)
+			{
+				if (tracked.getTaskId().equals(task.getTaskId()))
+				{
+					return;
+				}
+			}
+		}
+
+		NuzlockeTask pick = null;
+		Comparator<NuzlockeTask> order = Comparator.comparingInt(NuzlockeTask::getBasePoints)
+			.thenComparing(Comparator.comparingDouble(TaskTargetHighlighter::fraction).reversed())
+			.thenComparing(t -> t.getName() == null ? "" : t.getName());
+		for (NuzlockeTask task : tasks)
+		{
+			if (plugin.meetsLevelRequirement(task) && (pick == null || order.compare(task, pick) < 0))
+			{
+				pick = task;
+			}
+		}
+		if (pick != null)
+		{
+			autoTrackedId = pick.getTaskId();
+			plugin.selectTaskFromGame(pick);
+		}
+	}
+
+	private static double fraction(NuzlockeTask task)
+	{
+		int target = Math.max(1, task.getTargetQuantity());
+		return Math.min(1.0, task.getCurrentProgress() / (double) target);
 	}
 
 	// --- Right-click "Tasks" submenu ----------------------------------------

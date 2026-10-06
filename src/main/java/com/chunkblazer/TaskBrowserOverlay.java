@@ -26,7 +26,10 @@
 
 package com.chunkblazer;
 
+import java.awt.AlphaComposite;
+import java.awt.BasicStroke;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -35,10 +38,12 @@ import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.Shape;
+import java.awt.Stroke;
 import java.awt.image.BufferedImage;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -54,6 +59,8 @@ import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Skill;
 import net.runelite.api.events.FocusChanged;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.client.callback.ClientThread;
@@ -87,6 +94,14 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * option ascending or descending. Click a star to save a task, the arrow to expand
  * its requirements, the row to track it (or stop tracking it). Mouse wheel scrolls; Esc closes.
  *
+ * New tasks: when a chunk task you haven't seen joins your active list (a chunk
+ * unlock, or flipping its card), the Points orb pulses with a "New tasks!" pointer.
+ * Opening the window then shows just those tasks in a New tab; closing it marks
+ * them seen, and the window goes back to normal. Seen tasks are stored per account.
+ *
+ * Drag the "ChunkBlazer Tasks" title to move the window; it stays where you put it
+ * until the client restarts (kept on screen if the window is resized).
+ *
  * Opened, closed and registered by ChunkBlazerOrbWidget. Hover is worked out while
  * drawing (from the game's own mouse position), so clicks never depend on mouse
  * coordinates lining up with the drawing in stretched/resized modes.
@@ -96,6 +111,14 @@ public class TaskBrowserOverlay extends Overlay
 {
 	private static final String CONFIG_GROUP = "chunkblazer";
 	private static final String SAVED_KEY = "savedTasks";
+	private static final String SEEN_KEY = "seenTasks";
+
+	// New-task alert: wait this many ticks after login before comparing (the task list
+	// is still loading), how long the "New tasks!" pointer shows, and the pulse speed.
+	private static final int SETTLE_TICKS = 10;
+	private static final long HINT_MS = 6000;
+	private static final long HINT_FADE_MS = 1500;
+	private static final long PULSE_MS = 1200;
 
 	private static final int MAX_WIDTH = 460;
 	private static final int MAX_HEIGHT = 400;
@@ -134,7 +157,7 @@ public class TaskBrowserOverlay extends Overlay
 
 	enum Tab
 	{
-		ACTIVE, SAVED, ARCHIVED
+		ACTIVE, SAVED, ARCHIVED, NEW
 	}
 
 	/** Ordering only. Each has a natural default direction. */
@@ -241,6 +264,7 @@ public class TaskBrowserOverlay extends Overlay
 	private final TaskArchive archive;
 	private final ChatboxPanelManager chatboxPanelManager;
 	private final ClientThread clientThread;
+	private final SavedTaskTracker savedTracker;
 
 	private volatile boolean open;
 	private volatile String search = "";
@@ -261,10 +285,36 @@ public class TaskBrowserOverlay extends Overlay
 	private volatile Menu menu = Menu.NONE;
 	private volatile int scroll;
 
+	// New-task alert state. newIds: active tasks not seen yet. shownNew: the ones the
+	// New tab is showing (snapshot taken on opening). taskButton: where the Points orb
+	// is on screen, reported every frame by ChunkBlazerOrbWidget.
+	private final Set<String> newIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private volatile Set<String> shownNew = Collections.emptySet();
+	private volatile Rectangle taskButton;
+	private volatile long newArrivedAt;
+	private int ticksLoggedIn;
+
 	private final List<Hit> hits = new ArrayList<>();
 	private final List<Hit> menuHits = new ArrayList<>();
 	private volatile Runnable hoveredAction;
 	private volatile boolean mouseInWindow;
+
+	// Moving the window by its title. windowX/windowY are where it was last drawn;
+	// customX/customY are where the player put it (unset = centred in the game view).
+	private volatile boolean titleHovered;
+	private volatile boolean dragging;
+	// Where the drag started (mouse, from the event) and where the window was then.
+	// The drag events are swallowed so the game doesn't react, which also means the
+	// game's own mouse position stops updating; so movement is read from the events.
+	private volatile int pressX;
+	private volatile int pressY;
+	private volatile int startX;
+	private volatile int startY;
+	private volatile int windowX;
+	private volatile int windowY;
+	private volatile boolean moved;
+	private volatile int customX;
+	private volatile int customY;
 
 	private List<Entry> rows = new ArrayList<>();
 	private final Map<String, String> chunkNames = new HashMap<>();
@@ -280,6 +330,17 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				return event;
 			}
+			if (event.getButton() == MouseEvent.BUTTON1 && titleHovered)
+			{
+				// Grab the title: the window then moves as far as the mouse does.
+				pressX = event.getX();
+				pressY = event.getY();
+				startX = windowX;
+				startY = windowY;
+				dragging = true;
+				event.consume();
+				return event;
+			}
 			Runnable action = hoveredAction;
 			if (event.getButton() == MouseEvent.BUTTON1 && action != null)
 			{
@@ -287,6 +348,30 @@ public class TaskBrowserOverlay extends Overlay
 			}
 			// Clicks inside the window never reach the game (no walking behind it).
 			event.consume();
+			return event;
+		}
+
+		@Override
+		public MouseEvent mouseDragged(MouseEvent event)
+		{
+			if (dragging)
+			{
+				customX = startX + event.getX() - pressX;
+				customY = startY + event.getY() - pressY;
+				moved = true;
+				event.consume();
+			}
+			return event;
+		}
+
+		@Override
+		public MouseEvent mouseReleased(MouseEvent event)
+		{
+			if (dragging)
+			{
+				dragging = false;
+				event.consume();
+			}
 			return event;
 		}
 	};
@@ -341,7 +426,7 @@ public class TaskBrowserOverlay extends Overlay
 	public TaskBrowserOverlay(Client client, ChunkBlazerPlugin plugin, ConfigManager configManager,
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
 		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
-		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread)
+		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker)
 	{
 		this.client = client;
 		this.plugin = plugin;
@@ -356,6 +441,7 @@ public class TaskBrowserOverlay extends Overlay
 		this.archive = archive;
 		this.chatboxPanelManager = chatboxPanelManager;
 		this.clientThread = clientThread;
+		this.savedTracker = savedTracker;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -369,6 +455,7 @@ public class TaskBrowserOverlay extends Overlay
 		mouseManager.registerMouseWheelListener(wheel);
 		keyManager.registerKeyListener(keys);
 		eventBus.register(this);
+		savedTracker.startUp();
 	}
 
 	public void shutDown()
@@ -379,17 +466,29 @@ public class TaskBrowserOverlay extends Overlay
 		mouseManager.unregisterMouseWheelListener(wheel);
 		keyManager.unregisterKeyListener(keys);
 		eventBus.unregister(this);
+		savedTracker.shutDown();
 	}
 
 	/** Open or close the window (the Points orb's "Tasks" option). */
 	public void toggle()
 	{
-		open = !open;
+		if (open)
+		{
+			close();
+			return;
+		}
+		open = true;
 		pinnedChunk = null;
 		menu = Menu.NONE;
 		stopSearch();
 		scroll = 0;
 		rowsBuiltAt = 0;
+		if (!newIds.isEmpty())
+		{
+			// Open on just the tasks that arrived since last time.
+			shownNew = Collections.unmodifiableSet(new LinkedHashSet<>(newIds));
+			tab = Tab.NEW;
+		}
 	}
 
 	private void close()
@@ -398,6 +497,28 @@ public class TaskBrowserOverlay extends Overlay
 		menu = Menu.NONE;
 		stopSearch();
 		pinnedChunk = null;
+		finishNew();
+	}
+
+	/** Leaving the New tab: those tasks are now seen, and the window is back to normal. */
+	private void finishNew()
+	{
+		if (tab != Tab.NEW)
+		{
+			return;
+		}
+		Set<String> shown = shownNew;
+		markSeen(shown);
+		newIds.removeAll(shown);
+		shownNew = Collections.emptySet();
+		tab = Tab.ACTIVE;
+		rowsBuiltAt = 0;
+	}
+
+	/** Where the Points orb (the button that opens this window) is on screen; null if hidden. */
+	public void setTaskButtonBounds(Rectangle bounds)
+	{
+		taskButton = bounds;
 	}
 
 	/**
@@ -423,6 +544,7 @@ public class TaskBrowserOverlay extends Overlay
 			return;
 		}
 		event.consume();
+		finishNew();
 		pinnedChunk = name;
 		currentChunkOnly = false;
 		tab = Tab.ACTIVE;
@@ -441,6 +563,105 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			unlockKeyHeld = false;
 		}
+	}
+
+	// --- New tasks -----------------------------------------------------------
+
+	/**
+	 * Each tick, find active chunk tasks that haven't been seen. The very first time an
+	 * account runs this there's nothing stored, so everything it already has counts as
+	 * seen (no flood of "new" tasks); from then on, anything else is new.
+	 */
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (client.getGameState() != GameState.LOGGED_IN || configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		if (++ticksLoggedIn < SETTLE_TICKS)
+		{
+			return;
+		}
+
+		List<NuzlockeTask> active = pool(false);
+		Set<String> seen = seenIds();
+		if (seen == null)
+		{
+			Set<String> all = new LinkedHashSet<>();
+			for (NuzlockeTask task : active)
+			{
+				all.add(task.getTaskId());
+			}
+			markSeen(all);
+			return;
+		}
+
+		Set<String> activeIds = new java.util.HashSet<>();
+		boolean arrived = false;
+		for (NuzlockeTask task : active)
+		{
+			String id = task.getTaskId();
+			activeIds.add(id);
+			if (!seen.contains(id) && newIds.add(id))
+			{
+				arrived = true;
+			}
+		}
+		// Finished (or otherwise gone) before being looked at: no longer new.
+		newIds.retainAll(activeIds);
+		if (arrived)
+		{
+			newArrivedAt = System.currentTimeMillis();
+		}
+	}
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		switch (event.getGameState())
+		{
+			case LOGIN_SCREEN:
+			case HOPPING:
+			case CONNECTION_LOST:
+				// Re-worked out after the next login, for whichever account it is.
+				ticksLoggedIn = 0;
+				newIds.clear();
+				break;
+			default:
+				break;
+		}
+	}
+
+	/** Task ids this account has seen, or null if nothing has ever been stored. */
+	private Set<String> seenIds()
+	{
+		String raw = configManager.getRSProfileConfiguration(CONFIG_GROUP, SEEN_KEY);
+		if (raw == null)
+		{
+			return null;
+		}
+		Set<String> ids = new java.util.HashSet<>();
+		for (String id : raw.split(","))
+		{
+			if (!id.trim().isEmpty())
+			{
+				ids.add(id.trim());
+			}
+		}
+		return ids;
+	}
+
+	private void markSeen(Set<String> ids)
+	{
+		if (configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		Set<String> seen = seenIds();
+		Set<String> updated = seen == null ? new LinkedHashSet<>() : new LinkedHashSet<>(seen);
+		updated.addAll(ids);
+		configManager.setRSProfileConfiguration(CONFIG_GROUP, SEEN_KEY, String.join(",", updated));
 	}
 
 	/**
@@ -662,6 +883,29 @@ public class TaskBrowserOverlay extends Overlay
 		}
 		rowsBuiltAt = now;
 
+		if (tab == Tab.NEW)
+		{
+			// Just the newly arrived tasks: no filter, archive or chunk limits.
+			Set<String> shown = shownNew;
+			String query = search.trim().toLowerCase();
+			List<NuzlockeTask> list = new ArrayList<>();
+			for (NuzlockeTask task : pool(false))
+			{
+				if (!shown.contains(task.getTaskId()))
+				{
+					continue;
+				}
+				chunkNames.computeIfAbsent(task.getTaskId(), id -> chunkName(task));
+				if (query.isEmpty() || matches(task, query))
+				{
+					list.add(task);
+				}
+			}
+			list.sort(sorter());
+			rows = group(list);
+			return rows;
+		}
+
 		Set<String> saved = savedIds();
 		boolean globalFilter = filter == Filter.QUESTS || filter == Filter.PROGRESSION || filter == Filter.SKILL;
 		Predicate<NuzlockeTask> test = filterTest();
@@ -823,6 +1067,10 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			hoveredAction = null;
 			mouseInWindow = false;
+			if (!open && client.getGameState() == GameState.LOGGED_IN && !newIds.isEmpty())
+			{
+				drawNewTaskAlert(graphics);
+			}
 			return null;
 		}
 
@@ -847,6 +1095,14 @@ public class TaskBrowserOverlay extends Overlay
 		int height = Math.min(MAX_HEIGHT, client.getViewportHeight() - 20);
 		int x = client.getViewportXOffset() + (client.getViewportWidth() - width) / 2;
 		int y = client.getViewportYOffset() + (client.getViewportHeight() - height) / 2;
+		if (moved)
+		{
+			// Where the player dragged it, kept fully on screen.
+			x = Math.max(0, Math.min(customX, client.getCanvasWidth() - width - 1));
+			y = Math.max(0, Math.min(customY, client.getCanvasHeight() - height - 1));
+		}
+		windowX = x;
+		windowY = y;
 		Rectangle window = new Rectangle(x, y, width, height);
 		boolean menuOpen = menu != Menu.NONE;
 
@@ -862,7 +1118,10 @@ public class TaskBrowserOverlay extends Overlay
 
 		// Header: title + close X.
 		graphics.setFont(bold);
-		graphics.setColor(TITLE);
+		// The title is the handle for moving the window: it brightens on hover.
+		Rectangle titleArea = new Rectangle(x, y, PAD + graphics.getFontMetrics().stringWidth("ChunkBlazer Tasks") + 8, HEADER);
+		titleHovered = !menuOpen && titleArea.contains(mx, my);
+		graphics.setColor(titleHovered || dragging ? Color.WHITE : TITLE);
 		graphics.drawString("ChunkBlazer Tasks", x + PAD, y + 20);
 		Rectangle close = new Rectangle(x + width - 24, y + 7, 16, 16);
 		hits.add(new Hit(close, this::close));
@@ -883,14 +1142,23 @@ public class TaskBrowserOverlay extends Overlay
 		int barY = y + HEADER;
 		int buttonHeight = TABS - 4;
 		int tabWidth = 80;
-		drawTab(graphics, small, new Rectangle(x + PAD, barY, tabWidth, buttonHeight),
-			"Active (" + countActive() + ")", Tab.ACTIVE, mx, my, menuOpen);
-		drawTab(graphics, small, new Rectangle(x + PAD + tabWidth + 4, barY, tabWidth, buttonHeight),
-			"Saved (" + countSaved() + ")", Tab.SAVED, mx, my, menuOpen);
-		drawTab(graphics, small, new Rectangle(x + PAD + (tabWidth + 4) * 2, barY, tabWidth, buttonHeight),
-			"Archived (" + countArchived() + ")", Tab.ARCHIVED, mx, my, menuOpen);
-
 		int tabsWidth = tabWidth * 3 + 8;
+		if (tab == Tab.NEW)
+		{
+			// Only the new tasks are on show; closing the window brings the usual tabs back.
+			drawTab(graphics, small, new Rectangle(x + PAD, barY, tabsWidth, buttonHeight),
+				"New tasks (" + shownNew.size() + ")", Tab.NEW, mx, my, menuOpen);
+		}
+		else
+		{
+			drawTab(graphics, small, new Rectangle(x + PAD, barY, tabWidth, buttonHeight),
+				"Active (" + countActive() + ")", Tab.ACTIVE, mx, my, menuOpen);
+			drawTab(graphics, small, new Rectangle(x + PAD + tabWidth + 4, barY, tabWidth, buttonHeight),
+				"Saved (" + countSaved() + ")", Tab.SAVED, mx, my, menuOpen);
+			drawTab(graphics, small, new Rectangle(x + PAD + (tabWidth + 4) * 2, barY, tabWidth, buttonHeight),
+				"Archived (" + countArchived() + ")", Tab.ARCHIVED, mx, my, menuOpen);
+		}
+
 		int buttonWidth = Math.max(70, (width - PAD * 2 - tabsWidth - 8) / 2);
 		Rectangle sortButton = new Rectangle(x + width - PAD - buttonWidth, barY, buttonWidth, buttonHeight);
 		Rectangle filterButton = new Rectangle(sortButton.x - 4 - buttonWidth, barY, buttonWidth, buttonHeight);
@@ -917,6 +1185,10 @@ public class TaskBrowserOverlay extends Overlay
 		} : () -> menu = menu == Menu.NONE ? Menu.FILTER : Menu.NONE;
 		drawButton(graphics, small, filterButton, "Filter: " + filterLabel,
 			menu == Menu.FILTER || menu == Menu.SKILLS || menu == Menu.TIERS, mx, my, menuOpen, openFilter);
+		if (tab == Tab.ACTIVE && filter != Filter.ALL)
+		{
+			drawActiveFilter(graphics, small, filterButton, filterLabel, mx, my, menuOpen);
+		}
 		drawButton(graphics, small, sortButton, "Sort: " + sortField.label, menu == Menu.SORT,
 			mx, my, menuOpen, () -> menu = menu == Menu.NONE ? Menu.SORT : Menu.NONE);
 		drawArrow(graphics, sortButton.x + sortButton.width - 10, sortButton.y + sortButton.height / 2, ascending, SUBTEXT);
@@ -960,6 +1232,10 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				String here = currentChunkName();
 				message = here.isEmpty() ? "You're not in a chunk with tasks." : "No tasks here in " + here + ".";
+			}
+			else if (tab == Tab.NEW && search.isEmpty())
+			{
+				message = "No new tasks left to show.";
 			}
 			else if (tab == Tab.ARCHIVED && search.isEmpty())
 			{
@@ -1036,6 +1312,69 @@ public class TaskBrowserOverlay extends Overlay
 		}
 		hoveredAction = hovered;
 		return null;
+	}
+
+	/**
+	 * While the window is closed and there are new tasks: a pulsing orange glow around
+	 * the Points orb, and for a few seconds after they arrive, a "New tasks!" pointer
+	 * that fades out. The glow keeps going until the window is opened.
+	 */
+	private void drawNewTaskAlert(Graphics2D graphics)
+	{
+		Rectangle b = taskButton;
+		if (b == null)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		double pulse = 0.5 + 0.5 * Math.sin(now * 2 * Math.PI / PULSE_MS);
+
+		Composite previousComposite = graphics.getComposite();
+		Stroke previousStroke = graphics.getStroke();
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		graphics.setColor(new Color(255, 152, 31, (int) (35 * pulse)));
+		graphics.fillRoundRect(b.x - 3, b.y - 3, b.width + 6, b.height + 6, 14, 14);
+		graphics.setColor(new Color(255, 152, 31, (int) (90 + 150 * pulse)));
+		graphics.setStroke(new BasicStroke(2.5f));
+		graphics.drawRoundRect(b.x - 3, b.y - 3, b.width + 6, b.height + 6, 14, 14);
+
+		long age = now - newArrivedAt;
+		if (age < HINT_MS)
+		{
+			float alpha = age < HINT_MS - HINT_FADE_MS ? 1f : (HINT_MS - age) / (float) HINT_FADE_MS;
+			graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, Math.max(0f, Math.min(1f, alpha))));
+
+			int count = newIds.size();
+			String text = count == 1 ? "1 new task!" : count + " new tasks!";
+			graphics.setFont(FontManager.getRunescapeBoldFont());
+			FontMetrics fm = graphics.getFontMetrics();
+
+			// Arrow pointing right at the orb, gently bobbing towards it.
+			int bob = (int) Math.round(3 * Math.sin(now / 150.0));
+			int tipX = b.x - 6 + bob;
+			int cy = b.y + b.height / 2;
+			graphics.setStroke(new BasicStroke(1f));
+			graphics.setColor(TITLE);
+			graphics.fillPolygon(new Polygon(
+				new int[]{tipX, tipX - 11, tipX - 11},
+				new int[]{cy, cy - 7, cy + 7}, 3));
+			graphics.fillRect(tipX - 19, cy - 2, 9, 5);
+
+			int boxWidth = fm.stringWidth(text) + 12;
+			int boxHeight = fm.getHeight() + 4;
+			int boxX = tipX - 19 - boxWidth;
+			int boxY = cy - boxHeight / 2;
+			graphics.setColor(MENU_BACKGROUND);
+			graphics.fillRoundRect(boxX, boxY, boxWidth, boxHeight, 8, 8);
+			graphics.setColor(TITLE);
+			graphics.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 8, 8);
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(text, boxX + 6, boxY + (boxHeight + fm.getAscent()) / 2 - 2);
+		}
+
+		graphics.setComposite(previousComposite);
+		graphics.setStroke(previousStroke);
 	}
 
 	private static Runnable firstHit(List<Hit> list, int mx, int my)
@@ -1234,6 +1573,39 @@ public class TaskBrowserOverlay extends Overlay
 		FontMetrics fm = graphics.getFontMetrics();
 		String text = fit(fm, label, area.width - 18);
 		graphics.drawString(text, area.x + 6, area.y + (area.height + fm.getAscent()) / 2 - 2);
+	}
+
+	/**
+	 * A filter is narrowing the list: outline the Filter button in orange, colour its
+	 * label, and add a small x that clears it, so it's obvious why tasks are missing.
+	 */
+	private void drawActiveFilter(Graphics2D graphics, Font font, Rectangle button, String label,
+		int mx, int my, boolean menuOpen)
+	{
+		Rectangle clear = new Rectangle(button.x + button.width - 16, button.y + 2, 14, button.height - 4);
+		hits.add(0, new Hit(clear, () ->
+		{
+			filter = Filter.ALL;
+			filterSkill = null;
+			filterTier = null;
+			refresh();
+		}));
+
+		graphics.setColor(TAB_ON);
+		graphics.fillRect(button.x, button.y, button.width, button.height);
+		graphics.setColor(TITLE);
+		graphics.drawRect(button.x, button.y, button.width - 1, button.height - 1);
+		graphics.setFont(font);
+		FontMetrics fm = graphics.getFontMetrics();
+		graphics.drawString(fit(fm, "Filter: " + label, button.width - 24), button.x + 6,
+			button.y + (button.height + fm.getAscent()) / 2 - 2);
+
+		boolean hover = !menuOpen && clear.contains(mx, my);
+		graphics.setColor(hover ? NO_LEVEL : SUBTEXT);
+		int cx = clear.x + clear.width / 2;
+		int cy = clear.y + clear.height / 2;
+		graphics.drawLine(cx - 3, cy - 3, cx + 3, cy + 3);
+		graphics.drawLine(cx - 3, cy + 3, cx + 3, cy - 3);
 	}
 
 	/** Sort dropdown: each option with an up and a down arrow. Clicking the name uses its usual direction. */

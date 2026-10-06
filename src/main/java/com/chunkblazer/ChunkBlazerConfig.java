@@ -338,6 +338,32 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "autoTrackTasks",
+		name = "Auto-Track Tasks",
+		description = "When you use an NPC or object a task needs (attack, talk, chop, mine...), track its "
+			+ "lowest-points task. A task you tracked yourself for that target is kept.",
+		section = taskSection,
+		position = 6
+	)
+	default boolean autoTrackTasks()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showSavedTaskTracker",
+		name = "Saved Tasks Tracker",
+		description = "A bar at the bottom of the screen that opens a list of your saved tasks, nearest first "
+			+ "(Alt + drag to move it)",
+		section = taskSection,
+		position = 7
+	)
+	default boolean showSavedTaskTracker()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "highlightTaskTargets",
 		name = "Outline Task Targets",
 		description = "Outline NPCs and objects that one of your active tasks needs",
