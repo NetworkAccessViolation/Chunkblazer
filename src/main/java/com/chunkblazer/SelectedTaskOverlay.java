@@ -26,6 +26,7 @@
 
 package com.chunkblazer;
 
+import com.chunkblazer.modules.NPCKillModule;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
@@ -50,6 +51,11 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  * progress bar that updates live. It re-reads the task every frame, so any
  * progress change made by the task modules shows up immediately.
  * Alt + drag to move it; click the X (or right-click, then Deselect) to stop tracking.
+ *
+ * Timed kill tasks ("Defeat a level 5 frog in 21 seconds") show a countdown instead
+ * of the usual progress bar. It starts when the kill tracker starts its own clock
+ * (our first hit on a matching NPC) and changes colour as time runs out. Tasks with
+ * a 1-tick limit ("in the first hit") keep the normal bar, as there's nothing to time.
  */
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
@@ -63,21 +69,35 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private static final Color CLOSE_IDLE = new Color(200, 200, 200);
 	private static final Color CLOSE_HOVER = new Color(255, 90, 90);
 
+	// Countdown colours, from plenty of time left to out of time.
+	private static final Color TIMER_OK = new Color(90, 200, 90);
+	private static final Color TIMER_WARN = new Color(230, 200, 60);
+	private static final Color TIMER_LATE = new Color(255, 140, 0);
+	private static final Color TIMER_FAIL = new Color(220, 50, 50);
+	private static final int TICK_MS = 600;
+
 	// Where the X was last drawn, relative to the overlay's top-left. Null while hidden.
 	private volatile Rectangle closeButton;
 	private volatile boolean closeHovered;
 
+	// The game only advances in 0.6s ticks; remembering when the current tick began
+	// lets the countdown move smoothly between them instead of jumping.
+	private int lastTick = -1;
+	private long lastTickAt;
+
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
+	private final NPCKillModule kills;
 
 	@Inject
-	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
+	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, NPCKillModule kills)
 	{
 		super(plugin);
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
+		this.kills = kills;
 
 		setPosition(OverlayPosition.TOP_LEFT);
 		panelComponent.setPreferredSize(new Dimension(190, 0));
@@ -143,14 +163,33 @@ public class SelectedTaskOverlay extends OverlayPanel
 		int progress = task.getCurrentProgress();
 		int target = Math.max(1, task.getTargetQuantity());
 
-		ProgressBarComponent bar = new ProgressBarComponent();
-		bar.setMinimum(0);
-		bar.setMaximum(target);
-		bar.setValue(Math.min(progress, target));
-		bar.setForegroundColor(FLAME);
-		bar.setBackgroundColor(BAR_BACKGROUND);
-		bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
-		panelComponent.getChildren().add(bar);
+		int limitTicks = timeLimitTicks(task);
+		if (limitTicks > 1 && task.getTargetNpc() != null)
+		{
+			// Timed kill: countdown bar, with the kill count on its own line if the
+			// task needs more than one.
+			if (target > 1)
+			{
+				panelComponent.getChildren().add(LineComponent.builder()
+						.left("Kills")
+						.right(Math.min(progress, target) + "/" + target)
+						.leftColor(REQUIREMENT_TEXT)
+						.rightColor(Color.WHITE)
+						.build());
+			}
+			panelComponent.getChildren().add(timerBar(task, limitTicks));
+		}
+		else
+		{
+			ProgressBarComponent bar = new ProgressBarComponent();
+			bar.setMinimum(0);
+			bar.setMaximum(target);
+			bar.setValue(Math.min(progress, target));
+			bar.setForegroundColor(FLAME);
+			bar.setBackgroundColor(BAR_BACKGROUND);
+			bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
+			panelComponent.getChildren().add(bar);
+		}
 
 		Dimension size = super.render(graphics);
 		if (size == null)
@@ -178,6 +217,76 @@ public class SelectedTaskOverlay extends OverlayPanel
 		graphics.drawLine(box.x, box.y + box.height, box.x + box.width, box.y);
 		closeButton = box;
 		return size;
+	}
+
+	/** The task's time limit in ticks, or 0 if it has none. */
+	private static int timeLimitTicks(NuzlockeTask task)
+	{
+		TaskConstraints c = task.getConstraints();
+		if (c == null || !c.hasTimeLimit() || c.getTimeInTicks() == null)
+		{
+			return 0;
+		}
+		return c.getTimeInTicks();
+	}
+
+	/**
+	 * Countdown for a timed kill. Full and waiting until the fight starts, then
+	 * draining live: green, yellow under half, orange under a quarter, red under a
+	 * tenth, and "Too slow" once the limit has passed (until that fight ends).
+	 */
+	private ProgressBarComponent timerBar(NuzlockeTask task, int limitTicks)
+	{
+		int tick = client.getTickCount();
+		long now = System.currentTimeMillis();
+		if (tick != lastTick)
+		{
+			lastTick = tick;
+			lastTickAt = now;
+		}
+
+		long limitMs = (long) limitTicks * TICK_MS;
+		int startTick = kills.getActiveFightStartTick(task.getTargetNpc());
+
+		ProgressBarComponent bar = new ProgressBarComponent();
+		bar.setMinimum(0);
+		bar.setMaximum(limitMs);
+		bar.setBackgroundColor(BAR_BACKGROUND);
+		bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.TEXT_ONLY);
+
+		if (startTick < 0)
+		{
+			// Not fighting a matching NPC yet: show the full allowance.
+			bar.setValue(limitMs);
+			bar.setForegroundColor(TIMER_OK);
+			bar.setCenterLabel(seconds(limitMs) + " limit");
+			return bar;
+		}
+
+		long elapsed = (long) (tick - startTick) * TICK_MS + Math.min(TICK_MS, now - lastTickAt);
+		long remaining = limitMs - elapsed;
+		if (remaining <= 0)
+		{
+			bar.setValue(limitMs);
+			bar.setForegroundColor(TIMER_FAIL);
+			bar.setCenterLabel("Too slow");
+			return bar;
+		}
+
+		double fraction = remaining / (double) limitMs;
+		Color color = fraction > 0.5 ? TIMER_OK
+				: fraction > 0.25 ? TIMER_WARN
+				: fraction > 0.1 ? TIMER_LATE
+				: TIMER_FAIL;
+		bar.setValue(remaining);
+		bar.setForegroundColor(color);
+		bar.setCenterLabel(seconds(remaining) + " left");
+		return bar;
+	}
+
+	private static String seconds(long millis)
+	{
+		return String.format("%.1fs", millis / 1000.0);
 	}
 
 	/** True while the mouse is over the close X (updated every frame in render). */
