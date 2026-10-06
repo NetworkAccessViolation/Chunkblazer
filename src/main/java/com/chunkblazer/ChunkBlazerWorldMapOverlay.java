@@ -192,6 +192,7 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		// Second pass: Draw borders and region IDs
 		Font regionFont = FontManager.getRunescapeBoldFont().deriveFont(14f);
 		graphics.setFont(regionFont);
+		Rectangle currentChunkRect = null;
 
 		for (int x = xRegionMin; x < xRegionMax; x += REGION_SIZE)
 		{
@@ -214,13 +215,37 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 
 				ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, isUnlocked, isNeighbor);
 
-				// Uniform outline everywhere; only the chunk you're standing in stands out.
-				graphics.setColor(isCurrent ? CURRENT_BORDER : CHUNK_BORDER);
-				graphics.drawRect(xPos, yPos, regionPixelSize, regionPixelSize);
+				// Uniform outline, except between two unlocked chunks: those edges are
+				// skipped, so your whole unlocked area reads as one connected piece of
+				// map. North is +1 in region id, east is +256.
+				graphics.setColor(CHUNK_BORDER);
+				int right = xPos + regionPixelSize;
+				int bottom = yPos + regionPixelSize;
+				if (!(isUnlocked && isOpen(unlockedRegions, regionId + 1)))
+				{
+					graphics.drawLine(xPos, yPos, right, yPos);
+				}
+				if (!(isUnlocked && isOpen(unlockedRegions, regionId - 1)))
+				{
+					graphics.drawLine(xPos, bottom, right, bottom);
+				}
+				if (!(isUnlocked && isOpen(unlockedRegions, regionId - 256)))
+				{
+					graphics.drawLine(xPos, yPos, xPos, bottom);
+				}
+				if (!(isUnlocked && isOpen(unlockedRegions, regionId + 256)))
+				{
+					graphics.drawLine(right, yPos, right, bottom);
+				}
 
-				// Thicker border for the current region, and a hover emphasis on
-				// unlockable chunks (still outline-only, no fill/highlight).
-				if (isCurrent || (type.isUnlockable() && regionId == hoveredRegionId))
+				// The chunk you're standing in is outlined last, on top of everything.
+				if (isCurrent)
+				{
+					currentChunkRect = new Rectangle(xPos, yPos, regionPixelSize, regionPixelSize);
+				}
+
+				// Hover emphasis on unlockable chunks (outline only, no fill).
+				if (type.isUnlockable() && regionId == hoveredRegionId)
 				{
 					graphics.drawRect(xPos + 1, yPos + 1, regionPixelSize - 2, regionPixelSize - 2);
 				}
@@ -256,6 +281,16 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 			}
 		}
 
+		// Current chunk: a double cyan outline, drawn after every other line so
+		// nothing covers it.
+		if (currentChunkRect != null)
+		{
+			graphics.setColor(CURRENT_BORDER);
+			graphics.drawRect(currentChunkRect.x, currentChunkRect.y, currentChunkRect.width, currentChunkRect.height);
+			graphics.drawRect(currentChunkRect.x + 1, currentChunkRect.y + 1,
+				currentChunkRect.width - 2, currentChunkRect.height - 2);
+		}
+
 		// Hovering an unlockable neighbour: show the keybind+click tooltip. The
 		// actual unlock is handled in ChunkBlazerPlugin.onMenuOptionClicked when
 		// the map-unlock key is held during the click (Region Locker model) —
@@ -263,6 +298,13 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		if (isHoveredUnlockable && hoveredRegionId > 0)
 		{
 			drawHoverTooltip(graphics, mousePos, hoveredRegionId);
+		}
+		// Hovering a chunk you own: the same key + click opens its tasks (TaskBrowserOverlay).
+		else if (hoveredRegionId > 0 && plugin.isRegionUnlocked(hoveredRegionId)
+			&& !plugin.isFreeRegion(hoveredRegionId)
+			&& !plugin.getRegionName(hoveredRegionId).startsWith("Unknown Region"))
+		{
+			drawUnlockedTooltip(graphics, mousePos, hoveredRegionId);
 		}
 
 		if (config.showChunkLegend())
@@ -414,6 +456,49 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		graphics.drawString(line3, textX, textY);
 	}
 
+
+	/** Unlocked, or an always-open area such as a dungeon (same test as the chunk fill). */
+	private boolean isOpen(Set<String> unlockedRegions, int regionId)
+	{
+		return unlockedRegions.contains(String.valueOf(regionId)) || plugin.isFreeRegion(regionId);
+	}
+
+	/** Tooltip for an unlocked chunk: its name and how to open its tasks. */
+	private void drawUnlockedTooltip(Graphics2D graphics, Point mousePos, int regionId)
+	{
+		if (mousePos == null)
+		{
+			return;
+		}
+		String line1 = plugin.getRegionName(regionId);
+		String line2 = "Unlocked";
+		String line3 = "Hold " + config.worldMapUnlockKey() + " + click to view tasks";
+
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+		int padding = 6;
+		int lineHeight = fm.getHeight();
+		int width = Math.max(fm.stringWidth(line1), Math.max(fm.stringWidth(line2), fm.stringWidth(line3))) + padding * 2;
+		int height = lineHeight * 3 + padding * 2;
+		int x = mousePos.getX() + 15;
+		int y = mousePos.getY() - height - 5;
+
+		graphics.setColor(new Color(30, 30, 30, 230));
+		graphics.fillRect(x, y, width, height);
+		graphics.setColor(ChunkUnlockType.UNLOCKED.color);
+		graphics.drawRect(x, y, width, height);
+
+		int textX = x + padding;
+		int textY = y + padding + fm.getAscent();
+		graphics.setColor(Color.WHITE);
+		graphics.drawString(line1, textX, textY);
+		textY += lineHeight;
+		graphics.setColor(ChunkUnlockType.UNLOCKED.color);
+		graphics.drawString(line2, textX, textY);
+		textY += lineHeight;
+		graphics.setColor(new Color(255, 215, 0));
+		graphics.drawString(line3, textX, textY);
+	}
 
 	/** Cost text centred in a chunk, on a dark backing so it reads on any map colour. */
 	private void drawCostLabel(Graphics2D graphics, int xPos, int yPos, int size, String text, Color color)
