@@ -99,6 +99,9 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * Opening the window then shows just those tasks in a New tab; closing it marks
  * them seen, and the window goes back to normal. Seen tasks are stored per account.
  *
+ * Drag the "ChunkBlazer Tasks" title to move the window; it stays where you put it
+ * until the client restarts (kept on screen if the window is resized).
+ *
  * Opened, closed and registered by ChunkBlazerOrbWidget. Hover is worked out while
  * drawing (from the game's own mouse position), so clicks never depend on mouse
  * coordinates lining up with the drawing in stretched/resized modes.
@@ -296,6 +299,23 @@ public class TaskBrowserOverlay extends Overlay
 	private volatile Runnable hoveredAction;
 	private volatile boolean mouseInWindow;
 
+	// Moving the window by its title. windowX/windowY are where it was last drawn;
+	// customX/customY are where the player put it (unset = centred in the game view).
+	private volatile boolean titleHovered;
+	private volatile boolean dragging;
+	// Where the drag started (mouse, from the event) and where the window was then.
+	// The drag events are swallowed so the game doesn't react, which also means the
+	// game's own mouse position stops updating; so movement is read from the events.
+	private volatile int pressX;
+	private volatile int pressY;
+	private volatile int startX;
+	private volatile int startY;
+	private volatile int windowX;
+	private volatile int windowY;
+	private volatile boolean moved;
+	private volatile int customX;
+	private volatile int customY;
+
 	private List<Entry> rows = new ArrayList<>();
 	private final Map<String, String> chunkNames = new HashMap<>();
 	private final Map<String, List<String>> requirements = new HashMap<>();
@@ -310,6 +330,17 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				return event;
 			}
+			if (event.getButton() == MouseEvent.BUTTON1 && titleHovered)
+			{
+				// Grab the title: the window then moves as far as the mouse does.
+				pressX = event.getX();
+				pressY = event.getY();
+				startX = windowX;
+				startY = windowY;
+				dragging = true;
+				event.consume();
+				return event;
+			}
 			Runnable action = hoveredAction;
 			if (event.getButton() == MouseEvent.BUTTON1 && action != null)
 			{
@@ -317,6 +348,30 @@ public class TaskBrowserOverlay extends Overlay
 			}
 			// Clicks inside the window never reach the game (no walking behind it).
 			event.consume();
+			return event;
+		}
+
+		@Override
+		public MouseEvent mouseDragged(MouseEvent event)
+		{
+			if (dragging)
+			{
+				customX = startX + event.getX() - pressX;
+				customY = startY + event.getY() - pressY;
+				moved = true;
+				event.consume();
+			}
+			return event;
+		}
+
+		@Override
+		public MouseEvent mouseReleased(MouseEvent event)
+		{
+			if (dragging)
+			{
+				dragging = false;
+				event.consume();
+			}
 			return event;
 		}
 	};
@@ -1040,6 +1095,14 @@ public class TaskBrowserOverlay extends Overlay
 		int height = Math.min(MAX_HEIGHT, client.getViewportHeight() - 20);
 		int x = client.getViewportXOffset() + (client.getViewportWidth() - width) / 2;
 		int y = client.getViewportYOffset() + (client.getViewportHeight() - height) / 2;
+		if (moved)
+		{
+			// Where the player dragged it, kept fully on screen.
+			x = Math.max(0, Math.min(customX, client.getCanvasWidth() - width - 1));
+			y = Math.max(0, Math.min(customY, client.getCanvasHeight() - height - 1));
+		}
+		windowX = x;
+		windowY = y;
 		Rectangle window = new Rectangle(x, y, width, height);
 		boolean menuOpen = menu != Menu.NONE;
 
@@ -1055,7 +1118,10 @@ public class TaskBrowserOverlay extends Overlay
 
 		// Header: title + close X.
 		graphics.setFont(bold);
-		graphics.setColor(TITLE);
+		// The title is the handle for moving the window: it brightens on hover.
+		Rectangle titleArea = new Rectangle(x, y, PAD + graphics.getFontMetrics().stringWidth("ChunkBlazer Tasks") + 8, HEADER);
+		titleHovered = !menuOpen && titleArea.contains(mx, my);
+		graphics.setColor(titleHovered || dragging ? Color.WHITE : TITLE);
 		graphics.drawString("ChunkBlazer Tasks", x + PAD, y + 20);
 		Rectangle close = new Rectangle(x + width - 24, y + 7, 16, 16);
 		hits.add(new Hit(close, this::close));

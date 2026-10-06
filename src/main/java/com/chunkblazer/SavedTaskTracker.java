@@ -47,6 +47,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.KeyCode;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
@@ -65,7 +66,8 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * is nearest first, by how
  * many chunks away their chunk is, then tasks with no place (quests, level-ups) by
  * how far along they are. Clicking a task tracks it in the task box (or stops
- * tracking it, if it's the tracked one). Archived tasks are left out, like the Saved
+ * tracking it, if it's the tracked one); Shift + click removes it from the saved
+ * list. Archived tasks are left out, like the Saved
  * tab. Registered by TaskBrowserOverlay.
  */
 @Singleton
@@ -116,6 +118,8 @@ public class SavedTaskTracker extends Overlay
 
 	private volatile boolean expanded;
 	private volatile Runnable hoveredAction;
+	// The task row under the mouse, for Shift + click (unsave).
+	private volatile String hoveredTaskId;
 	private volatile boolean mouseOverList;
 	private volatile int scroll;
 	private List<Item> items = new ArrayList<>();
@@ -138,7 +142,15 @@ public class SavedTaskTracker extends Overlay
 			{
 				return event;
 			}
-			action.run();
+			String taskId = hoveredTaskId;
+			if (event.isShiftDown() && taskId != null)
+			{
+				unsave(taskId);
+			}
+			else
+			{
+				action.run();
+			}
 			event.consume();
 			return event;
 		}
@@ -203,6 +215,31 @@ public class SavedTaskTracker extends Overlay
 			}
 		}
 		return ids;
+	}
+
+	/** Take a task off the saved list (the same list as the task window's Saved tab). */
+	private void unsave(String taskId)
+	{
+		if (configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		String raw = configManager.getRSProfileConfiguration(CONFIG_GROUP, SAVED_KEY);
+		if (raw == null)
+		{
+			return;
+		}
+		List<String> kept = new ArrayList<>();
+		for (String id : raw.split(","))
+		{
+			String trimmed = id.trim();
+			if (!trimmed.isEmpty() && !trimmed.equals(taskId))
+			{
+				kept.add(trimmed);
+			}
+		}
+		configManager.setRSProfileConfiguration(CONFIG_GROUP, SAVED_KEY, String.join(",", kept));
+		itemsBuiltAt = 0;
 	}
 
 	private List<Item> currentItems()
@@ -373,6 +410,8 @@ public class SavedTaskTracker extends Overlay
 		int mx = mouse == null || bounds == null ? -1 : mouse.getX() - bounds.x;
 		int my = mouse == null || bounds == null ? -1 : mouse.getY() - bounds.y;
 		Runnable hovered = null;
+		String hoveredId = null;
+		boolean shiftHeld = client.isKeyPressed(KeyCode.KC_SHIFT);
 
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		Font bold = FontManager.getRunescapeBoldFont();
@@ -413,6 +452,7 @@ public class SavedTaskTracker extends Overlay
 				boolean hover = mouseOverList && row.contains(mx, my);
 				if (hover)
 				{
+					hoveredId = item.task.getTaskId();
 					hovered = () ->
 					{
 						if (isTracked)
@@ -425,7 +465,7 @@ public class SavedTaskTracker extends Overlay
 						}
 					};
 				}
-				drawRow(graphics, item, row, isTracked, hover, bold, small);
+				drawRow(graphics, item, row, isTracked, hover, hover && shiftHeld, bold, small);
 			}
 			graphics.setClip(oldClip);
 
@@ -462,13 +502,24 @@ public class SavedTaskTracker extends Overlay
 		drawChevron(graphics, bar.x + bar.width - 12, bar.y + BAR / 2, expanded, barHover ? Color.WHITE : SUBTEXT);
 
 		hoveredAction = hovered;
+		hoveredTaskId = hoveredId;
 		return new Dimension(WIDTH, height);
 	}
 
 	private void drawRow(Graphics2D graphics, Item item, Rectangle row, boolean isTracked, boolean hover,
-		Font bold, Font small)
+		boolean removing, Font bold, Font small)
 	{
-		if (isTracked)
+		if (removing)
+		{
+			// Shift held over a task: show that a click will remove it.
+			graphics.setColor(new Color(255, 70, 70, 50));
+			graphics.fillRect(row.x, row.y, row.width, row.height);
+			graphics.setFont(small);
+			FontMetrics rm = graphics.getFontMetrics();
+			graphics.setColor(NO_LEVEL);
+			graphics.drawString("Remove", row.x + row.width - PAD - rm.stringWidth("Remove"), row.y + 12);
+		}
+		else if (isTracked)
 		{
 			graphics.setColor(TRACKED_FILL);
 			graphics.fillRect(row.x, row.y, row.width, row.height);
@@ -490,7 +541,9 @@ public class SavedTaskTracker extends Overlay
 		boolean canDo = plugin.meetsLevelRequirement(task);
 		graphics.setColor(canDo ? Color.WHITE : NO_LEVEL);
 		String name = task.getName() == null ? task.getTaskId() : task.getName();
-		graphics.drawString(fit(fm, name, rightEdge - textX), textX, row.y + 12);
+		// Leave room for the "Remove" hint while Shift is held over this row.
+		int nameRight = removing ? rightEdge - fm.stringWidth("Remove") - 6 : rightEdge;
+		graphics.drawString(fit(fm, name, nameRight - textX), textX, row.y + 12);
 
 		// The chunk it's in (green when you're standing in it); quests and level-ups
 		// have no chunk, so they show their category instead.

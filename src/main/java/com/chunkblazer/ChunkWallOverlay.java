@@ -32,7 +32,9 @@ import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.Paint;
 import java.awt.Polygon;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -54,6 +56,11 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  *
  * Only border edges are drawn (a few hundred short segments near the player), not
  * every tile, so it stays cheap; per-tile shading was too slow in Java2D.
+ *
+ * Unlocking a chunk opens its wall as a wave: starting nearest the player, each
+ * section surges up and then drops away, the wave running outwards along the wall in
+ * both directions until it's gone. If the unlock dealt reveal cards, the wall waits
+ * until every card has been flipped and cleared off the screen, then opens.
  */
 @Singleton
 public class ChunkWallOverlay extends Overlay
@@ -65,13 +72,51 @@ public class ChunkWallOverlay extends Overlay
 	// Only build walls within this many tiles of the player.
 	private static final int DRAW_DISTANCE = 40;
 
+	// Opening wave: how fast it travels along the wall, how long each section takes to
+	// surge up and to drop away, and how much taller it gets at the top of the surge.
+	private static final double WAVE_MS_PER_TILE = 28;
+	private static final long SURGE_MS = 220;
+	private static final long DROP_MS = 380;
+	private static final double SURGE_HEIGHT = 0.6;
+	// Long enough for the wave to cross a whole chunk (about 90 tiles from a corner).
+	private static final long WAVE_LIFETIME_MS = (long) (90 * WAVE_MS_PER_TILE) + SURGE_MS + DROP_MS;
+
+	/**
+	 * One chunk's wall opening: which chunk, when it started (-1 while it's waiting for
+	 * the reveal cards to be flipped), and where the player stood when it started.
+	 */
+	private static final class Opening
+	{
+		final int regionId;
+		long startedAt = -1;
+		int originX;
+		int originY;
+
+		Opening(int regionId)
+		{
+			this.regionId = regionId;
+		}
+
+		boolean waiting()
+		{
+			return startedAt < 0;
+		}
+	}
+
+	// Unlocked or not, for the chunks seen last frame, to notice the moment one unlocks.
+	private final Map<Integer, Boolean> lastSeen = new HashMap<>();
+	private final List<Opening> openings = new ArrayList<>();
+
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
+	private final TaskCardOverlay cards;
 
 	@Inject
-	public ChunkWallOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
+	public ChunkWallOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
+		TaskCardOverlay cards)
 	{
+		this.cards = cards;
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
@@ -86,6 +131,9 @@ public class ChunkWallOverlay extends Overlay
 	{
 		if (!config.showChunkWalls() || client.isInInstancedRegion())
 		{
+			// Start fresh when walls come back, so nothing unlocked meanwhile replays.
+			lastSeen.clear();
+			openings.clear();
 			return null;
 		}
 		Player local = client.getLocalPlayer();
@@ -105,10 +153,10 @@ public class ChunkWallOverlay extends Overlay
 		int maxY = Math.min(last, playerPos.getSceneY() + DRAW_DISTANCE);
 
 		Color base = config.chunkWallColor();
-		Color clear = new Color(base.getRed(), base.getGreen(), base.getBlue(), 0);
-		Color line = new Color(base.getRed(), base.getGreen(), base.getBlue(), Math.min(255, base.getAlpha() * 2));
 		Map<Integer, Boolean> unlocked = new HashMap<>();
 		Paint previousPaint = graphics.getPaint();
+		long now = System.currentTimeMillis();
+		noticeUnlocks(unlocked, baseX, baseY, local, now);
 
 		for (int sx = minX; sx < maxX; sx++)
 		{
@@ -118,16 +166,16 @@ public class ChunkWallOverlay extends Overlay
 				int worldY = baseY + sy;
 
 				// West edge of this tile is a chunk border: compare the chunks either side.
-				if ((worldX & REGION_MASK) == 0
-					&& isUnlocked(unlocked, worldX, worldY) != isUnlocked(unlocked, worldX - 1, worldY))
+				if ((worldX & REGION_MASK) == 0)
 				{
-					drawWall(graphics, plane, sx, sy, sx, sy + 1, base, clear, line);
+					drawEdge(graphics, plane, unlocked, now, base, sx, sy, sx, sy + 1,
+						regionAt(worldX, worldY), regionAt(worldX - 1, worldY), worldX, worldY + 0.5);
 				}
 				// South edge of this tile is a chunk border.
-				if ((worldY & REGION_MASK) == 0
-					&& isUnlocked(unlocked, worldX, worldY) != isUnlocked(unlocked, worldX, worldY - 1))
+				if ((worldY & REGION_MASK) == 0)
 				{
-					drawWall(graphics, plane, sx, sy, sx + 1, sy, base, clear, line);
+					drawEdge(graphics, plane, unlocked, now, base, sx, sy, sx + 1, sy,
+						regionAt(worldX, worldY), regionAt(worldX, worldY - 1), worldX + 0.5, worldY);
 				}
 			}
 		}
@@ -136,22 +184,149 @@ public class ChunkWallOverlay extends Overlay
 		return null;
 	}
 
-	private boolean isUnlocked(Map<Integer, Boolean> cache, int worldX, int worldY)
+	private static int regionAt(int worldX, int worldY)
 	{
-		int regionId = ((worldX >> 6) << 8) | (worldY >> 6);
+		return ((worldX >> 6) << 8) | (worldY >> 6);
+	}
+
+	private boolean isUnlocked(Map<Integer, Boolean> cache, int regionId)
+	{
 		return cache.computeIfAbsent(regionId, plugin::isRegionUnlocked);
 	}
 
-	/** One wall panel standing on the edge between two scene grid corners. */
-	private void drawWall(Graphics2D graphics, int plane, int cx1, int cy1, int cx2, int cy2,
-		Color base, Color clear, Color line)
+	/**
+	 * One border edge. Unlocked on one side only: a normal wall. Unlocked on both sides
+	 * because one of them has just been unlocked: the wall that used to be there, in
+	 * the middle of its opening wave. (worldX, worldY) is the edge's midpoint.
+	 */
+	private void drawEdge(Graphics2D graphics, int plane, Map<Integer, Boolean> unlocked, long now, Color base,
+		int cx1, int cy1, int cx2, int cy2, int regionA, int regionB, double worldX, double worldY)
 	{
+		boolean openA = isUnlocked(unlocked, regionA);
+		boolean openB = isUnlocked(unlocked, regionB);
+		if (openA != openB)
+		{
+			drawWall(graphics, plane, cx1, cy1, cx2, cy2, base, 1.0, 0);
+			return;
+		}
+		if (!openA || openings.isEmpty())
+		{
+			return;
+		}
+		for (Opening opening : openings)
+		{
+			if (opening.regionId != regionA && opening.regionId != regionB)
+			{
+				continue;
+			}
+			if (opening.waiting())
+			{
+				// Unlocked, but its cards are still face down: keep the wall up for now.
+				drawWall(graphics, plane, cx1, cy1, cx2, cy2, base, 1.0, 0);
+				return;
+			}
+			double distance = Math.hypot(worldX - opening.originX, worldY - opening.originY);
+			double t = now - opening.startedAt - distance * WAVE_MS_PER_TILE;
+			if (t < 0)
+			{
+				// The wave hasn't reached this part yet: still a normal wall.
+				drawWall(graphics, plane, cx1, cy1, cx2, cy2, base, 1.0, 0);
+			}
+			else if (t < SURGE_MS)
+			{
+				double k = easeOut(t / SURGE_MS);
+				drawWall(graphics, plane, cx1, cy1, cx2, cy2, base, 1 + SURGE_HEIGHT * k, k);
+			}
+			else if (t < SURGE_MS + DROP_MS)
+			{
+				double k = easeIn((t - SURGE_MS) / DROP_MS);
+				drawWall(graphics, plane, cx1, cy1, cx2, cy2, base, (1 + SURGE_HEIGHT) * (1 - k), 1 - k);
+			}
+			return;
+		}
+	}
+
+	/**
+	 * Notice chunks that were locked last frame and are unlocked now, and start their
+	 * opening wave from where the player is standing. Chunks just coming into view
+	 * (a new area loading) aren't unlocks, so they don't animate.
+	 */
+	private void noticeUnlocks(Map<Integer, Boolean> unlocked, int baseX, int baseY, Player local, long now)
+	{
+		openings.removeIf(o -> !o.waiting() && now - o.startedAt > WAVE_LIFETIME_MS);
+
+		// Waiting walls open once every reveal card has been flipped AND cleared off the
+		// screen (a flipped card stays up until it's clicked away), from wherever the
+		// player is standing at that moment.
+		if (!openings.isEmpty() && plugin.getUnrevealedTaskIds().isEmpty() && !cards.isActive())
+		{
+			net.runelite.api.coords.WorldPoint at = local.getWorldLocation();
+			for (Opening opening : openings)
+			{
+				if (opening.waiting())
+				{
+					opening.startedAt = now;
+					opening.originX = at.getX();
+					opening.originY = at.getY();
+				}
+			}
+		}
+
+		Map<Integer, Boolean> current = new HashMap<>();
+		int scene = Constants.SCENE_SIZE;
+		for (int rx = baseX >> 6; rx <= (baseX + scene - 1) >> 6; rx++)
+		{
+			for (int ry = baseY >> 6; ry <= (baseY + scene - 1) >> 6; ry++)
+			{
+				int regionId = (rx << 8) | ry;
+				boolean open = isUnlocked(unlocked, regionId);
+				current.put(regionId, open);
+				if (open && Boolean.FALSE.equals(lastSeen.get(regionId)))
+				{
+					// Starts on a later frame: straight away if no cards were dealt,
+					// otherwise once they've all been flipped.
+					openings.add(new Opening(regionId));
+				}
+			}
+		}
+		lastSeen.clear();
+		lastSeen.putAll(current);
+	}
+
+	private static double easeOut(double t)
+	{
+		return 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);
+	}
+
+	private static double easeIn(double t)
+	{
+		double c = Math.max(0, Math.min(1, t));
+		return c * c;
+	}
+
+	/**
+	 * One wall panel standing on the edge between two scene grid corners. {@code scale}
+	 * is its height (1 = normal, more during an opening surge, 0 = gone); {@code glow}
+	 * (0 to 1) brightens it towards white at the top of the surge.
+	 */
+	private void drawWall(Graphics2D graphics, int plane, int cx1, int cy1, int cx2, int cy2,
+		Color wallColor, double scale, double glow)
+	{
+		int height = (int) Math.round(WALL_HEIGHT * scale);
+		if (height <= 0)
+		{
+			return;
+		}
+		Color base = glow > 0 ? brighten(wallColor, glow * 0.6) : wallColor;
+		Color clear = new Color(base.getRed(), base.getGreen(), base.getBlue(), 0);
+		Color line = new Color(base.getRed(), base.getGreen(), base.getBlue(), Math.min(255, base.getAlpha() * 2));
+
 		LocalPoint a = new LocalPoint(cx1 * LOCAL_TILE, cy1 * LOCAL_TILE);
 		LocalPoint b = new LocalPoint(cx2 * LOCAL_TILE, cy2 * LOCAL_TILE);
 		Point groundA = Perspective.localToCanvas(client, a, plane);
 		Point groundB = Perspective.localToCanvas(client, b, plane);
-		Point topA = Perspective.localToCanvas(client, a, plane, WALL_HEIGHT);
-		Point topB = Perspective.localToCanvas(client, b, plane, WALL_HEIGHT);
+		Point topA = Perspective.localToCanvas(client, a, plane, height);
+		Point topB = Perspective.localToCanvas(client, b, plane, height);
 		if (groundA == null || groundB == null || topA == null || topB == null)
 		{
 			return;
@@ -173,5 +348,16 @@ public class ChunkWallOverlay extends Overlay
 		// A stronger line along the ground so the exact border is clear.
 		graphics.setPaint(line);
 		graphics.drawLine(groundA.getX(), groundA.getY(), groundB.getX(), groundB.getY());
+	}
+
+	/** Blend towards white, keeping the colour's transparency (a little more opaque when bright). */
+	private static Color brighten(Color c, double amount)
+	{
+		double k = Math.max(0, Math.min(1, amount));
+		return new Color(
+			(int) Math.round(c.getRed() + (255 - c.getRed()) * k),
+			(int) Math.round(c.getGreen() + (255 - c.getGreen()) * k),
+			(int) Math.round(c.getBlue() + (255 - c.getBlue()) * k),
+			(int) Math.round(Math.min(255, c.getAlpha() * (1 + k))));
 	}
 }
