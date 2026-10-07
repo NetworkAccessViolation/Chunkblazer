@@ -2140,12 +2140,12 @@ public class TaskBrowserOverlay extends Overlay
 		int pointsWidth = fm.stringWidth(points);
 		graphics.setColor(POINTS);
 		graphics.drawString(points, rightEdge - pointsWidth, row.y + 16);
-		boolean canDo = plugin.meetsLevelRequirement(task);
+		boolean canDo = canDo(task);
 		graphics.setColor(canDo ? Color.WHITE : NO_LEVEL);
 		String name = task.getName() == null ? taskId : task.getName();
 		if (!canDo)
 		{
-			name += " (Lvl " + task.getLevelRequirement() + ")";
+			name += " " + levelNote(task);
 		}
 		graphics.drawString(fit(fm, name, rightEdge - pointsWidth - 10 - textX), textX, row.y + 16);
 
@@ -2305,4 +2305,22 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.drawPolygon(star);
 		}
 	}
+
+	/** The task's own level check, plus any real requirements it's missing (see TaskTargetExtras). */
+	private boolean canDo(NuzlockeTask task)
+	{
+		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
+	}
+
+	/** "(Lvl 30)" or "(Needs 70 Defence)", for a task you can't do yet. */
+	private String levelNote(NuzlockeTask task)
+	{
+		String missing = TaskTargetExtras.missingRequirement(client, task);
+		if (!plugin.meetsLevelRequirement(task) || missing == null)
+		{
+			return "(Lvl " + task.getLevelRequirement() + ")";
+		}
+		return "(Needs " + missing + ")";
+	}
+
 }
