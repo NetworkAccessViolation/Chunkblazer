@@ -99,6 +99,24 @@ class ServerStateMergeTest
 		m.invoke(plugin, pdata);
 	}
 
+	/** DavidJans: a new device showed the starting 2 Boss Tokens instead of the account's 0. */
+	@Test
+	void loginAdoptsServerBossTokens() throws Exception
+	{
+		Method m = ChunkBlazerPlugin.class.getDeclaredMethod("adoptServerBossTokens", PlayerLoginResponse.PlayerData.class);
+		m.setAccessible(true);
+
+		writes.put("bossTokens", "2"); // a fresh install's starting grant
+		PlayerLoginResponse.PlayerData spent = pdata(null, null);
+		spent.setBossTokens(0);
+		m.invoke(plugin, spent);
+		assertEquals("0", writes.get("bossTokens"), "the server's 0 replaces the install's starting 2");
+
+		writes.put("bossTokens", "2");
+		m.invoke(plugin, pdata(null, null));
+		assertEquals("2", writes.get("bossTokens"), "an older server sends nothing; the local value stays");
+	}
+
 	private PlayerLoginResponse.PlayerData pdata(List<Integer> regions, List<String> tasks)
 	{
 		PlayerLoginResponse.PlayerData d = new PlayerLoginResponse.PlayerData();

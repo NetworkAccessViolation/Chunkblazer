@@ -40,6 +40,10 @@ import net.runelite.client.config.Keybind;
  * Only the names, descriptions, sections and positions are about presentation. Every
  * keyName is unchanged, so players' saved choices carry across any reshuffle here.
  */
+// The task window's cogwheel controls the task tracker style, auto-tracking, the saved
+// tasks tracker, the outline mode, chunk borders, walls and the chunk name banner. Those
+// items are hidden here (their keys, and players' saved choices, are unchanged); their
+// colours stay visible below, where RuneLite's colour picker works.
 @ConfigGroup("chunkblazer")
 public interface ChunkBlazerConfig extends Config
 {
@@ -317,11 +321,12 @@ public interface ChunkBlazerConfig extends Config
 		name = "Task Tracker",
 		description = "How the task you select is shown in game. Off shows it in the side panel instead",
 		section = taskSection,
-		position = 1
+		position = 1,
+		hidden = true
 	)
 	default TaskTrackerStyle taskTrackerStyle()
 	{
-		return TaskTrackerStyle.OFF;
+		return TaskTrackerStyle.VANI;
 	}
 
 	@ConfigItem(
@@ -343,7 +348,8 @@ public interface ChunkBlazerConfig extends Config
 		description = "When you use an NPC or object a task needs (attack, talk, chop, mine...), track its "
 			+ "lowest-points task. A task you tracked yourself for that target is kept.",
 		section = taskSection,
-		position = 6
+		position = 6,
+		hidden = true
 	)
 	default boolean autoTrackTasks()
 	{
@@ -356,7 +362,8 @@ public interface ChunkBlazerConfig extends Config
 		description = "A bar at the bottom of the screen that opens a list of your saved tasks, nearest first "
 			+ "(Alt + drag to move it)",
 		section = taskSection,
-		position = 7
+		position = 7,
+		hidden = true
 	)
 	default boolean showSavedTaskTracker()
 	{
@@ -368,11 +375,44 @@ public interface ChunkBlazerConfig extends Config
 		name = "Outline Task Targets",
 		description = "Outline NPCs and objects that one of your active tasks needs",
 		section = taskSection,
-		position = 3
+		position = 3,
+		hidden = true
 	)
 	default boolean highlightTaskTargets()
 	{
-		return false;
+		return true;
+	}
+
+	/**
+	 * Which NPCs and objects get a task outline. Set from the task window's cogwheel.
+	 * Until it's chosen there, follows the older on/off "Outline Task Targets" setting,
+	 * so upgrading doesn't change anyone's outlines.
+	 */
+	@ConfigItem(
+		keyName = "highlightEquipItems",
+		name = "Highlight Task Items",
+		description = "Outline items with tasks (gear for equip tasks, tools like a knife or tinderbox) in "
+			+ "your inventory, bank and shops (set from the task window's cogwheel)",
+		section = taskSection,
+		position = 3,
+		hidden = true
+	)
+	default boolean highlightEquipItems()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "taskOutlineMode",
+		name = "Outline Mode",
+		description = "Which task targets get an outline (set from the task window's cogwheel)",
+		section = taskSection,
+		position = 3,
+		hidden = true
+	)
+	default OutlineMode taskOutlineMode()
+	{
+		return highlightTaskTargets() ? OutlineMode.ALL : OutlineMode.OFF;
 	}
 
 	@ConfigItem(
@@ -495,11 +535,12 @@ public interface ChunkBlazerConfig extends Config
 		name = "Chunk Borders",
 		description = "Draw chunk borders on the ground in the game world",
 		section = inGameSection,
-		position = 0
+		position = 0,
+		hidden = true
 	)
 	default boolean showSceneChunks()
 	{
-		return true;
+		return false;
 	}
 
 	@ConfigItem(
@@ -507,7 +548,8 @@ public interface ChunkBlazerConfig extends Config
 		name = "Locked Chunk Walls",
 		description = "Draw a see-through wall along the border between unlocked and locked chunks",
 		section = inGameSection,
-		position = 1
+		position = 1,
+		hidden = true
 	)
 	default boolean showChunkWalls()
 	{
@@ -532,7 +574,8 @@ public interface ChunkBlazerConfig extends Config
 		name = "Chunk Name Banner",
 		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
 		section = inGameSection,
-		position = 3
+		position = 3,
+		hidden = true
 	)
 	default boolean showChunkNamePopups()
 	{

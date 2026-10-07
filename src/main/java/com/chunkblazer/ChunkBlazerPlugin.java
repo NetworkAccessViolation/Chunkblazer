@@ -3946,6 +3946,19 @@ public class ChunkBlazerPlugin extends Plugin
 			merged.size() - before, before, merged.size());
 	}
 
+	/**
+	 * Take the server's Boss Token balance at login. A new device or profile would
+	 * otherwise show the starting 2 until its first successful sync. Older servers
+	 * don't send it (null), so the local value stays.
+	 */
+	private void adoptServerBossTokens(PlayerLoginResponse.PlayerData pdata)
+	{
+		if (pdata != null && pdata.getBossTokens() != null)
+		{
+			setAccountState("bossTokens", pdata.getBossTokens());
+		}
+	}
+
 	/** Union the server's completed tasks into local config. */
 	private void mergeCompletedTasksFromServer(PlayerLoginResponse.PlayerData pdata)
 	{
@@ -4330,6 +4343,7 @@ public class ChunkBlazerPlugin extends Plugin
 					acInt("pointsSpent", 0), pdata.getPointsSpent());
 				setAccountState("pointsSpent", pdata.getPointsSpent());
 			}
+			adoptServerBossTokens(pdata);
 			// AFTER the monotonic merge, deliberately. The corrupt figure this
 			// repairs is already stored server-side, so running it any earlier
 			// would just see the server's copy restored over the top of it. The
