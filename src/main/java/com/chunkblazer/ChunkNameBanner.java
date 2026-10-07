@@ -30,6 +30,7 @@ import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Composite;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
@@ -40,12 +41,16 @@ import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.client.ui.FontManager;
+import net.runelite.client.ui.overlay.Overlay;
+import net.runelite.client.ui.overlay.OverlayLayer;
+import net.runelite.client.ui.overlay.OverlayPosition;
 
 /**
  * Pokemon-style area sign: when the player walks into a different chunk, a small
  * banner with the chunk's name slides down from the top of the game view, holds for a
  * moment, then slides back up. A second line says whether the chunk is unlocked or,
- * if not, what it costs. Drawn by ChunkBlazerSceneOverlay.
+ * if not, what it costs. Its own overlay on the always-on-top layer, so game windows,
+ * the chatbox and other overlays never cover it; registered by TaskBrowserOverlay.
  *
  * In a chunk you haven't unlocked, the banner stays up for as long as you're there.
  * It only goes once you unlock the chunk (it flashes "Unlocked!" first) or walk into
@@ -53,7 +58,7 @@ import net.runelite.client.ui.FontManager;
  * before the new one comes in.
  */
 @Singleton
-public class ChunkNameBanner
+public class ChunkNameBanner extends Overlay
 {
 	private static final long SLIDE_MS = 350;
 	// Quicker exit when another banner is waiting to come in.
@@ -122,26 +127,32 @@ public class ChunkNameBanner
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
+
+		setPosition(OverlayPosition.DYNAMIC);
+		setLayer(OverlayLayer.ALWAYS_ON_TOP);
+		setPriority(PRIORITY_HIGHEST);
 	}
 
 	/** Called every frame; watches for a chunk change and draws the banner while it's showing. */
-	public void render(Graphics2D graphics)
+	@Override
+	public Dimension render(Graphics2D graphics)
 	{
 		if (!config.showChunkNamePopups())
 		{
 			phase = Phase.HIDDEN;
 			pending = null;
-			return;
+			return null;
 		}
 		checkForNewChunk();
 		long now = System.currentTimeMillis();
 		advance(now);
 		if (phase == Phase.HIDDEN)
 		{
-			return;
+			return null;
 		}
 		double flash = flashAt < 0 ? 0 : Math.max(0, 1 - (now - flashAt) / (double) FLASH_MS);
 		draw(graphics, shownAmount(now), flash);
+		return null;
 	}
 
 	/** Move the animation along: finish sliding in, wait, react to an unlock, slide out. */

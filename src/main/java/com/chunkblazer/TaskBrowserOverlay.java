@@ -87,8 +87,8 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * Tabs: Active (everything you can work on now), Saved (tasks you've starred) and
  * Archived (tasks put aside with the book button; see TaskArchive).
  * Search matches name, description, category and chunk. "Current chunk" limits the
- * list to the chunk you're standing in and follows you as you move. Holding the map
- * unlock key (Shift by default) and clicking an unlocked chunk on the world map opens
+ * list to the chunk you're standing in and follows you as you move. Holding the view
+ * chunk tasks key (Ctrl by default) and clicking an unlocked chunk on the world map opens
  * the window on that chunk's tasks. Filter narrows the list (a
  * skill, talk-to tasks, quests, boss chunks...); Sort only changes the order, each
  * option ascending or descending. Click a star to save a task, the arrow to expand
@@ -269,6 +269,8 @@ public class TaskBrowserOverlay extends Overlay
 	private final ClientThread clientThread;
 	private final SavedTaskTracker savedTracker;
 	private final TaskItemOverlay itemOverlay;
+	private final ChunkNameBanner banner;
+	private final WorldMapLegendOverlay legend;
 
 	private volatile boolean open;
 	private volatile String search = "";
@@ -276,7 +278,7 @@ public class TaskBrowserOverlay extends Overlay
 	private volatile boolean currentChunkOnly;
 	// A chunk picked from the world map; while set, only its tasks are listed.
 	private volatile String pinnedChunk;
-	private volatile boolean unlockKeyHeld;
+	private volatile boolean tasksKeyHeld;
 	private int lastRegionSeen = -1;
 	private final Set<String> expanded = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private volatile Tab tab = Tab.ACTIVE;
@@ -405,9 +407,9 @@ public class TaskBrowserOverlay extends Overlay
 		@Override
 		public void keyPressed(KeyEvent event)
 		{
-			if (config.worldMapUnlockKey().matches(event))
+			if (config.worldMapTasksKey().matches(event))
 			{
-				unlockKeyHeld = true;
+				tasksKeyHeld = true;
 			}
 			if (open && !searchFocused && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 			{
@@ -419,9 +421,9 @@ public class TaskBrowserOverlay extends Overlay
 		@Override
 		public void keyReleased(KeyEvent event)
 		{
-			if (config.worldMapUnlockKey().matches(event))
+			if (config.worldMapTasksKey().matches(event))
 			{
-				unlockKeyHeld = false;
+				tasksKeyHeld = false;
 			}
 		}
 	};
@@ -431,7 +433,7 @@ public class TaskBrowserOverlay extends Overlay
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
 		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
 		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker,
-		TaskItemOverlay itemOverlay)
+		TaskItemOverlay itemOverlay, ChunkNameBanner banner, WorldMapLegendOverlay legend)
 	{
 		this.client = client;
 		this.plugin = plugin;
@@ -448,6 +450,8 @@ public class TaskBrowserOverlay extends Overlay
 		this.clientThread = clientThread;
 		this.savedTracker = savedTracker;
 		this.itemOverlay = itemOverlay;
+		this.banner = banner;
+		this.legend = legend;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -463,6 +467,9 @@ public class TaskBrowserOverlay extends Overlay
 		eventBus.register(this);
 		savedTracker.startUp();
 		overlayManager.add(itemOverlay);
+		// Always-on-top overlays: the chunk name banner and the world map colour legend.
+		overlayManager.add(banner);
+		overlayManager.add(legend);
 	}
 
 	public void shutDown()
@@ -475,6 +482,8 @@ public class TaskBrowserOverlay extends Overlay
 		eventBus.unregister(this);
 		savedTracker.shutDown();
 		overlayManager.remove(itemOverlay);
+		overlayManager.remove(banner);
+		overlayManager.remove(legend);
 	}
 
 	/** Open or close the window (the Points orb's "Tasks" option). */
@@ -530,14 +539,14 @@ public class TaskBrowserOverlay extends Overlay
 	}
 
 	/**
-	 * Map unlock key + click on an UNLOCKED chunk on the world map: show that chunk's
+	 * View chunk tasks key + click on an UNLOCKED chunk on the world map: show that chunk's
 	 * tasks. (The same key + click on an unlockable chunk is the plugin's unlock, which
 	 * this leaves alone.)
 	 */
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		if (!unlockKeyHeld || client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) == null)
+		if (!tasksKeyHeld || client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) == null)
 		{
 			return;
 		}
@@ -569,7 +578,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		if (!event.isFocused())
 		{
-			unlockKeyHeld = false;
+			tasksKeyHeld = false;
 		}
 	}
 

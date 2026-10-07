@@ -52,17 +52,15 @@ public class ChunkBlazerSceneOverlay extends Overlay
 	private final ChunkBlazerConfig config;
 	private final ChunkBorderRenderer renderer;
 	private final ChunkWallOverlay walls;
-	private final ChunkNameBanner banner;
 
 	@Inject
 	public ChunkBlazerSceneOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
-		ChunkWallOverlay walls, ChunkNameBanner banner)
+		ChunkWallOverlay walls)
 	{
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
 		this.walls = walls;
-		this.banner = banner;
 		this.renderer = new ChunkBorderRenderer();
 
 		setPosition(OverlayPosition.DYNAMIC);
@@ -76,8 +74,7 @@ public class ChunkBlazerSceneOverlay extends Overlay
 		// Walls along the unlocked/locked boundary have their own on/off setting, so
 		// they're drawn whether or not the chunk border lines are.
 		walls.render(graphics);
-		// Chunk name sign when walking into a new chunk (its own on/off setting too).
-		banner.render(graphics);
+		// (The chunk name banner is its own always-on-top overlay: ChunkNameBanner.)
 
 		if (!config.showSceneChunks())
 		{
