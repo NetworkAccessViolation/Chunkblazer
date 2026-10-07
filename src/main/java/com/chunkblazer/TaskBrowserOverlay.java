@@ -99,6 +99,9 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * Opening the window then shows just those tasks in a New tab; closing it marks
  * them seen, and the window goes back to normal. Seen tasks are stored per account.
  *
+ * The cogwheel (next to the X) holds display settings: task box style, auto-tracking,
+ * the saved tasks tracker, outline mode, chunk borders, walls and the name banner.
+ *
  * Drag the "ChunkBlazer Tasks" title to move the window; it stays where you put it
  * until the client restarts (kept on screen if the window is resized).
  *
@@ -204,7 +207,7 @@ public class TaskBrowserOverlay extends Overlay
 
 	enum Menu
 	{
-		NONE, SORT, FILTER, SKILLS, TIERS
+		NONE, SORT, FILTER, SKILLS, TIERS, SETTINGS
 	}
 
 	/**
@@ -265,6 +268,7 @@ public class TaskBrowserOverlay extends Overlay
 	private final ChatboxPanelManager chatboxPanelManager;
 	private final ClientThread clientThread;
 	private final SavedTaskTracker savedTracker;
+	private final TaskItemOverlay itemOverlay;
 
 	private volatile boolean open;
 	private volatile String search = "";
@@ -426,7 +430,8 @@ public class TaskBrowserOverlay extends Overlay
 	public TaskBrowserOverlay(Client client, ChunkBlazerPlugin plugin, ConfigManager configManager,
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
 		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
-		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker)
+		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker,
+		TaskItemOverlay itemOverlay)
 	{
 		this.client = client;
 		this.plugin = plugin;
@@ -442,6 +447,7 @@ public class TaskBrowserOverlay extends Overlay
 		this.chatboxPanelManager = chatboxPanelManager;
 		this.clientThread = clientThread;
 		this.savedTracker = savedTracker;
+		this.itemOverlay = itemOverlay;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -456,6 +462,7 @@ public class TaskBrowserOverlay extends Overlay
 		keyManager.registerKeyListener(keys);
 		eventBus.register(this);
 		savedTracker.startUp();
+		overlayManager.add(itemOverlay);
 	}
 
 	public void shutDown()
@@ -467,6 +474,7 @@ public class TaskBrowserOverlay extends Overlay
 		keyManager.unregisterKeyListener(keys);
 		eventBus.unregister(this);
 		savedTracker.shutDown();
+		overlayManager.remove(itemOverlay);
 	}
 
 	/** Open or close the window (the Points orb's "Tasks" option). */
@@ -1133,7 +1141,12 @@ public class TaskBrowserOverlay extends Overlay
 		int searchX = x + PAD + graphics.getFontMetrics(bold).stringWidth("ChunkBlazer Tasks") + 12;
 		String chunkLabel = pinnedChunk != null ? fit(graphics.getFontMetrics(small), pinnedChunk, 120) : "Current chunk";
 		int chunkToggleWidth = graphics.getFontMetrics(small).stringWidth(chunkLabel) + 18;
-		Rectangle chunkToggle = new Rectangle(close.x - 8 - chunkToggleWidth, y + 6, chunkToggleWidth, 19);
+		// Settings cogwheel, just left of the close X.
+		Rectangle cog = new Rectangle(close.x - 22, y + 7, 16, 16);
+		hits.add(new Hit(cog, () -> menu = menu == Menu.SETTINGS ? Menu.NONE : Menu.SETTINGS));
+		drawCog(graphics, cog.x + 8, cog.y + 8,
+			menu == Menu.SETTINGS || (!menuOpen && cog.contains(mx, my)) ? Color.WHITE : SUBTEXT);
+		Rectangle chunkToggle = new Rectangle(cog.x - 8 - chunkToggleWidth, y + 6, chunkToggleWidth, 19);
 		Rectangle searchBox = new Rectangle(searchX, y + 6, chunkToggle.x - 8 - searchX, 19);
 		drawSearch(graphics, small, searchBox, mx, my, menuOpen);
 		drawChunkToggle(graphics, small, chunkToggle, chunkLabel, mx, my, menuOpen);
@@ -1300,6 +1313,10 @@ public class TaskBrowserOverlay extends Overlay
 		else if (menu == Menu.TIERS)
 		{
 			drawTierMenu(graphics, small, filterButton, mx, my);
+		}
+		else if (menu == Menu.SETTINGS)
+		{
+			drawSettingsMenu(graphics, small, cog, window, mx, my);
 		}
 
 		// Work out what the mouse is over, for the click handler. With a menu open,
@@ -1870,6 +1887,158 @@ public class TaskBrowserOverlay extends Overlay
 		String info = left + (left == 1 ? " level-up left" : " level-ups left")
 			+ " - next: level " + requiredLevel(entry.members.get(0));
 		graphics.drawString(info, textX, row.y + 30);
+	}
+
+	// --- Settings (cogwheel) --------------------------------------------------
+
+	private static final String CONFIG_GROUP_KEY = "chunkblazer";
+	private static final int SETTINGS_WIDTH = 236;
+
+	/** One option of a multiple-choice setting: its label and the value it stores. */
+	private static final class Choice
+	{
+		final String label;
+		final Object value;
+
+		Choice(String label, Object value)
+		{
+			this.label = label;
+			this.value = value;
+		}
+	}
+
+	/**
+	 * The cogwheel menu. Each line changes the same setting as before (same key), so
+	 * choices carry over; these settings are hidden from RuneLite's settings panel, and
+	 * their colours stay there.
+	 */
+	private void drawSettingsMenu(Graphics2D graphics, Font font, Rectangle cog, Rectangle window, int mx, int my)
+	{
+		int rows = 8;
+		int boxX = Math.max(window.x + 2, cog.x + cog.width - SETTINGS_WIDTH);
+		Rectangle box = new Rectangle(boxX, cog.y + cog.height + 4, SETTINGS_WIDTH, rows * MENU_ROW + 6);
+		drawMenuBox(graphics, box);
+		graphics.setFont(font);
+
+		int rowY = box.y + 3;
+		drawChoiceRow(graphics, box, rowY, "Task box", "taskTrackerStyle", config.taskTrackerStyle(), mx, my,
+			new Choice("Net", TaskTrackerStyle.NET),
+			new Choice("Vani", TaskTrackerStyle.VANI),
+			new Choice("Off", TaskTrackerStyle.OFF));
+		rowY += MENU_ROW;
+		drawChoiceRow(graphics, box, rowY, "Outlines", "taskOutlineMode", config.taskOutlineMode(), mx, my,
+			new Choice("All", OutlineMode.ALL),
+			new Choice("Saved", OutlineMode.SAVED),
+			new Choice("Can do", OutlineMode.CAN_DO),
+			new Choice("Off", OutlineMode.OFF));
+		rowY += MENU_ROW;
+		drawToggleRow(graphics, box, rowY, "Auto-track tasks", "autoTrackTasks", config.autoTrackTasks(), mx, my);
+		rowY += MENU_ROW;
+		drawToggleRow(graphics, box, rowY, "Saved tasks tracker", "showSavedTaskTracker",
+			config.showSavedTaskTracker(), mx, my);
+		rowY += MENU_ROW;
+		drawToggleRow(graphics, box, rowY, "Chunk borders", "showSceneChunks", config.showSceneChunks(), mx, my);
+		rowY += MENU_ROW;
+		drawToggleRow(graphics, box, rowY, "Locked chunk walls", "showChunkWalls", config.showChunkWalls(), mx, my);
+		rowY += MENU_ROW;
+		drawToggleRow(graphics, box, rowY, "Chunk name banner", "showChunkNamePopups",
+			config.showChunkNamePopups(), mx, my);
+		rowY += MENU_ROW;
+		drawToggleRow(graphics, box, rowY, "Highlight task items", "highlightEquipItems",
+			config.highlightEquipItems(), mx, my);
+
+
+		// Clicks inside the menu (between buttons) do nothing rather than closing it.
+		menuHits.add(new Hit(box, () ->
+		{
+		}));
+	}
+
+	/** A label on the left and a checkbox on the right; clicking the row flips it. */
+	private void drawToggleRow(Graphics2D graphics, Rectangle box, int rowY, String label, String key,
+		boolean on, int mx, int my)
+	{
+		Rectangle row = new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW);
+		menuHits.add(new Hit(row, () -> configManager.setConfiguration(CONFIG_GROUP_KEY, key, !on)));
+		drawCheckRow(graphics, row, label, on, null, mx, my);
+	}
+
+	/** Draws one checkbox row; {@code labelColor} overrides the label's colour (null = normal). */
+	private void drawCheckRow(Graphics2D graphics, Rectangle row, String label, boolean on, Color labelColor,
+		int mx, int my)
+	{
+		boolean hover = row.contains(mx, my);
+		if (hover)
+		{
+			graphics.setColor(ROW_HOVER);
+			graphics.fillRect(row.x, row.y, row.width, row.height);
+		}
+		FontMetrics fm = graphics.getFontMetrics();
+		graphics.setColor(labelColor != null ? labelColor : on || hover ? Color.WHITE : SUBTEXT);
+		graphics.drawString(label, row.x + 6, row.y + (MENU_ROW + fm.getAscent()) / 2 - 2);
+
+		int size = 10;
+		int bx = row.x + row.width - size - 8;
+		int by = row.y + (MENU_ROW - size) / 2;
+		graphics.setColor(SEARCH_BACK);
+		graphics.fillRect(bx, by, size, size);
+		graphics.setColor(on || hover ? TITLE : BORDER);
+		graphics.drawRect(bx, by, size, size);
+		if (on)
+		{
+			graphics.fillRect(bx + 3, by + 3, size - 5, size - 5);
+		}
+	}
+
+	/** A label on the left and a row of small buttons on the right, the chosen one lit. */
+	private void drawChoiceRow(Graphics2D graphics, Rectangle box, int rowY, String label, String key,
+		Object current, int mx, int my, Choice... choices)
+	{
+		FontMetrics fm = graphics.getFontMetrics();
+		graphics.setColor(SUBTEXT);
+		graphics.drawString(label, box.x + 8, rowY + (MENU_ROW + fm.getAscent()) / 2 - 2);
+
+		int right = box.x + box.width - 6;
+		int x = right;
+		for (int i = choices.length - 1; i >= 0; i--)
+		{
+			x -= fm.stringWidth(choices[i].label) + 10;
+		}
+		for (Choice choice : choices)
+		{
+			int w = fm.stringWidth(choice.label) + 8;
+			Rectangle button = new Rectangle(x, rowY + 2, w, MENU_ROW - 4);
+			boolean selected = choice.value.equals(current);
+			boolean hover = button.contains(mx, my);
+			menuHits.add(new Hit(button, () -> configManager.setConfiguration(CONFIG_GROUP_KEY, key, choice.value)));
+			graphics.setColor(selected ? TAB_ON : hover ? ROW_HOVER : TAB_OFF);
+			graphics.fillRect(button.x, button.y, button.width, button.height);
+			if (selected)
+			{
+				graphics.setColor(TITLE);
+				graphics.drawRect(button.x, button.y, button.width - 1, button.height - 1);
+			}
+			graphics.setColor(selected || hover ? Color.WHITE : SUBTEXT);
+			graphics.drawString(choice.label, button.x + 4, button.y + (button.height + fm.getAscent()) / 2 - 1);
+			x += w + 2;
+		}
+	}
+
+	/** A small gear: eight teeth around a ring. */
+	private static void drawCog(Graphics2D graphics, int cx, int cy, Color color)
+	{
+		Stroke previous = graphics.getStroke();
+		graphics.setColor(color);
+		graphics.setStroke(new BasicStroke(2f));
+		for (int i = 0; i < 8; i++)
+		{
+			double a = i * Math.PI / 4;
+			graphics.drawLine(cx + (int) Math.round(4 * Math.cos(a)), cy + (int) Math.round(4 * Math.sin(a)),
+				cx + (int) Math.round(7 * Math.cos(a)), cy + (int) Math.round(7 * Math.sin(a)));
+		}
+		graphics.setStroke(new BasicStroke(1.6f));
+		graphics.drawOval(cx - 4, cy - 4, 8, 8);
+		graphics.setStroke(previous);
 	}
 
 	private void drawMenuBox(Graphics2D graphics, Rectangle box)

@@ -67,12 +67,14 @@ import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.WallObjectDespawned;
 import net.runelite.api.events.WallObjectSpawned;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.outline.ModelOutlineRenderer;
 import net.runelite.client.util.Text;
+import net.runelite.api.gameval.InterfaceID;
 
 /**
  * Outlines every NPC and object in the scene that an active (unfinished) task
@@ -92,6 +94,13 @@ import net.runelite.client.util.Text;
  * The outline is the normal colour if at least one of the target's tasks is
  * doable (level requirement met), and the "unavailable" colour if none are.
  * Archived tasks (see TaskArchive) are left out entirely: no outline, no menu entry.
+ *
+ * Which targets get an outline is the Outline Mode (task window cogwheel): all task
+ * targets, only those of saved tasks, only those with a task you have the level
+ * for, or none. The right-click Tasks menu always lists every task.
+ *
+ * Inventory tools get a Tasks menu too (knife: fletching, tinderbox: firemaking,
+ * pestle and mortar: herblore...; see TaskTargetExtras.matchesItem).
  *
  * Auto-tracking (setting "Auto-Track Tasks"): using a task target (attack, talk,
  * chop, mine, cook on it...) tracks that target's lowest-points task in the task box.
@@ -221,45 +230,50 @@ public class TaskTargetHighlighter extends Overlay
 
 		// Desert
 		BOSS_ENTRANCES.put(19053, new Entrance(12848)); // Kalphite Queen: tunnel entrance
-		// BOSS_ENTRANCES.put(?, new Entrance(13354)); // Tombs of Amascut
-		// BOSS_ENTRANCES.put(?, new Entrance(13870, "leviathan_")); // Leviathan
-		// BOSS_ENTRANCES.put(?, new Entrance(13870, "whisperer_")); // The Whisperer
-		// BOSS_ENTRANCES.put(?, new Entrance(13870, "duke_")); // Duke Sucellus
-		// BOSS_ENTRANCES.put(?, new Entrance(13870, "vardorvis_")); // Vardorvis
+		BOSS_ENTRANCES.put(23609, new Entrance(12848)); // Kalphite Queen: entrance
+		BOSS_ENTRANCES.put(46089, new Entrance(13354)); // Tombs of Amascut: entrance
+		BOSS_ENTRANCES.put(49212, new Entrance(13870, "leviathan_")); // Leviathan: rowboat
+		BOSS_ENTRANCES.put(49481, new Entrance(13870, "whisperer_")); // The Whisperer: teleporter
+		BOSS_ENTRANCES.put(49513, new Entrance(13870, "duke_")); // Duke Sucellus: heavy door
+		BOSS_ENTRANCES.put(49495, new Entrance(13870, "vardorvis_")); // Vardorvis: rocks
 
 		// Fremennik
 		BOSS_ENTRANCES.put(31990, new Entrance(9023)); // Vorkath: ice chunks
-		// BOSS_ENTRANCES.put(?, new Entrance(10042)); // Dagannoth Kings
-		// BOSS_ENTRANCES.put(?, new Entrance(11325)); // Phantom Muspah
-		// BOSS_ENTRANCES.put(?, new Entrance(11578, "gwd_graardor_")); // General Graardor
-		// BOSS_ENTRANCES.put(?, new Entrance(11578, "gwd_zilyana_")); // Commander Zilyana
-		// BOSS_ENTRANCES.put(?, new Entrance(11578, "gwd_kreearra_")); // Kree'arra
-		// BOSS_ENTRANCES.put(?, new Entrance(11578, "gwd_kril_")); // K'ril Tsutsaroth
-		// BOSS_ENTRANCES.put(?, new Entrance(11578, "gwd_nex_")); // Nex
+		BOSS_ENTRANCES.put(3831, new Entrance(10042)); // Dagannoth Kings: kings' ladder
+		BOSS_ENTRANCES.put(46596, new Entrance(11325)); // Phantom Muspah: crevice
+		BOSS_ENTRANCES.put(26503, new Entrance(11578, "gwd_graardor_")); // General Graardor: big door
+		BOSS_ENTRANCES.put(26504, new Entrance(11578, "gwd_zilyana_")); // Commander Zilyana: big door
+		BOSS_ENTRANCES.put(26502, new Entrance(11578, "gwd_kreearra_")); // Kree'arra: big door
+		BOSS_ENTRANCES.put(26505, new Entrance(11578, "gwd_kril_")); // K'ril Tsutsaroth: big door
+		BOSS_ENTRANCES.put(42934, new Entrance(11578, "gwd_nex_")); // Nex: door
 
 		// Karamja
-		// BOSS_ENTRANCES.put(?, new Entrance(11313, "inferno_")); // The Inferno
-		// BOSS_ENTRANCES.put(?, new Entrance(11313, "jad_")); // TzHaar Fight Cave
+		BOSS_ENTRANCES.put(30352, new Entrance(11313, "inferno_")); // The Inferno: entrance
+		BOSS_ENTRANCES.put(11833, new Entrance(11313, "jad_")); // TzHaar Fight Cave: cave entrance
 
 		// Morytania
-		// BOSS_ENTRANCES.put(?, new Entrance(14899)); // Phosani's Nightmare
-		// BOSS_ENTRANCES.put(?, new Entrance(14642)); // Theatre of Blood
+		BOSS_ENTRANCES.put(32637, new Entrance(14899)); // Phosani's Nightmare: entrance stairs
+		BOSS_ENTRANCES.put(32653, new Entrance(14642)); // Theatre of Blood: big entrance
+		BOSS_ENTRANCES.put(20666, new Entrance(14131)); // Barrows: warning sign
+		BOSS_ENTRANCES.put(61048, new Entrance(14132, "maggot_king")); // Maggot King (Castle Drakan): darkwood trees
 
 		// Tirannwn
 		BOSS_ENTRANCES.put(46241, new Entrance(8751)); // Zulrah: sacrificial boat
 		BOSS_ENTRANCES.put(46242, new Entrance(8751)); // Zulrah: sacrificial boat
-		// BOSS_ENTRANCES.put(?, new Entrance(12895)); // The Gauntlet
+		BOSS_ENTRANCES.put(10068, new Entrance(8751)); // Zulrah: sacrificial boat
+		BOSS_ENTRANCES.put(37340, new Entrance(12895)); // The (Corrupted) Gauntlet: entrance
 
 		// Varlamore
-		// BOSS_ENTRANCES.put(?, new Entrance(6706)); // Amoxliatl
-		// BOSS_ENTRANCES.put(?, new Entrance(5680)); // Moons of Peril
-		// BOSS_ENTRANCES.put(?, new Entrance(7216)); // Fortis Colosseum
-		// BOSS_ENTRANCES.put(?, new Entrance(5167)); // Doom of Mokhaiotl
+		BOSS_ENTRANCES.put(55355, new Entrance(6706)); // Amoxliatl: door
+		// BOSS_ENTRANCES.put(?, new Entrance(5680)); // Moons of Peril (Cam Torum)
+		BOSS_ENTRANCES.put(50751, new Entrance(7216)); // Fortis Colosseum: entrance
+		BOSS_ENTRANCES.put(57289, new Entrance(5167)); // Doom of Mokhaiotl: gap
+		BOSS_ENTRANCES.put(55401, new Entrance(5939)); // The Hueycoatl: entrance
 		// BOSS_ENTRANCES.put(?, new Entrance(5689)); // Yama
 
 		// Zeah
 		BOSS_ENTRANCES.put(34858, new Entrance(6711)); // Sarachnis: thick web
-		// BOSS_ENTRANCES.put(?, new Entrance(4919)); // Chambers of Xeric
+		BOSS_ENTRANCES.put(29777, new Entrance(4919)); // Chambers of Xeric: big door
 
 		for (Entrance entrance : BOSS_ENTRANCES.values())
 		{
@@ -325,6 +339,7 @@ public class TaskTargetHighlighter extends Overlay
 	private final ChunkBlazerConfig config;
 	private final ModelOutlineRenderer outlineRenderer;
 	private final TaskArchive archive;
+	private final TaskItemOverlay itemOverlay;
 
 	// The task auto-tracking last put in the task box. If the tracked task is anything
 	// else, the player chose it, and auto-tracking leaves it alone.
@@ -349,10 +364,19 @@ public class TaskTargetHighlighter extends Overlay
 	// by spawn/despawn events and fully rescanned when the wanted set changes.
 	private final Set<TileObject> trackedObjects = new HashSet<>();
 
+	private final ConfigManager configManager;
+
+	// Saved (starred) task ids, re-read only when the stored list changes.
+	private String savedRaw;
+	private Set<String> savedIds = Collections.emptySet();
+
 	@Inject
 	public TaskTargetHighlighter(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
-		ModelOutlineRenderer outlineRenderer, TaskArchive archive)
+		ModelOutlineRenderer outlineRenderer, TaskArchive archive, ConfigManager configManager,
+		TaskItemOverlay itemOverlay)
 	{
+		this.itemOverlay = itemOverlay;
+		this.configManager = configManager;
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
@@ -399,7 +423,7 @@ public class TaskTargetHighlighter extends Overlay
 	/** The outlines have their own checkbox; the Tasks menu belongs to the Yellow paint style. */
 	private boolean isEnabled()
 	{
-		return config.highlightTaskTargets() || isMenuEnabled() || config.autoTrackTasks();
+		return config.taskOutlineMode() != OutlineMode.OFF || isMenuEnabled() || config.autoTrackTasks();
 	}
 
 	private boolean isMenuEnabled()
@@ -465,6 +489,28 @@ public class TaskTargetHighlighter extends Overlay
 			{
 				addTask(npcRuleMap, npcRule, task);
 			}
+
+			// UI-only extras for tasks with no ids of their own (see TaskTargetExtras).
+			if (!hasOwnTargets(task))
+			{
+				for (Integer id : TaskTargetExtras.objectIds(task))
+				{
+					addTask(objects, id, task);
+				}
+				for (Integer id : TaskTargetExtras.npcIds(task))
+				{
+					addTask(npcs, id, task);
+				}
+				for (Rule rule : TaskTargetExtras.objectRules(task))
+				{
+					addTask(objectRuleMap, rule, task);
+				}
+				Rule extraNpcRule = TaskTargetExtras.npcRule(task);
+				if (extraNpcRule != null)
+				{
+					addTask(npcRuleMap, extraNpcRule, task);
+				}
+			}
 		}
 
 		boolean objectsChanged = !objects.keySet().equals(objectTasks.keySet())
@@ -481,6 +527,27 @@ public class TaskTargetHighlighter extends Overlay
 		{
 			rescanScene();
 		}
+	}
+
+	/** True if the task data itself names the NPCs or objects this task needs. */
+	private static boolean hasOwnTargets(NuzlockeTask task)
+	{
+		TargetNpc target = task.getTargetNpc();
+		if (target != null && target.getNpcIds() != null && !target.getNpcIds().isEmpty())
+		{
+			return true;
+		}
+		if (task.getRequiredObjects() != null)
+		{
+			for (RequiredObject ro : task.getRequiredObjects())
+			{
+				if (ro != null && ro.getObjectIds() != null && !ro.getObjectIds().isEmpty())
+				{
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private static <K> void addTask(Map<K, List<NuzlockeTask>> map, K key, NuzlockeTask task)
@@ -855,12 +922,14 @@ public class TaskTargetHighlighter extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!config.highlightTaskTargets())
+		OutlineMode mode = config.taskOutlineMode();
+		if (mode == OutlineMode.OFF)
 		{
 			return null;
 		}
 		Color doable = config.taskHighlightColor();
 		Color unavailable = config.taskHighlightUnavailableColor();
+		Set<String> saved = mode == OutlineMode.SAVED ? savedTaskIds() : Collections.emptySet();
 
 		if (!npcTasks.isEmpty() || !npcRules.isEmpty())
 		{
@@ -870,11 +939,10 @@ public class TaskTargetHighlighter extends Overlay
 				{
 					continue;
 				}
-				List<NuzlockeTask> tasks = tasksForNpc(npc);
-				if (!tasks.isEmpty())
+				Color color = outlineColor(tasksForNpc(npc), mode, saved, doable, unavailable);
+				if (color != null)
 				{
-					outlineRenderer.drawOutline(npc, OUTLINE_WIDTH,
-						anyDoable(tasks) ? doable : unavailable, OUTLINE_FEATHER);
+					outlineRenderer.drawOutline(npc, OUTLINE_WIDTH, color, OUTLINE_FEATHER);
 				}
 			}
 		}
@@ -886,14 +954,87 @@ public class TaskTargetHighlighter extends Overlay
 			{
 				continue;
 			}
-			List<NuzlockeTask> tasks = tasksForObject(object.getId());
-			if (!tasks.isEmpty())
+			Color color = outlineColor(tasksForObject(object.getId()), mode, saved, doable, unavailable);
+			if (color != null)
 			{
-				outlineRenderer.drawOutline(object, OUTLINE_WIDTH,
-					anyDoable(tasks) ? doable : unavailable, OUTLINE_FEATHER);
+				outlineRenderer.drawOutline(object, OUTLINE_WIDTH, color, OUTLINE_FEATHER);
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * The outline colour for a target with these tasks, or null for no outline:
+	 * All tasks: any task (normal colour if one is doable, the "level too low" colour if not).
+	 * Saved tasks: only saved ones count, coloured the same way.
+	 * Have requirements: only when one of them is doable, in the normal colour.
+	 */
+	private Color outlineColor(List<NuzlockeTask> tasks, OutlineMode mode, Set<String> saved,
+		Color doable, Color unavailable)
+	{
+		if (tasks.isEmpty())
+		{
+			return null;
+		}
+		switch (mode)
+		{
+			case SAVED:
+				List<NuzlockeTask> savedTasks = new ArrayList<>();
+				for (NuzlockeTask task : tasks)
+				{
+					if (saved.contains(task.getTaskId()))
+					{
+						savedTasks.add(task);
+					}
+				}
+				if (savedTasks.isEmpty())
+				{
+					return null;
+				}
+				return anyDoable(savedTasks) ? doable : unavailable;
+			case CAN_DO:
+				return anyDoable(tasks) ? doable : null;
+			default:
+				return anyDoable(tasks) ? doable : unavailable;
+		}
+	}
+
+	/** Saved (starred) task ids for this account, the same list as the task window's Saved tab. */
+	private Set<String> savedTaskIds()
+	{
+		String raw = configManager.getRSProfileConfiguration("chunkblazer", "savedTasks");
+		if (raw == null)
+		{
+			raw = "";
+		}
+		if (!raw.equals(savedRaw))
+		{
+			Set<String> ids = new HashSet<>();
+			for (String id : raw.split(","))
+			{
+				if (!id.trim().isEmpty())
+				{
+					ids.add(id.trim());
+				}
+			}
+			savedIds = ids;
+			savedRaw = raw;
+		}
+		return savedIds;
+	}
+
+	/** The Examine option on an item in the inventory (one per item, like NPCs and objects). */
+	private static boolean isInventoryExamine(MenuEntry entry)
+	{
+		return entry.getItemId() > 0
+			&& entry.getParam1() == InterfaceID.Inventory.ITEMS
+			&& "examine".equalsIgnoreCase(Text.removeTags(entry.getOption()));
+	}
+
+	/** Tasks listed on this inventory item: tools, bones and equip gear (see TaskItemOverlay). */
+	private List<NuzlockeTask> tasksForItem(int itemId)
+	{
+		return itemOverlay.tasksFor(itemId);
 	}
 
 	// --- Auto-tracking -------------------------------------------------------
@@ -1042,6 +1183,10 @@ public class TaskTargetHighlighter extends Overlay
 		{
 			tasks = tasksForObject(event.getIdentifier());
 		}
+		else if (isInventoryExamine(entry))
+		{
+			tasks = tasksForItem(entry.getItemId());
+		}
 		else
 		{
 			return;
@@ -1072,4 +1217,5 @@ public class TaskTargetHighlighter extends Overlay
 				.onClick(e -> plugin.selectTaskFromGame(task));
 		}
 	}
+
 }
