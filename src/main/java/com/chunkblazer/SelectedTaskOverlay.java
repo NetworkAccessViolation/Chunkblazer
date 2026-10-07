@@ -160,19 +160,20 @@ public class SelectedTaskOverlay extends OverlayPanel
 					.leftColor(REQUIREMENT_TEXT)
 					.build());
 		}
+		// Every level you're missing, e.g. "Needs 20 Defence, 20 Ranged".
 		String missing = TaskTargetExtras.missingRequirement(client, task);
-		if (!plugin.meetsLevelRequirement(task))
+		if (missing != null)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+					.left("Needs " + missing)
+					.leftColor(MISSING_LEVEL)
+					.build());
+		}
+		else if (!plugin.meetsLevelRequirement(task))
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 					.left("Needs level " + task.getLevelRequirement() + " "
 							+ NuzlockeTask.displayCategory(task.getCategory()))
-					.leftColor(MISSING_LEVEL)
-					.build());
-		}
-		else if (missing != null)
-		{
-			panelComponent.getChildren().add(LineComponent.builder()
-					.left("Needs " + missing)
 					.leftColor(MISSING_LEVEL)
 					.build());
 		}
