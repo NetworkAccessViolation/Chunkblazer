@@ -282,6 +282,19 @@ public final class TaskTargetExtras
 		EXTRA_NPCS.put("obtain_ensouled_dragon_head", ids(260, 261, 262, 263, 264, 2918)); // Obtain an Ensouled Dragon Head (Wilderness Slayer Cave): Brutal green dragon, Green dragon
 
 		// --- Real level requirements (equip gear from the item database; Rigour and Augury) ---
+		// Tasks needing two skills: the data lists both, but only the first is read.
+		REQUIREMENTS.put("build_spirit_tree", levels(Skill.CONSTRUCTION, 70, Skill.FARMING, 83)); // Build a Spirit Tree
+		REQUIREMENTS.put("mine_dense_essence_blocks", levels(Skill.MINING, 38, Skill.CRAFTING, 38)); // Mine some Dense Essence Blocks
+		REQUIREMENTS.put("catch_bluegill", levels(Skill.FISHING, 43, Skill.HUNTER, 35)); // Catch a Bluegill
+		REQUIREMENTS.put("catch_common_tench", levels(Skill.FISHING, 56, Skill.HUNTER, 51)); // Catch a Common Tench
+		REQUIREMENTS.put("catch_mottled_eel", levels(Skill.FISHING, 73, Skill.HUNTER, 68)); // Catch a Mottled Eel
+		REQUIREMENTS.put("catch_greater_siren", levels(Skill.FISHING, 91, Skill.HUNTER, 87)); // Catch a Greater Siren
+		// Filed under "Combat" with its level, so it isn't checked as Slayer.
+		REQUIREMENTS.put("defeat_aberrant_spectre_fast", levels(Skill.SLAYER, 60)); // Defeat an Aberrant Spectre in 18 Seconds
+		REQUIREMENTS.put("mix_combat_potions", levels(Skill.HERBLORE, 36)); // Mix some Combat Potions (no level in the task data)
+		REQUIREMENTS.put("gwd_nex_mix_ancient_brew", levels(Skill.HERBLORE, 85)); // Mix an Ancient Brew (no level in the task data)
+		REQUIREMENTS.put("tob_mix_bastion_potion", levels(Skill.HERBLORE, 80)); // Mix a Bastion Potion (no level in the task data)
+		REQUIREMENTS.put("toa_mix_menaphite_remedy", levels(Skill.HERBLORE, 88)); // Mix a Menaphite Remedy (no level in the task data)
 		REQUIREMENTS.put("cox_activate_augury", levels(Skill.PRAYER, 77, Skill.DEFENCE, 70)); // Activate Augury
 		REQUIREMENTS.put("cox_activate_rigour", levels(Skill.PRAYER, 74, Skill.DEFENCE, 70)); // Activate Rigour
 		REQUIREMENTS.put("gwd_graardor_equip_boots", levels(Skill.DEFENCE, 65)); // Equip Bandos Boots
@@ -529,24 +542,77 @@ public final class TaskTargetExtras
 	}
 
 	/**
-	 * The first real requirement the player is missing, like "30 Attack", or null if they
-	 * have them all (or the task has none listed here).
+	 * Every level a task needs: its own (category + level, "_Set" categories included)
+	 * plus any listed in REQUIREMENTS (gear needing several skills, multi-skill tasks the
+	 * data only half-holds, tasks with no level). The highest wins where both name a skill.
+	 */
+	static Map<Skill, Integer> requirements(NuzlockeTask task)
+	{
+		Map<Skill, Integer> needs = new EnumMap<>(Skill.class);
+		Skill own = categorySkill(task.getCategory());
+		if (own != null && task.getLevelRequirement() > 1)
+		{
+			needs.put(own, task.getLevelRequirement());
+		}
+		Map<Skill, Integer> extra = task.getTaskId() == null ? null : REQUIREMENTS.get(task.getTaskId());
+		if (extra != null)
+		{
+			for (Map.Entry<Skill, Integer> need : extra.entrySet())
+			{
+				needs.merge(need.getKey(), need.getValue(), Math::max);
+			}
+		}
+		return needs;
+	}
+
+	/**
+	 * Every requirement the player is missing, like "20 Defence, 20 Ranged", or null if
+	 * they have them all.
 	 */
 	static String missingRequirement(Client client, NuzlockeTask task)
 	{
-		Map<Skill, Integer> needs = task.getTaskId() == null ? null : REQUIREMENTS.get(task.getTaskId());
-		if (needs == null)
-		{
-			return null;
-		}
-		for (Map.Entry<Skill, Integer> need : needs.entrySet())
+		StringBuilder missing = new StringBuilder();
+		for (Map.Entry<Skill, Integer> need : requirements(task).entrySet())
 		{
 			if (client.getRealSkillLevel(need.getKey()) < need.getValue())
 			{
-				return need.getValue() + " " + need.getKey().getName();
+				if (missing.length() > 0)
+				{
+					missing.append(", ");
+				}
+				missing.append(need.getValue()).append(' ').append(need.getKey().getName());
 			}
 		}
-		return null;
+		return missing.length() == 0 ? null : missing.toString();
+	}
+
+	/**
+	 * The skill a task category names: "Mining", "Runecrafting" (Runecraft), and "_Set"
+	 * categories like "Herblore_Set" (Herblore). Null for Combat, Quest, Progression, etc.
+	 */
+	static Skill categorySkill(String category)
+	{
+		if (category == null)
+		{
+			return null;
+		}
+		String name = category.trim().toUpperCase();
+		if (name.endsWith("_SET"))
+		{
+			name = name.substring(0, name.length() - 4);
+		}
+		if (name.equals("RUNECRAFTING"))
+		{
+			name = "RUNECRAFT";
+		}
+		try
+		{
+			return Skill.valueOf(name);
+		}
+		catch (IllegalArgumentException e)
+		{
+			return null;
+		}
 	}
 
 	private static Set<Integer> ids(int... ids)

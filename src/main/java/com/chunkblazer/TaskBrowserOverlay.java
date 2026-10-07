@@ -853,11 +853,14 @@ public class TaskBrowserOverlay extends Overlay
 	/** Task trains or is about this skill: its category, its type, or a level-up rung for it. */
 	private static boolean isSkillTask(NuzlockeTask task, Skill skill)
 	{
-		String name = skill.getName().toLowerCase();
-		if (task.getCategory() != null && task.getCategory().toLowerCase().contains(name))
+		// Exact skill match: "Runecrafting" must not count as Crafting. Tasks needing
+		// several skills (Bluegill: Fishing and Hunter) show under each of them.
+		if (TaskTargetExtras.categorySkill(task.getCategory()) == skill
+			|| TaskTargetExtras.requirements(task).containsKey(skill))
 		{
 			return true;
 		}
+		String name = skill.getName().toLowerCase();
 		if (task.getCompletionType() != null && task.getCompletionType().toLowerCase().startsWith(name))
 		{
 			return true;
@@ -2321,15 +2324,11 @@ public class TaskBrowserOverlay extends Overlay
 		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
 	}
 
-	/** "(Lvl 30)" or "(Needs 70 Defence)", for a task you can't do yet. */
+	/** "(Needs 20 Defence, 20 Ranged)": every level you're missing, for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
 		String missing = TaskTargetExtras.missingRequirement(client, task);
-		if (!plugin.meetsLevelRequirement(task) || missing == null)
-		{
-			return "(Lvl " + task.getLevelRequirement() + ")";
-		}
-		return "(Needs " + missing + ")";
+		return missing != null ? "(Needs " + missing + ")" : "(Lvl " + task.getLevelRequirement() + ")";
 	}
 
 }
