@@ -803,7 +803,7 @@ public class TaskTargetHighlighter extends Overlay
 	{
 		for (NuzlockeTask task : tasks)
 		{
-			if (plugin.meetsLevelRequirement(task))
+			if (canDo(task))
 			{
 				return true;
 			}
@@ -1138,7 +1138,7 @@ public class TaskTargetHighlighter extends Overlay
 			.thenComparing(t -> t.getName() == null ? "" : t.getName());
 		for (NuzlockeTask task : tasks)
 		{
-			if (plugin.meetsLevelRequirement(task) && (pick == null || order.compare(task, pick) < 0))
+			if (canDo(task) && (pick == null || order.compare(task, pick) < 0))
 			{
 				pick = task;
 			}
@@ -1206,16 +1206,33 @@ public class TaskTargetHighlighter extends Overlay
 		Menu submenu = parent.createSubMenu();
 		for (NuzlockeTask task : tasks)
 		{
-			boolean canDo = plugin.meetsLevelRequirement(task);
-			String option = canDo
+			String option = canDo(task)
 				? task.getName()
-				: "<col=ff5050>" + task.getName() + " (Lvl " + task.getLevelRequirement() + ")</col>";
+				: "<col=ff5050>" + task.getName() + " " + levelNote(task) + "</col>";
 			submenu.createMenuEntry(0)
 				.setOption(option)
 				.setTarget("<col=ffff00>" + task.getCurrentProgress() + "/" + task.getTargetQuantity() + "</col>")
 				.setType(MenuAction.RUNELITE)
 				.onClick(e -> plugin.selectTaskFromGame(task));
 		}
+	}
+
+
+	/** The task's own level check, plus any real requirements it's missing (see TaskTargetExtras). */
+	private boolean canDo(NuzlockeTask task)
+	{
+		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
+	}
+
+	/** "(Lvl 30)" or "(Needs 70 Defence)", for a task you can't do yet. */
+	private String levelNote(NuzlockeTask task)
+	{
+		String missing = TaskTargetExtras.missingRequirement(client, task);
+		if (!plugin.meetsLevelRequirement(task) || missing == null)
+		{
+			return "(Lvl " + task.getLevelRequirement() + ")";
+		}
+		return "(Needs " + missing + ")";
 	}
 
 }

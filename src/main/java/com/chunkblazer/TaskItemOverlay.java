@@ -40,6 +40,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.widgets.WidgetItem;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
 
@@ -64,6 +65,11 @@ public class TaskItemOverlay extends WidgetItemOverlay
 	private final ChunkBlazerConfig config;
 	private final TaskArchive archive;
 	private final ItemManager itemManager;
+	private final ConfigManager configManager;
+
+	// Saved (starred) task ids, re-read only when the stored list changes.
+	private String savedRaw;
+	private Set<String> savedIds = Collections.emptySet();
 
 	// Outline images follow each item's own shape; they're costly to make, so they're
 	// kept per item and colour.
@@ -78,8 +84,9 @@ public class TaskItemOverlay extends WidgetItemOverlay
 
 	@Inject
 	public TaskItemOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, TaskArchive archive,
-		ItemManager itemManager)
+		ItemManager itemManager, ConfigManager configManager)
 	{
+		this.configManager = configManager;
 		this.itemManager = itemManager;
 		this.client = client;
 		this.plugin = plugin;
@@ -186,8 +193,8 @@ public class TaskItemOverlay extends WidgetItemOverlay
 		{
 			return;
 		}
-		List<NuzlockeTask> tasks = tasksFor(itemId);
-		if (tasks.isEmpty())
+		Color color = outlineColor(tasksFor(itemId));
+		if (color == null)
 		{
 			return;
 		}
@@ -198,13 +205,86 @@ public class TaskItemOverlay extends WidgetItemOverlay
 		}
 
 		// An outline around the item's own shape, so nothing covers the item itself.
-		Color color = config.taskHighlightColor();
 		BufferedImage outline = outlineFor(itemId, color);
 		if (outline != null)
 		{
 			graphics.drawImage(outline, bounds.x, bounds.y, null);
 		}
 
+	}
+
+	/**
+	 * Same rules as NPC and object outlines (the cogwheel's Outlines setting): All shows
+	 * every item with tasks, Saved only items with a saved task, Can do only items with a
+	 * task you have the level for, Off none. Normal colour if one of the counted tasks is
+	 * doable, the "level too low" colour if none are. Null means no outline.
+	 */
+	private Color outlineColor(List<NuzlockeTask> tasks)
+	{
+		if (tasks.isEmpty())
+		{
+			return null;
+		}
+		OutlineMode mode = config.taskOutlineMode();
+		if (mode == OutlineMode.OFF)
+		{
+			return null;
+		}
+		List<NuzlockeTask> counted = tasks;
+		if (mode == OutlineMode.SAVED)
+		{
+			Set<String> saved = savedTaskIds();
+			counted = new ArrayList<>();
+			for (NuzlockeTask task : tasks)
+			{
+				if (saved.contains(task.getTaskId()))
+				{
+					counted.add(task);
+				}
+			}
+			if (counted.isEmpty())
+			{
+				return null;
+			}
+		}
+		boolean doable = false;
+		for (NuzlockeTask task : counted)
+		{
+			if (canDo(task))
+			{
+				doable = true;
+				break;
+			}
+		}
+		if (doable)
+		{
+			return config.taskHighlightColor();
+		}
+		return mode == OutlineMode.CAN_DO ? null : config.taskHighlightUnavailableColor();
+	}
+
+	/** Saved (starred) task ids for this account, the same list as the task window's Saved tab. */
+	private Set<String> savedTaskIds()
+	{
+		String raw = configManager.getRSProfileConfiguration("chunkblazer", "savedTasks");
+		if (raw == null)
+		{
+			raw = "";
+		}
+		if (!raw.equals(savedRaw))
+		{
+			Set<String> ids = new java.util.HashSet<>();
+			for (String id : raw.split(","))
+			{
+				if (!id.trim().isEmpty())
+				{
+					ids.add(id.trim());
+				}
+			}
+			savedIds = ids;
+			savedRaw = raw;
+		}
+		return savedIds;
 	}
 
 	private BufferedImage outlineFor(int itemId, Color color)
@@ -224,6 +304,13 @@ public class TaskItemOverlay extends WidgetItemOverlay
 			}
 		}
 		return image;
+	}
+
+
+	/** The task's own level check, plus any real requirements it's missing (see TaskTargetExtras). */
+	private boolean canDo(NuzlockeTask task)
+	{
+		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
 	}
 
 }
