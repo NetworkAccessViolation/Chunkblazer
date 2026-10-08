@@ -44,6 +44,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -55,6 +56,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.Skill;
@@ -99,8 +101,9 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * Opening the window then shows just those tasks in a New tab; closing it marks
  * them seen, and the window goes back to normal. Seen tasks are stored per account.
  *
- * The cogwheel (next to the X) holds display settings: task box style, auto-tracking,
- * the saved tasks tracker, outline mode, chunk borders, walls and the name banner.
+ * The cogwheel (next to the X) opens the settings page in place of the task list:
+ * task box, tracking, highlights, chunk borders and world map options, each explained
+ * at the bottom of the page when you hover it.
  *
  * Drag the "ChunkBlazer Tasks" title to move the window; it stays where you put it
  * until the client restarts (kept on screen if the window is resized).
@@ -136,6 +139,10 @@ public class TaskBrowserOverlay extends Overlay
 	private static final int SKILL_COLUMNS = 6;
 	private static final long ROW_REFRESH_MS = 1000;
 	private static final int DETAIL_LINE = 13;
+	// A section header's text starts this far right, after its open/closed arrow.
+	private static final int SECTION_TEXT = 11;
+	// Quest states checked per tick while the window is open (each runs a client script).
+	private static final int QUEST_CHECKS_PER_TICK = 15;
 	private static final int MAX_SEARCH = 40;
 
 	private static final Color BACKGROUND = new Color(38, 33, 27, 242);
@@ -182,12 +189,13 @@ public class TaskBrowserOverlay extends Overlay
 		}
 	}
 
-	/** What's shown. Quests and Progression are the chunk-independent Global tasks. */
+	/**
+	 * Task filters that can be ticked. Everything ticked must match, together with the
+	 * skill and tier filters: Offline + Equip shows only equip tasks that work offline.
+	 * Quests and Progression are the chunk-independent Global tasks.
+	 */
 	enum Filter
 	{
-		ALL("All tasks"),
-		SKILL("Skill..."),
-		TIER("Tier..."),
 		COMBAT("Kills & combat"),
 		OBTAIN("Obtain items"),
 		EQUIP("Equip items"),
@@ -195,6 +203,8 @@ public class TaskBrowserOverlay extends Overlay
 		ACHIEVEMENTS("Raids & combat achievements"),
 		BOSS("Boss chunks"),
 		QUESTS("Quests (global)"),
+		QUESTS_READY("Quests (ready now)"),
+		OFFLINE("Works offline (mobile)"),
 		PROGRESSION("Level ups (global)");
 
 		final String label;
@@ -207,7 +217,7 @@ public class TaskBrowserOverlay extends Overlay
 
 	enum Menu
 	{
-		NONE, SORT, FILTER, SKILLS, TIERS, SETTINGS
+		NONE, SORT, FILTER, SKILLS, TIERS
 	}
 
 	/**
@@ -271,8 +281,11 @@ public class TaskBrowserOverlay extends Overlay
 	private final TaskItemOverlay itemOverlay;
 	private final ChunkNameBanner banner;
 	private final WorldMapLegendOverlay legend;
+	private final QuestRequirements quests;
 
 	private volatile boolean open;
+	// The settings page is showing instead of the task list.
+	private volatile boolean settingsOpen;
 	private volatile String search = "";
 	private volatile boolean searchFocused;
 	private volatile boolean currentChunkOnly;
@@ -284,12 +297,20 @@ public class TaskBrowserOverlay extends Overlay
 	private volatile Tab tab = Tab.ACTIVE;
 	private volatile SortField sortField = SortField.POINTS;
 	private volatile boolean ascending = SortField.POINTS.ascendingByDefault;
-	private volatile Filter filter = Filter.ALL;
+	// Filters: ticked task types (empty = any), plus one skill and one tier (null = any).
+	// Replaced, never changed in place, so a list being built sees one consistent set.
+	private volatile Set<Filter> filterTypes = Collections.emptySet();
 	private volatile Skill filterSkill;
 	private volatile TaskCardTier filterTier;
 	private final Set<String> expandedGroups = java.util.concurrent.ConcurrentHashMap.newKeySet();
 	private volatile Menu menu = Menu.NONE;
 	private volatile int scroll;
+	// A quest link was clicked: scroll to this task once the list is rebuilt, and
+	// briefly outline it so it's easy to spot.
+	private volatile String scrollToTask;
+	private volatile String flashTask;
+	private volatile long flashAt;
+	private static final long FLASH_MS = 1800;
 
 	// New-task alert state. newIds: active tasks not seen yet. shownNew: the ones the
 	// New tab is showing (snapshot taken on opening). taskButton: where the Points orb
@@ -413,7 +434,16 @@ public class TaskBrowserOverlay extends Overlay
 			}
 			if (open && !searchFocused && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 			{
-				close();
+				// On the settings page, Esc goes back to the tasks first.
+				if (settingsOpen)
+				{
+					settingsOpen = false;
+					scroll = 0;
+				}
+				else
+				{
+					close();
+				}
 				event.consume();
 			}
 		}
@@ -433,7 +463,8 @@ public class TaskBrowserOverlay extends Overlay
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
 		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
 		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker,
-		TaskItemOverlay itemOverlay, ChunkNameBanner banner, WorldMapLegendOverlay legend)
+		TaskItemOverlay itemOverlay, ChunkNameBanner banner, WorldMapLegendOverlay legend,
+		QuestRequirements quests)
 	{
 		this.client = client;
 		this.plugin = plugin;
@@ -452,6 +483,7 @@ public class TaskBrowserOverlay extends Overlay
 		this.itemOverlay = itemOverlay;
 		this.banner = banner;
 		this.legend = legend;
+		this.quests = quests;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -465,6 +497,7 @@ public class TaskBrowserOverlay extends Overlay
 		mouseManager.registerMouseWheelListener(wheel);
 		keyManager.registerKeyListener(keys);
 		eventBus.register(this);
+		quests.load();
 		savedTracker.startUp();
 		overlayManager.add(itemOverlay);
 		// Always-on-top overlays: the chunk name banner and the world map colour legend.
@@ -511,6 +544,7 @@ public class TaskBrowserOverlay extends Overlay
 	private void close()
 	{
 		open = false;
+		settingsOpen = false;
 		menu = Menu.NONE;
 		stopSearch();
 		pinnedChunk = null;
@@ -565,8 +599,7 @@ public class TaskBrowserOverlay extends Overlay
 		pinnedChunk = name;
 		currentChunkOnly = false;
 		tab = Tab.ACTIVE;
-		filter = Filter.ALL;
-		filterSkill = null;
+		clearFilters();
 		search = "";
 		menu = Menu.NONE;
 		open = true;
@@ -599,6 +632,11 @@ public class TaskBrowserOverlay extends Overlay
 		if (++ticksLoggedIn < SETTLE_TICKS)
 		{
 			return;
+		}
+		if (open)
+		{
+			// Prerequisite quest states for the quest requirement lists and the Ready filter.
+			quests.refreshStates(QUEST_CHECKS_PER_TICK);
 		}
 
 		List<NuzlockeTask> active = pool(false);
@@ -644,6 +682,7 @@ public class TaskBrowserOverlay extends Overlay
 				// Re-worked out after the next login, for whichever account it is.
 				ticksLoggedIn = 0;
 				newIds.clear();
+				quests.reset();
 				break;
 			default:
 				break;
@@ -796,36 +835,109 @@ public class TaskBrowserOverlay extends Overlay
 		return pool;
 	}
 
+	/** Every active filter must match: the skill, the tier, and every ticked filter. */
 	private Predicate<NuzlockeTask> filterTest()
 	{
-		Filter current = filter;
+		Set<Filter> types = filterTypes;
 		Skill skill = filterSkill;
 		TaskCardTier tier = filterTier;
-		switch (current)
+		return task -> (skill == null || isSkillTask(task, skill))
+			&& (tier == null || TaskCardTier.fromTask(task) == tier)
+			&& types.stream().allMatch(f -> typeTest(f, task));
+	}
+
+	private boolean typeTest(Filter f, NuzlockeTask task)
+	{
+		switch (f)
 		{
-			case TIER:
-				return task -> tier == null || TaskCardTier.fromTask(task) == tier;
-			case SKILL:
-				return task -> skill == null || isSkillTask(task, skill);
 			case COMBAT:
-				return task -> typeIs(task, "NPC_KILL", "SLAYER") || categoryIs(task, "combat");
+				return typeIs(task, "NPC_KILL", "SLAYER") || categoryIs(task, "combat");
 			case OBTAIN:
-				return task -> typeIs(task, "OBTAIN");
+				return typeIs(task, "OBTAIN");
 			case EQUIP:
-				return task -> typeIs(task, "EQUIP");
+				return typeIs(task, "EQUIP");
 			case TALK:
-				return task -> typeIs(task, "NPC_DIALOGUE");
+				return typeIs(task, "NPC_DIALOGUE");
 			case ACHIEVEMENTS:
-				return task -> typeIs(task, "COMBAT_ACHIEVEMENT", "RAID_CHALLENGE");
+				return typeIs(task, "COMBAT_ACHIEVEMENT", "RAID_CHALLENGE");
 			case BOSS:
-				return plugin::isBossTask;
+				return plugin.isBossTask(task);
 			case QUESTS:
-				return task -> typeIs(task, "QUEST_CHECK");
+				return typeIs(task, "QUEST_CHECK");
+			case QUESTS_READY:
+				// Quests whose chunks are unlocked and whose levels, quests and points are met.
+				return typeIs(task, "QUEST_CHECK") && quests.isReady(task);
 			case PROGRESSION:
-				return task -> typeIs(task, "SKILL_THRESHOLD");
+				return typeIs(task, "SKILL_THRESHOLD");
+			case OFFLINE:
+				return isOfflineTrackable(task);
 			default:
-				return task -> true;
+				return true;
 		}
+	}
+
+	/**
+	 * True if a task done while not on RuneLite (on mobile, say) still completes at the
+	 * next RuneLite login. Those are the tasks checked against saved game state: quest
+	 * state (QuestCheckModule sweeps it), real skill levels (ProgressionModule, from the
+	 * login stat burst), combat achievement varps (re-scanned on login) and persistent
+	 * unlock varbits (slayer and other unlocks; VarbitCheckModule matches the value),
+	 * items held (ObtainModule counts inventory + bank + worn for plain OBTAIN tasks, pets
+	 * included; the bank is only known once it's opened on RuneLite), and equip tasks
+	 * (EquipModule credits the item once it's worn; equipping it on RuneLite is safest).
+	 * Everything else needs RuneLite watching as it happens: kills, skilling (an item only
+	 * counts with a matching XP drop), dialogue, and the active-prayer varbit, which resets.
+	 */
+	static boolean isOfflineTrackable(NuzlockeTask task)
+	{
+		if (typeIs(task, "QUEST_CHECK", "SKILL_THRESHOLD", "COMBAT_ACHIEVEMENT", "EQUIP", "OBTAIN"))
+		{
+			return true;
+		}
+		return typeIs(task, "VARBIT_CHECK", "VARP_CHECK") && "unlock".equalsIgnoreCase(task.getCategory());
+	}
+
+	private boolean anyFilter()
+	{
+		return filterSkill != null || filterTier != null || !filterTypes.isEmpty();
+	}
+
+	private void clearFilters()
+	{
+		filterTypes = Collections.emptySet();
+		filterSkill = null;
+		filterTier = null;
+	}
+
+	private void toggleType(Filter f)
+	{
+		Set<Filter> next = filterTypes.isEmpty() ? EnumSet.noneOf(Filter.class) : EnumSet.copyOf(filterTypes);
+		if (!next.remove(f))
+		{
+			next.add(f);
+		}
+		filterTypes = Collections.unmodifiableSet(next);
+		menu = Menu.NONE;
+		refresh();
+	}
+
+	/** "Mining + Tier 5 + Combat": every active filter, shortest names first. */
+	private String filterLabel()
+	{
+		List<String> parts = new ArrayList<>();
+		if (filterSkill != null)
+		{
+			parts.add(filterSkill.getName());
+		}
+		if (filterTier != null)
+		{
+			parts.add(filterTier.getDisplayName());
+		}
+		for (Filter f : filterTypes)
+		{
+			parts.add(shortLabel(f));
+		}
+		return parts.isEmpty() ? "All" : String.join(" + ", parts);
 	}
 
 	private static boolean typeIs(NuzlockeTask task, String... types)
@@ -927,7 +1039,9 @@ public class TaskBrowserOverlay extends Overlay
 		}
 
 		Set<String> saved = savedIds();
-		boolean globalFilter = filter == Filter.QUESTS || filter == Filter.PROGRESSION || filter == Filter.SKILL;
+		Set<Filter> types = filterTypes;
+		boolean globalFilter = filterSkill != null || types.contains(Filter.QUESTS)
+			|| types.contains(Filter.QUESTS_READY) || types.contains(Filter.PROGRESSION) || types.contains(Filter.OFFLINE);
 		Predicate<NuzlockeTask> test = filterTest();
 		String query = search.trim().toLowerCase();
 		String here = pinnedChunk != null ? pinnedChunk : currentChunkOnly ? currentChunkName() : null;
@@ -1062,6 +1176,21 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		return requirements.computeIfAbsent(task.getTaskId(), id -> SelectedTaskOverlay.requirementLines(task));
 	}
+
+	/**
+	 * Everything shown under an expanded task: its requirements, then for quests the
+	 * chunk, skill, quest and point checks (green have, red missing).
+	 */
+	private List<QuestRequirements.Line> detailLines(NuzlockeTask task)
+	{
+		List<QuestRequirements.Line> lines = new ArrayList<>();
+		for (String line : requirementsFor(task))
+		{
+			lines.add(new QuestRequirements.Line(line, DETAIL));
+		}
+		lines.addAll(quests.lines(task, this::chunkNameFor));
+		return lines;
+	}
 	private String chunkName(NuzlockeTask task)
 	{
 		if (plugin.isGlobalTask(task.getTaskId()))
@@ -1155,13 +1284,26 @@ public class TaskBrowserOverlay extends Overlay
 		int chunkToggleWidth = graphics.getFontMetrics(small).stringWidth(chunkLabel) + 18;
 		// Settings cogwheel, just left of the close X.
 		Rectangle cog = new Rectangle(close.x - 22, y + 7, 16, 16);
-		hits.add(new Hit(cog, () -> menu = menu == Menu.SETTINGS ? Menu.NONE : Menu.SETTINGS));
+		hits.add(new Hit(cog, () ->
+		{
+			settingsOpen = !settingsOpen;
+			menu = Menu.NONE;
+			scroll = 0;
+		}));
 		drawCog(graphics, cog.x + 8, cog.y + 8,
-			menu == Menu.SETTINGS || (!menuOpen && cog.contains(mx, my)) ? Color.WHITE : SUBTEXT);
+			settingsOpen || (!menuOpen && cog.contains(mx, my)) ? Color.WHITE : SUBTEXT);
 		Rectangle chunkToggle = new Rectangle(cog.x - 8 - chunkToggleWidth, y + 6, chunkToggleWidth, 19);
 		Rectangle searchBox = new Rectangle(searchX, y + 6, chunkToggle.x - 8 - searchX, 19);
 		drawSearch(graphics, small, searchBox, mx, my, menuOpen);
 		drawChunkToggle(graphics, small, chunkToggle, chunkLabel, mx, my, menuOpen);
+
+		// The settings page replaces the tabs and the list while it's open.
+		if (settingsOpen)
+		{
+			drawSettingsPage(graphics, new Rectangle(x + 1, y + HEADER, width - 2, height - HEADER - 1), small, mx, my);
+			finishHover(window, mx, my, menuOpen);
+			return null;
+		}
 
 		// Tabs, then Filter and Sort buttons.
 		int barY = y + HEADER;
@@ -1187,30 +1329,14 @@ public class TaskBrowserOverlay extends Overlay
 		int buttonWidth = Math.max(70, (width - PAD * 2 - tabsWidth - 8) / 2);
 		Rectangle sortButton = new Rectangle(x + width - PAD - buttonWidth, barY, buttonWidth, buttonHeight);
 		Rectangle filterButton = new Rectangle(sortButton.x - 4 - buttonWidth, barY, buttonWidth, buttonHeight);
-		String filterLabel;
-		if (tab != Tab.ACTIVE)
-		{
-			filterLabel = "off";
-		}
-		else if (filter == Filter.SKILL && filterSkill != null)
-		{
-			filterLabel = filterSkill.getName();
-		}
-		else if (filter == Filter.TIER && filterTier != null)
-		{
-			filterLabel = filterTier.getDisplayName();
-		}
-		else
-		{
-			filterLabel = shortLabel(filter);
-		}
+		String filterLabel = tab != Tab.ACTIVE ? "off" : filterLabel();
 		// The Saved and Archived tabs show all their tasks, so the filter button does nothing there.
 		Runnable openFilter = tab != Tab.ACTIVE ? () ->
 		{
 		} : () -> menu = menu == Menu.NONE ? Menu.FILTER : Menu.NONE;
 		drawButton(graphics, small, filterButton, "Filter: " + filterLabel,
 			menu == Menu.FILTER || menu == Menu.SKILLS || menu == Menu.TIERS, mx, my, menuOpen, openFilter);
-		if (tab == Tab.ACTIVE && filter != Filter.ALL)
+		if (tab == Tab.ACTIVE && anyFilter())
 		{
 			drawActiveFilter(graphics, small, filterButton, filterLabel, mx, my, menuOpen);
 		}
@@ -1224,20 +1350,42 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.setFont(small);
 		FontMetrics detailMetrics = graphics.getFontMetrics();
 		int detailWidth = list.width - 6 - 48;
-		List<List<String>> details = new ArrayList<>();
+		List<List<QuestRequirements.Line>> details = new ArrayList<>();
 		int contentHeight = 0;
 		for (Entry entry : entries)
 		{
-			List<String> wrapped = new ArrayList<>();
+			List<QuestRequirements.Line> wrapped = new ArrayList<>();
 			if (entry.task != null && expanded.contains(entry.task.getTaskId()))
 			{
-				for (String line : requirementsFor(entry.task))
+				for (QuestRequirements.Line line : detailLines(entry.task))
 				{
-					wrapped.addAll(wrap(detailMetrics, line, detailWidth));
+					int wrapWidth = detailWidth - lineIndent(line);
+					boolean first = true;
+					for (String part : wrap(detailMetrics, line.text, wrapWidth))
+					{
+						wrapped.add(line.withText(part, first));
+						first = false;
+					}
 				}
 			}
 			details.add(wrapped);
-			contentHeight += ROW + (wrapped.isEmpty() ? 0 : wrapped.size() * DETAIL_LINE + 4);
+			contentHeight += ROW + detailHeight(wrapped);
+		}
+		String target = scrollToTask;
+		if (target != null)
+		{
+			int offset = 0;
+			for (int i = 0; i < entries.size(); i++)
+			{
+				Entry entry = entries.get(i);
+				if (entry.task != null && target.equals(entry.task.getTaskId()))
+				{
+					scroll = Math.max(0, offset - 6);
+					break;
+				}
+				offset += ROW + detailHeight(details.get(i));
+			}
+			scrollToTask = null;
 		}
 		scroll = Math.max(0, Math.min(scroll, Math.max(0, contentHeight - list.height)));
 
@@ -1280,8 +1428,8 @@ public class TaskBrowserOverlay extends Overlay
 		for (int i = 0; i < entries.size(); i++)
 		{
 			Entry entry = entries.get(i);
-			List<String> wrapped = details.get(i);
-			int rowHeight = ROW + (wrapped.isEmpty() ? 0 : wrapped.size() * DETAIL_LINE + 4);
+			List<QuestRequirements.Line> wrapped = details.get(i);
+			int rowHeight = ROW + detailHeight(wrapped);
 			if (rowY + rowHeight >= list.y && rowY <= list.y + list.height)
 			{
 				int indent = entry.child ? 16 : 0;
@@ -1326,13 +1474,17 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			drawTierMenu(graphics, small, filterButton, mx, my);
 		}
-		else if (menu == Menu.SETTINGS)
-		{
-			drawSettingsMenu(graphics, small, cog, window, mx, my);
-		}
 
-		// Work out what the mouse is over, for the click handler. With a menu open,
-		// clicking anywhere outside it just closes it.
+		finishHover(window, mx, my, menuOpen);
+		return null;
+	}
+
+	/**
+	 * Work out what the mouse is over, for the click handler. With a menu open, clicking
+	 * anywhere outside it just closes it.
+	 */
+	private void finishHover(Rectangle window, int mx, int my, boolean menuOpen)
+	{
 		mouseInWindow = window.contains(mx, my) || (menuOpen && insideAny(menuHits, mx, my));
 		Runnable hovered = firstHit(menuHits, mx, my);
 		if (hovered == null)
@@ -1340,7 +1492,6 @@ public class TaskBrowserOverlay extends Overlay
 			hovered = menuOpen ? () -> menu = Menu.NONE : firstHit(hits, mx, my);
 		}
 		hoveredAction = hovered;
-		return null;
 	}
 
 	/**
@@ -1427,10 +1578,6 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		switch (f)
 		{
-			case ALL:
-				return "All";
-			case TIER:
-				return "Tier";
 			case COMBAT:
 				return "Combat";
 			case OBTAIN:
@@ -1445,10 +1592,14 @@ public class TaskBrowserOverlay extends Overlay
 				return "Bosses";
 			case QUESTS:
 				return "Quests";
+			case QUESTS_READY:
+				return "Ready quests";
 			case PROGRESSION:
 				return "Level ups";
+			case OFFLINE:
+				return "Offline";
 			default:
-				return "Skill";
+				return f.label;
 		}
 	}
 
@@ -1614,9 +1765,7 @@ public class TaskBrowserOverlay extends Overlay
 		Rectangle clear = new Rectangle(button.x + button.width - 16, button.y + 2, 14, button.height - 4);
 		hits.add(0, new Hit(clear, () ->
 		{
-			filter = Filter.ALL;
-			filterSkill = null;
-			filterTier = null;
+			clearFilters();
 			refresh();
 		}));
 
@@ -1681,52 +1830,90 @@ public class TaskBrowserOverlay extends Overlay
 		refresh();
 	}
 
+	/**
+	 * Filter dropdown. Skill and Tier open pickers; the filters below tick on and off.
+	 * Each pick closes the menu; open it again to add another filter on top. A task
+	 * shows only if it matches everything picked.
+	 */
 	private void drawFilterMenu(Graphics2D graphics, Font font, Rectangle button, int mx, int my)
 	{
-		Filter[] filters = Filter.values();
-		int boxWidth = Math.max(button.width, 170);
+		Filter[] types = Filter.values();
+		int rows = types.length + 3;
+		int boxWidth = Math.max(button.width, 190);
 		Rectangle box = new Rectangle(button.x + button.width - boxWidth, button.y + button.height + 2,
-			boxWidth, filters.length * MENU_ROW + 4);
+			boxWidth, rows * MENU_ROW + 10);
 		drawMenuBox(graphics, box);
 		graphics.setFont(font);
 		FontMetrics fm = graphics.getFontMetrics();
-		for (int i = 0; i < filters.length; i++)
+		int baseline = (MENU_ROW + fm.getAscent()) / 2 - 2;
+
+		// Skill and Tier: one each, picked from their own menus.
+		int rowY = box.y + 2;
+		drawPickerRow(graphics, new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW), "Skill",
+			filterSkill == null ? "Any" : filterSkill.getName(), filterSkill != null, mx, my, () -> menu = Menu.SKILLS);
+		rowY += MENU_ROW;
+		drawPickerRow(graphics, new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW), "Tier",
+			filterTier == null ? "Any" : filterTier.getDisplayName(), filterTier != null, mx, my, () -> menu = Menu.TIERS);
+		rowY += MENU_ROW + 3;
+		graphics.setColor(BORDER);
+		graphics.drawLine(box.x + 6, rowY - 2, box.x + box.width - 6, rowY - 2);
+
+		// Task types: tick any number.
+		Set<Filter> ticked = filterTypes;
+		for (Filter f : types)
 		{
-			Filter f = filters[i];
-			Rectangle row = new Rectangle(box.x + 2, box.y + 2 + i * MENU_ROW, box.width - 4, MENU_ROW);
-			menuHits.add(new Hit(row, () ->
+			Rectangle row = new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW);
+			menuHits.add(new Hit(row, () -> toggleType(f)));
+			drawCheckRow(graphics, row, f.label, ticked.contains(f), null, mx, my);
+			rowY += MENU_ROW;
+		}
+
+		// Clear everything.
+		rowY += 3;
+		graphics.setColor(BORDER);
+		graphics.drawLine(box.x + 6, rowY - 2, box.x + box.width - 6, rowY - 2);
+		Rectangle clear = new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW);
+		boolean any = anyFilter();
+		if (any)
+		{
+			menuHits.add(new Hit(clear, () ->
 			{
-				if (f == Filter.SKILL)
-				{
-					menu = Menu.SKILLS;
-					return;
-				}
-				if (f == Filter.TIER)
-				{
-					menu = Menu.TIERS;
-					return;
-				}
-				filter = f;
-				filterSkill = null;
-				filterTier = null;
+				clearFilters();
 				menu = Menu.NONE;
 				refresh();
 			}));
-			if (row.contains(mx, my))
-			{
-				graphics.setColor(ROW_HOVER);
-				graphics.fillRect(row.x, row.y, row.width, row.height);
-			}
-			graphics.setColor(f == filter ? Color.WHITE : SUBTEXT);
-			graphics.drawString(f.label, row.x + 6, row.y + (MENU_ROW + fm.getAscent()) / 2 - 2);
-			if (f == Filter.SKILL || f == Filter.TIER)
-			{
-				drawArrowRight(graphics, row.x + row.width - 10, row.y + MENU_ROW / 2, SUBTEXT);
-			}
 		}
+		if (any && clear.contains(mx, my))
+		{
+			graphics.setColor(ROW_HOVER);
+			graphics.fillRect(clear.x, clear.y, clear.width, clear.height);
+		}
+		graphics.setColor(any ? (clear.contains(mx, my) ? NO_LEVEL : SUBTEXT) : STAR_OFF);
+		graphics.drawString("Clear all filters", clear.x + 6, clear.y + baseline);
+
 		menuHits.add(new Hit(box, () ->
 		{
 		}));
+	}
+
+	/** "Skill        Mining  >": opens a picker. The value is lit while it's filtering. */
+	private void drawPickerRow(Graphics2D graphics, Rectangle row, String label, String value, boolean active,
+		int mx, int my, Runnable open)
+	{
+		menuHits.add(new Hit(row, open));
+		boolean hover = row.contains(mx, my);
+		if (hover)
+		{
+			graphics.setColor(ROW_HOVER);
+			graphics.fillRect(row.x, row.y, row.width, row.height);
+		}
+		FontMetrics fm = graphics.getFontMetrics();
+		int baseline = row.y + (MENU_ROW + fm.getAscent()) / 2 - 2;
+		graphics.setColor(hover ? Color.WHITE : SUBTEXT);
+		graphics.drawString(label, row.x + 6, baseline);
+		graphics.setColor(active ? TITLE : SUBTEXT);
+		graphics.drawString(value, row.x + row.width - 20 - fm.stringWidth(value), baseline);
+		drawArrowRight(graphics, row.x + row.width - 10, row.y + MENU_ROW / 2, SUBTEXT);
 	}
 
 	/** Grid of skill icons; clicking one filters to that skill. */
@@ -1746,17 +1933,16 @@ public class TaskBrowserOverlay extends Overlay
 		Rectangle box = new Rectangle(button.x + button.width - boxWidth, button.y + button.height + 2, boxWidth, boxHeight);
 		drawMenuBox(graphics, box);
 
-		String hoveredName = "Pick a skill";
+		String hoveredName = filterSkill == null ? "Pick a skill" : "Click " + filterSkill.getName() + " again to clear";
 		for (int i = 0; i < skills.size(); i++)
 		{
 			Skill skill = skills.get(i);
 			Rectangle cell = new Rectangle(box.x + 4 + (i % SKILL_COLUMNS) * SKILL_CELL,
 				box.y + 4 + (i / SKILL_COLUMNS) * SKILL_CELL, SKILL_CELL, SKILL_CELL);
+			// Picking the skill that's already on clears it.
 			menuHits.add(new Hit(cell, () ->
 			{
-				filter = Filter.SKILL;
-				filterSkill = skill;
-				filterTier = null;
+				filterSkill = skill == filterSkill ? null : skill;
 				menu = Menu.NONE;
 				refresh();
 			}));
@@ -1799,11 +1985,10 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			TaskCardTier tier = tiers[i];
 			Rectangle row = new Rectangle(box.x + 2, box.y + 2 + i * MENU_ROW, box.width - 4, MENU_ROW);
+			// Picking the tier that's already on clears it.
 			menuHits.add(new Hit(row, () ->
 			{
-				filter = Filter.TIER;
-				filterTier = tier;
-				filterSkill = null;
+				filterTier = tier == filterTier ? null : tier;
 				menu = Menu.NONE;
 				refresh();
 			}));
@@ -1901,10 +2086,13 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.drawString(info, textX, row.y + 30);
 	}
 
-	// --- Settings (cogwheel) --------------------------------------------------
+	// --- Settings page (cogwheel) -------------------------------------------
 
 	private static final String CONFIG_GROUP_KEY = "chunkblazer";
-	private static final int SETTINGS_WIDTH = 236;
+	private static final int SETTINGS_ROW = 22;
+	private static final int SETTINGS_FOOTER = 34;
+	// Two columns once the page is this wide; narrower, one column that scrolls.
+	private static final int SETTINGS_TWO_COLUMNS = 420;
 
 	/** One option of a multiple-choice setting: its label and the value it stores. */
 	private static final class Choice
@@ -1920,59 +2108,239 @@ public class TaskBrowserOverlay extends Overlay
 	}
 
 	/**
-	 * The cogwheel menu. Each line changes the same setting as before (same key), so
-	 * choices carry over; these settings are hidden from RuneLite's settings panel, and
-	 * their colours stay there.
+	 * One line on the settings page: a section heading (key null), an on/off setting
+	 * (no choices), or a multiple-choice setting. Each uses the same config key as
+	 * RuneLite's settings panel, so a change shows up in both places.
 	 */
-	private void drawSettingsMenu(Graphics2D graphics, Font font, Rectangle cog, Rectangle window, int mx, int my)
+	private static final class Setting
 	{
-		int rows = 8;
-		int boxX = Math.max(window.x + 2, cog.x + cog.width - SETTINGS_WIDTH);
-		Rectangle box = new Rectangle(boxX, cog.y + cog.height + 4, SETTINGS_WIDTH, rows * MENU_ROW + 6);
-		drawMenuBox(graphics, box);
-		graphics.setFont(font);
+		final String label;
+		final String key;
+		final String description;
+		final Object current;
+		final Choice[] choices;
+		// Every key a toggle switches: usually just {@code key}, more for a toggle that
+		// stands for several settings at once.
+		final String[] keys;
 
-		int rowY = box.y + 3;
-		drawChoiceRow(graphics, box, rowY, "Task box", "taskTrackerStyle", config.taskTrackerStyle(), mx, my,
-			new Choice("Net", TaskTrackerStyle.NET),
-			new Choice("Vani", TaskTrackerStyle.VANI),
-			new Choice("Off", TaskTrackerStyle.OFF));
-		rowY += MENU_ROW;
-		drawChoiceRow(graphics, box, rowY, "Outlines", "taskOutlineMode", config.taskOutlineMode(), mx, my,
-			new Choice("All", OutlineMode.ALL),
-			new Choice("Saved", OutlineMode.SAVED),
-			new Choice("Can do", OutlineMode.CAN_DO),
-			new Choice("Off", OutlineMode.OFF));
-		rowY += MENU_ROW;
-		drawToggleRow(graphics, box, rowY, "Auto-track tasks", "autoTrackTasks", config.autoTrackTasks(), mx, my);
-		rowY += MENU_ROW;
-		drawToggleRow(graphics, box, rowY, "Saved tasks tracker", "showSavedTaskTracker",
-			config.showSavedTaskTracker(), mx, my);
-		rowY += MENU_ROW;
-		drawToggleRow(graphics, box, rowY, "Chunk borders", "showSceneChunks", config.showSceneChunks(), mx, my);
-		rowY += MENU_ROW;
-		drawToggleRow(graphics, box, rowY, "Locked chunk walls", "showChunkWalls", config.showChunkWalls(), mx, my);
-		rowY += MENU_ROW;
-		drawToggleRow(graphics, box, rowY, "Chunk name banner", "showChunkNamePopups",
-			config.showChunkNamePopups(), mx, my);
-		rowY += MENU_ROW;
-		drawToggleRow(graphics, box, rowY, "Highlight task items", "highlightEquipItems",
-			config.highlightEquipItems(), mx, my);
-
-
-		// Clicks inside the menu (between buttons) do nothing rather than closing it.
-		menuHits.add(new Hit(box, () ->
+		private Setting(String label, String key, String description, Object current, Choice[] choices, String[] keys)
 		{
-		}));
+			this.label = label;
+			this.key = key;
+			this.description = description;
+			this.current = current;
+			this.choices = choices;
+			this.keys = keys;
+		}
+
+		private Setting(String label, String key, String description, Object current, Choice[] choices)
+		{
+			this(label, key, description, current, choices, new String[]{key});
+		}
+
+		static Setting heading(String label)
+		{
+			return new Setting(label, null, null, null, null);
+		}
+
+		static Setting toggle(String label, String key, boolean on, String description)
+		{
+			return new Setting(label, key, description, on, null);
+		}
+
+		/** One toggle for several settings: on while any of them is on, and switches them all together. */
+		static Setting toggleAll(String label, boolean on, String description, String... keys)
+		{
+			return new Setting(label, keys[0], description, on, null, keys);
+		}
+
+		static Setting choice(String label, String key, Object current, String description, Choice... choices)
+		{
+			return new Setting(label, key, description, current, choices);
+		}
+	}
+
+	/** The page's sections, in order. A heading starts each one. */
+	private List<List<Setting>> settingSections()
+	{
+		List<List<Setting>> sections = new ArrayList<>();
+		sections.add(java.util.Arrays.asList(
+			Setting.heading("Task box & tracking"),
+			Setting.choice("Task box", "taskTrackerStyle", config.taskTrackerStyle(),
+				"How the task you track is shown in game. Off shows it in the side panel instead.",
+				new Choice("Net", TaskTrackerStyle.NET), new Choice("Vani", TaskTrackerStyle.VANI),
+				new Choice("Off", TaskTrackerStyle.OFF)),
+			Setting.toggle("Auto-track tasks", "autoTrackTasks", config.autoTrackTasks(),
+				"Using an NPC or object a task needs (attack, talk, chop, mine...) tracks that task."),
+			Setting.toggle("Saved tasks tracker", "showSavedTaskTracker", config.showSavedTaskTracker(),
+				"A bar at the bottom of the screen with your saved tasks, nearest first."),
+			Setting.toggle("Right-click Tasks menu", "taskRightClickMenu", config.taskRightClickMenu(),
+				"Adds a Tasks submenu when right-clicking NPCs and objects your tasks need."),
+			Setting.toggleAll("Task chat messages",
+				config.showChatProgress() || config.showChatSuccess() || config.showChatFailed(),
+				"Task progress (3/10), completed and failed messages in the chat box. Pick them one by one in RuneLite's plugin settings.",
+				"showChatProgress", "showChatSuccess", "showChatFailed")));
+		sections.add(java.util.Arrays.asList(
+			Setting.heading("Highlights"),
+			Setting.choice("Outlines", "taskOutlineMode", config.taskOutlineMode(),
+				"Which task targets get an outline: all of them, saved tasks, ones you can do now, or none.",
+				new Choice("All", OutlineMode.ALL), new Choice("Saved", OutlineMode.SAVED),
+				new Choice("Can do", OutlineMode.CAN_DO), new Choice("Off", OutlineMode.OFF)),
+			Setting.toggle("Highlight task items", "highlightEquipItems", config.highlightEquipItems(),
+				"Outlines items your tasks need (gear to equip, tools like a knife or tinderbox).")));
+		sections.add(java.util.Arrays.asList(
+			Setting.heading("Chunks in the world"),
+			Setting.toggle("Chunk borders", "showSceneChunks", config.showSceneChunks(),
+				"Draws chunk borders on the ground."),
+			Setting.toggle("Locked chunk walls", "showChunkWalls", config.showChunkWalls(),
+				"A see-through wall between unlocked and locked chunks."),
+			Setting.toggle("Chunk name banner", "showChunkNamePopups", config.showChunkNamePopups(),
+				"Shows the chunk's name at the top of the screen when you walk into a new one.")));
+		sections.add(java.util.Arrays.asList(
+			Setting.heading("World map"),
+			Setting.toggle("Chunk borders", "showWorldMapChunks", config.showWorldMapChunks(),
+				"Draws chunk borders and colours on the world map."),
+			Setting.toggle("Lines between unlocked", "showChunkGridLines", config.showChunkGridLines(),
+				"Outlines each unlocked chunk. Off shows your unlocked area as one piece."),
+			Setting.toggle("Chunk costs", "showChunkCostLabels", config.showChunkCostLabels(),
+				"Writes what each unlockable chunk costs inside it (free, points or a boss token)."),
+			Setting.toggle("Colour legend", "showChunkLegend", config.showChunkLegend(),
+				"A key to the chunk colours in the corner of the world map.")));
+		return sections;
+	}
+
+	/**
+	 * The settings page, drawn where the tabs and task list usually are: a back button,
+	 * the sections in one or two columns, and a footer explaining the hovered setting.
+	 */
+	private void drawSettingsPage(Graphics2D graphics, Rectangle page, Font font, int mx, int my)
+	{
+		graphics.setFont(font);
+		FontMetrics fm = graphics.getFontMetrics();
+
+		// Top bar: back to the tasks, and the page name.
+		int barHeight = TABS - 4;
+		Rectangle back = new Rectangle(page.x + PAD - 1, page.y, 96, barHeight);
+		drawButton(graphics, font, back, "< Back to tasks", false, mx, my, false, () ->
+		{
+			settingsOpen = false;
+			scroll = 0;
+		});
+		graphics.setColor(TITLE);
+		graphics.drawString("Settings", back.x + back.width + 10, page.y + (barHeight + fm.getAscent()) / 2 - 2);
+
+		Rectangle body = new Rectangle(page.x, page.y + TABS, page.width, page.height - TABS - SETTINGS_FOOTER);
+		List<List<Setting>> sections = settingSections();
+
+		// Two columns when there's room (first half of the sections left, the rest right).
+		boolean twoColumns = body.width >= SETTINGS_TWO_COLUMNS;
+		int columnWidth = twoColumns ? (body.width - PAD * 3) / 2 : body.width - PAD * 2 - 6;
+		List<List<List<Setting>>> columns = new ArrayList<>();
+		if (twoColumns)
+		{
+			int half = (sections.size() + 1) / 2;
+			columns.add(sections.subList(0, half));
+			columns.add(sections.subList(half, sections.size()));
+		}
+		else
+		{
+			columns.add(sections);
+		}
+
+		int contentHeight = 0;
+		for (List<List<Setting>> column : columns)
+		{
+			int h = 0;
+			for (List<Setting> section : column)
+			{
+				h += section.size() * SETTINGS_ROW + 6;
+			}
+			contentHeight = Math.max(contentHeight, h);
+		}
+		scroll = Math.max(0, Math.min(scroll, Math.max(0, contentHeight - body.height)));
+
+		Shape oldClip = graphics.getClip();
+		graphics.clip(body);
+		String hoveredDescription = null;
+		for (int c = 0; c < columns.size(); c++)
+		{
+			int colX = body.x + PAD + c * (columnWidth + PAD);
+			int rowY = body.y - scroll;
+			for (List<Setting> section : columns.get(c))
+			{
+				for (Setting setting : section)
+				{
+					Rectangle row = new Rectangle(colX, rowY, columnWidth, SETTINGS_ROW);
+					if (setting.key == null)
+					{
+						graphics.setColor(TITLE);
+						graphics.drawString(setting.label.toUpperCase(), colX + 2, rowY + SETTINGS_ROW - 6);
+						graphics.setColor(BORDER);
+						graphics.drawLine(colX, rowY + SETTINGS_ROW - 2, colX + columnWidth, rowY + SETTINGS_ROW - 2);
+					}
+					else
+					{
+						boolean visible = body.contains(mx, my);
+						if (visible && row.contains(mx, my))
+						{
+							hoveredDescription = setting.description;
+						}
+						if (setting.choices == null)
+						{
+							drawToggleRow(graphics, row, setting, visible ? mx : -1, my);
+						}
+						else
+						{
+							drawChoiceRow(graphics, row, setting, visible ? mx : -1, my);
+						}
+					}
+					rowY += SETTINGS_ROW;
+				}
+				rowY += 6;
+			}
+		}
+		graphics.setClip(oldClip);
+
+		if (contentHeight > body.height)
+		{
+			int thumbHeight = Math.max(20, body.height * body.height / contentHeight);
+			int thumbY = body.y + (body.height - thumbHeight) * scroll / Math.max(1, contentHeight - body.height);
+			graphics.setColor(TAB_OFF);
+			graphics.fillRect(body.x + body.width - 5, body.y, 4, body.height);
+			graphics.setColor(BORDER);
+			graphics.fillRect(body.x + body.width - 5, thumbY, 4, thumbHeight);
+		}
+
+		// Footer: what the hovered setting does.
+		int footerY = body.y + body.height;
+		graphics.setColor(BORDER);
+		graphics.drawLine(page.x + PAD, footerY + 2, page.x + page.width - PAD, footerY + 2);
+		String text = hoveredDescription != null ? hoveredDescription
+			: "Hover a setting to see what it does. Colours are in RuneLite's plugin settings.";
+		graphics.setColor(hoveredDescription != null ? DETAIL : SUBTEXT);
+		int lineY = footerY + 6 + fm.getAscent();
+		for (String line : wrap(fm, text, page.width - PAD * 2))
+		{
+			graphics.drawString(line, page.x + PAD, lineY);
+			lineY += DETAIL_LINE;
+		}
 	}
 
 	/** A label on the left and a checkbox on the right; clicking the row flips it. */
-	private void drawToggleRow(Graphics2D graphics, Rectangle box, int rowY, String label, String key,
-		boolean on, int mx, int my)
+	private void drawToggleRow(Graphics2D graphics, Rectangle row, Setting setting, int mx, int my)
 	{
-		Rectangle row = new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW);
-		menuHits.add(new Hit(row, () -> configManager.setConfiguration(CONFIG_GROUP_KEY, key, !on)));
-		drawCheckRow(graphics, row, label, on, null, mx, my);
+		boolean on = Boolean.TRUE.equals(setting.current);
+		if (mx >= 0)
+		{
+			hits.add(new Hit(row, () ->
+			{
+				for (String key : setting.keys)
+				{
+					configManager.setConfiguration(CONFIG_GROUP_KEY, key, !on);
+				}
+			}));
+		}
+		drawCheckRow(graphics, row, setting.label, on, null, mx, my);
 	}
 
 	/** Draws one checkbox row; {@code labelColor} overrides the label's colour (null = normal). */
@@ -1987,11 +2355,11 @@ public class TaskBrowserOverlay extends Overlay
 		}
 		FontMetrics fm = graphics.getFontMetrics();
 		graphics.setColor(labelColor != null ? labelColor : on || hover ? Color.WHITE : SUBTEXT);
-		graphics.drawString(label, row.x + 6, row.y + (MENU_ROW + fm.getAscent()) / 2 - 2);
+		graphics.drawString(label, row.x + 6, row.y + (row.height + fm.getAscent()) / 2 - 2);
 
 		int size = 10;
 		int bx = row.x + row.width - size - 8;
-		int by = row.y + (MENU_ROW - size) / 2;
+		int by = row.y + (row.height - size) / 2;
 		graphics.setColor(SEARCH_BACK);
 		graphics.fillRect(bx, by, size, size);
 		graphics.setColor(on || hover ? TITLE : BORDER);
@@ -2003,26 +2371,33 @@ public class TaskBrowserOverlay extends Overlay
 	}
 
 	/** A label on the left and a row of small buttons on the right, the chosen one lit. */
-	private void drawChoiceRow(Graphics2D graphics, Rectangle box, int rowY, String label, String key,
-		Object current, int mx, int my, Choice... choices)
+	private void drawChoiceRow(Graphics2D graphics, Rectangle row, Setting setting, int mx, int my)
 	{
 		FontMetrics fm = graphics.getFontMetrics();
-		graphics.setColor(SUBTEXT);
-		graphics.drawString(label, box.x + 8, rowY + (MENU_ROW + fm.getAscent()) / 2 - 2);
-
-		int right = box.x + box.width - 6;
-		int x = right;
-		for (int i = choices.length - 1; i >= 0; i--)
+		boolean rowHover = row.contains(mx, my);
+		if (rowHover)
 		{
-			x -= fm.stringWidth(choices[i].label) + 10;
+			graphics.setColor(ROW_HOVER);
+			graphics.fillRect(row.x, row.y, row.width, row.height);
 		}
-		for (Choice choice : choices)
+		graphics.setColor(rowHover ? Color.WHITE : SUBTEXT);
+		graphics.drawString(setting.label, row.x + 6, row.y + (row.height + fm.getAscent()) / 2 - 2);
+
+		int x = row.x + row.width - 4;
+		for (Choice choice : setting.choices)
+		{
+			x -= fm.stringWidth(choice.label) + 10;
+		}
+		for (Choice choice : setting.choices)
 		{
 			int w = fm.stringWidth(choice.label) + 8;
-			Rectangle button = new Rectangle(x, rowY + 2, w, MENU_ROW - 4);
-			boolean selected = choice.value.equals(current);
+			Rectangle button = new Rectangle(x, row.y + 3, w, row.height - 6);
+			boolean selected = choice.value.equals(setting.current);
 			boolean hover = button.contains(mx, my);
-			menuHits.add(new Hit(button, () -> configManager.setConfiguration(CONFIG_GROUP_KEY, key, choice.value)));
+			if (mx >= 0)
+			{
+				hits.add(new Hit(button, () -> configManager.setConfiguration(CONFIG_GROUP_KEY, setting.key, choice.value)));
+			}
 			graphics.setColor(selected ? TAB_ON : hover ? ROW_HOVER : TAB_OFF);
 			graphics.fillRect(button.x, button.y, button.width, button.height);
 			if (selected)
@@ -2061,7 +2436,7 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.drawRect(box.x, box.y, box.width, box.height);
 	}
 
-	private void drawRow(Graphics2D graphics, NuzlockeTask task, Rectangle row, List<String> detail, int index,
+	private void drawRow(Graphics2D graphics, NuzlockeTask task, Rectangle row, List<QuestRequirements.Line> detail, int index,
 		Set<String> saved, Rectangle list, int mx, int my, Font regular, Font small, boolean menuOpen)
 	{
 		boolean mouseOverList = !menuOpen && list.contains(mx, my);
@@ -2088,6 +2463,16 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.fillRect(row.x, row.y, row.width, row.height);
 		}
 
+		// Just jumped to from a quest link: an orange outline that fades out.
+		long sinceFlash = System.currentTimeMillis() - flashAt;
+		if (taskId != null && taskId.equals(flashTask) && sinceFlash < FLASH_MS)
+		{
+			int alpha = (int) (255 * (1 - sinceFlash / (double) FLASH_MS));
+			graphics.setColor(new Color(TITLE.getRed(), TITLE.getGreen(), TITLE.getBlue(), alpha));
+			graphics.drawRect(row.x + 1, row.y + 1, row.width - 3, row.height - 3);
+			graphics.drawRect(row.x + 2, row.y + 2, row.width - 5, row.height - 5);
+		}
+
 		boolean isSaved = saved.contains(taskId);
 
 		// Expand arrow (only for tasks with requirements), the star, then the archive
@@ -2096,7 +2481,7 @@ public class TaskBrowserOverlay extends Overlay
 		Rectangle star = new Rectangle(row.x + 18, row.y + (ROW - 18) / 2, 18, 18);
 		Rectangle book = new Rectangle(row.x + 38, row.y + (ROW - 18) / 2, 14, 18);
 		boolean isArchived = archive.isArchived(task);
-		boolean expandable = !requirementsFor(task).isEmpty();
+		boolean expandable = !requirementsFor(task).isEmpty() || QuestRequirements.isQuestTask(task);
 		if (list.contains(mx, my))
 		{
 			if (expandable)
@@ -2111,6 +2496,31 @@ public class TaskBrowserOverlay extends Overlay
 			}
 			hits.add(new Hit(star.intersection(list), () -> toggleSaved(taskId)));
 			hits.add(new Hit(book.intersection(list), () -> toggleArchived(task)));
+			// Quest requirement lines: a section header opens or closes it, a chunk shows
+			// itself on the world map, a quest jumps to that quest in the list.
+			FontMetrics detailFm = graphics.getFontMetrics(small);
+			for (int i = 0; i < detail.size(); i++)
+			{
+				QuestRequirements.Line line = detail.get(i);
+				if (line.clickable())
+				{
+					Rectangle lineArea = detailLineArea(detailFm, detail, row, i);
+					Runnable action;
+					if (line.region > 0)
+					{
+						action = () -> showChunkOnMap(line.region, line.text.trim());
+					}
+					else if (line.quest != null)
+					{
+						action = () -> showQuest(line.quest, line.text.replace(" (checking)", ""));
+					}
+					else
+					{
+						action = () -> quests.toggleSection(line.toggle);
+					}
+					hits.add(new Hit(lineArea.intersection(list), action));
+				}
+			}
 			// Clicking the tracked task again stops tracking it; any other row tracks that task.
 			hits.add(new Hit(row.intersection(list), () ->
 			{
@@ -2198,14 +2608,125 @@ public class TaskBrowserOverlay extends Overlay
 		if (!detail.isEmpty())
 		{
 			graphics.setFont(small);
-			graphics.setColor(DETAIL);
 			int lineY = row.y + ROW + sm.getAscent() - 2;
-			for (String line : detail)
+			for (int i = 0; i < detail.size(); i++)
 			{
-				graphics.drawString(line, textX, lineY);
+				QuestRequirements.Line line = detail.get(i);
+				lineY += line.gap;
+				Rectangle area = detailLineArea(sm, detail, row, i);
+				boolean hover = line.clickable() && mouseOverList && area.contains(mx, my);
+				if (line.header)
+				{
+					// Section header: a small open/closed arrow, then its name and count.
+					Color arrowColor = hover ? Color.WHITE : SUBTEXT;
+					int ax = textX + 3;
+					int ay = lineY - sm.getAscent() / 2;
+					graphics.setColor(arrowColor);
+					graphics.fillPolygon(line.open
+						? new Polygon(new int[]{ax - 3, ax + 3, ax}, new int[]{ay - 1, ay - 1, ay + 3}, 3)
+						: new Polygon(new int[]{ax - 1, ax - 1, ax + 3}, new int[]{ay - 3, ay + 3, ay}, 3));
+				}
+				graphics.setColor(line.color);
+				int lineX = textX + lineIndent(line);
+				graphics.drawString(line.text, lineX, lineY);
+				// Clickable line under the mouse: underline it.
+				if (hover)
+				{
+					graphics.drawLine(lineX, lineY + 2, lineX + sm.stringWidth(line.text), lineY + 2);
+				}
 				lineY += DETAIL_LINE;
 			}
 		}
+	}
+
+	/**
+	 * Where line {@code index} of a row's detail list is drawn: from the task name's left
+	 * edge (so a header's arrow is included) to the end of its text.
+	 */
+	private static Rectangle detailLineArea(FontMetrics fm, List<QuestRequirements.Line> detail, Rectangle row, int index)
+	{
+		int y = row.y + ROW - 1;
+		for (int i = 0; i <= index; i++)
+		{
+			y += detail.get(i).gap + (i < index ? DETAIL_LINE : 0);
+		}
+		QuestRequirements.Line line = detail.get(index);
+		int textX = row.x + 38 + 14 + 6;
+		return new Rectangle(textX, y, lineIndent(line) + fm.stringWidth(line.text), DETAIL_LINE);
+	}
+
+	/** How far a detail line's text sits in: past a header's arrow, or an item's indent. */
+	private static int lineIndent(QuestRequirements.Line line)
+	{
+		return line.header ? SECTION_TEXT : line.indent;
+	}
+
+	/** Height of a row's expanded detail lines, with the space above each section. */
+	private static int detailHeight(List<QuestRequirements.Line> lines)
+	{
+		if (lines.isEmpty())
+		{
+			return 0;
+		}
+		int height = 4;
+		for (QuestRequirements.Line line : lines)
+		{
+			height += DETAIL_LINE + line.gap;
+		}
+		return height;
+	}
+
+	/**
+	 * A prerequisite quest was clicked: show that quest in the list (Quests filter, its
+	 * requirements open), scroll to it and outline it. If it isn't a task right now
+	 * (finished, or not one of ChunkBlazer's quests), say so in chat.
+	 */
+	private void showQuest(String questName, String display)
+	{
+		NuzlockeTask found = null;
+		for (NuzlockeTask task : pool(true))
+		{
+			TaskConstraints c = task.getConstraints();
+			if (QuestRequirements.isQuestTask(task) && c != null && questName.equals(c.getQuest()))
+			{
+				found = task;
+				break;
+			}
+		}
+		if (found == null)
+		{
+			clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "",
+				display + " isn't in your task list (it's done, or not a ChunkBlazer quest).", null));
+			return;
+		}
+		String id = found.getTaskId();
+		finishNew();
+		tab = archive.ids().contains(id) ? Tab.ARCHIVED : Tab.ACTIVE;
+		filterTypes = Collections.unmodifiableSet(EnumSet.of(Filter.QUESTS));
+		filterSkill = null;
+		filterTier = null;
+		search = "";
+		pinnedChunk = null;
+		currentChunkOnly = false;
+		menu = Menu.NONE;
+		expanded.add(id);
+		refresh();
+		scrollToTask = id;
+		flashTask = id;
+		flashAt = System.currentTimeMillis();
+	}
+
+	/** Jump the world map to a chunk and outline it; if the map is closed, say to open it. */
+	private void showChunkOnMap(int region, String name)
+	{
+		worldMap.focusRegion(region);
+		clientThread.invoke(() ->
+		{
+			if (!worldMap.isMapOpen())
+			{
+				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Open the world map to see " + name + ".", null);
+			}
+		});
 	}
 
 	private int countSaved()
@@ -2321,14 +2842,19 @@ public class TaskBrowserOverlay extends Overlay
 	/** The task's own level check, plus any real requirements it's missing (see TaskTargetExtras). */
 	private boolean canDo(NuzlockeTask task)
 	{
-		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
+		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null
+			&& quests.isReady(task);
 	}
 
 	/** "(Needs 20 Defence, 20 Ranged)": every level you're missing, for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
 		String missing = TaskTargetExtras.missingRequirement(client, task);
-		return missing != null ? "(Needs " + missing + ")" : "(Lvl " + task.getLevelRequirement() + ")";
+		if (missing != null)
+		{
+			return "(Needs " + missing + ")";
+		}
+		return plugin.meetsLevelRequirement(task) ? "(Not ready)" : "(Lvl " + task.getLevelRequirement() + ")";
 	}
 
 }

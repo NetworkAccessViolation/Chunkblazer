@@ -24,3 +24,5 @@ offline by disabling server verification. Full detail in [PRIVACY.md](PRIVACY.md
 
 The ChunkBlazer GPU renderer is heavily inspired by [Region Locker GPU](https://github.com/SlayToStay/region-locker) by slaytostay and [RuneLite's GPU plugin](https://github.com/runelite/runelite/wiki/GPU).
 Note: The GPU is currently not available and will be pushed in a later update.
+
+Quest chunk and requirement data in the task window is derived from [Quest Helper](https://github.com/Zoinkwiz/quest-helper) by Zoinkwiz, used under the BSD 2-Clause License (see LICENSE-quest-helper).
