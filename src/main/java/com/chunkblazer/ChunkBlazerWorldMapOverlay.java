@@ -31,7 +31,9 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.BasicStroke;
 import java.awt.Rectangle;
+import java.awt.Stroke;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -40,6 +42,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.api.Client;
 import net.runelite.api.Point;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.worldmap.WorldMap;
@@ -77,6 +80,14 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	private int hoveredRegionId = -1;
 	private boolean isHoveredUnlockable = false;
 
+	// A chunk to point out (clicked in a quest's requirement list): the map jumps to it
+	// once it's open, then outlines it with a pulse for FOCUS_MS.
+	private static final long FOCUS_MS = 6000;
+	private static final Color FOCUS_COLOR = new Color(255, 200, 60);
+	private volatile int focusRegion = -1;
+	private volatile boolean focusPending;
+	private volatile long focusShownAt;
+
 	@Inject
 	private ChunkBlazerWorldMapOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
 		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread)
@@ -101,8 +112,78 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		return hoveredRegionId;
 	}
 
+	/**
+	 * Point out a chunk on the world map: jumps there now if the map is open, or as soon
+	 * as it's opened, and outlines it for a few seconds.
+	 */
+	void focusRegion(int regionId)
+	{
+		focusRegion = regionId;
+		focusShownAt = 0;
+		focusPending = true;
+	}
+
+	/** True if the world map is open right now. */
+	boolean isMapOpen()
+	{
+		return client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) != null;
+	}
+
 	@Override
 	public Dimension render(Graphics2D graphics)
+	{
+		// The focus outline goes on top of the chunk tints.
+		Dimension size = renderChunks(graphics);
+		renderFocus(graphics);
+		return size;
+	}
+
+	/** Moves the map to the focused chunk and draws its pulsing outline. Independent of the chunk overlay setting. */
+	private void renderFocus(Graphics2D graphics)
+	{
+		int region = focusRegion;
+		Widget map = client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER);
+		WorldMap worldMap = client.getWorldMap();
+		if (region <= 0 || map == null || worldMap == null)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (focusPending)
+		{
+			focusPending = false;
+			focusShownAt = now;
+			worldMap.setWorldMapPositionTarget(new WorldPoint(((region >> 8) << 6) + 32, ((region & 0xFF) << 6) + 32, 0));
+		}
+		if (now - focusShownAt > FOCUS_MS)
+		{
+			focusRegion = -1;
+			return;
+		}
+
+		Rectangle mapRect = map.getBounds();
+		float pixelsPerTile = worldMap.getWorldMapZoom();
+		Point centre = worldMap.getWorldMapPosition();
+		int size = (int) Math.ceil(REGION_SIZE * pixelsPerTile);
+		int x = mapRect.x + mapRect.width / 2 + (int) ((((region >> 8) << 6) - centre.getX()) * pixelsPerTile);
+		int y = mapRect.y + mapRect.height / 2 - (int) ((((region & 0xFF) << 6) - centre.getY()) * pixelsPerTile) - size;
+
+		// Pulse: the outline breathes in and out, one beat a second.
+		double pulse = 0.5 + 0.5 * Math.sin((now - focusShownAt) / 1000.0 * Math.PI * 2);
+		java.awt.Shape oldClip = graphics.getClip();
+		Stroke oldStroke = graphics.getStroke();
+		graphics.setClip(mapRect);
+		graphics.setColor(new Color(FOCUS_COLOR.getRed(), FOCUS_COLOR.getGreen(), FOCUS_COLOR.getBlue(),
+			(int) (60 * pulse)));
+		graphics.fillRect(x, y, size, size);
+		graphics.setColor(FOCUS_COLOR);
+		graphics.setStroke(new BasicStroke(2f + 2f * (float) pulse));
+		graphics.drawRect(x, y, size, size);
+		graphics.setStroke(oldStroke);
+		graphics.setClip(oldClip);
+	}
+
+	private Dimension renderChunks(Graphics2D graphics)
 	{
 		// Chunk borders render on three independent surfaces: the minimap
 		// (showMinimapChunks), the 3D scene (showSceneChunks), and this world map

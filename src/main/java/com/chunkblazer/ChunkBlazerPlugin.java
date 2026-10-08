@@ -7464,7 +7464,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 * and the granted starting chunk are excluded, because none of them are priced by
 	 * the points curve. This is the "rank" the next paid unlock is charged at.
 	 */
-	private int countPayableUnlockedChunks()
+	 int countPayableUnlockedChunks()
 	{
 		java.util.Set<Integer> seenChunks = new java.util.HashSet<>();
 		for (String s : getUnlockedRegionIds())
