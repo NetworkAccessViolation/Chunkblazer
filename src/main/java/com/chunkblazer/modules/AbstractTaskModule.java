@@ -26,9 +26,14 @@
 
 package com.chunkblazer.modules;
 
+import com.google.common.base.MoreObjects;
+import com.google.common.collect.ImmutableSet;
+import java.util.HashMap;
+import net.runelite.api.ChatLineBuffer;
 import net.runelite.api.MenuAction;
 import java.util.Set;
 import java.util.EnumSet;
+import net.runelite.api.MessageNode;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.api.ChatMessageType;
@@ -96,8 +101,13 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 		MenuAction.GAME_OBJECT_FIFTH_OPTION
 	);
 
+	private static final Set<Integer> TUTORIAL_ISLAND_REGIONS = ImmutableSet.of(12336, 12335, 12592, 12080, 12079, 12436);
+
 	@Inject
 	protected ChatMessageManager chatMessageManager;
+
+	private HashMap<NuzlockeTask, MessageNode[]> taskMessages = new HashMap<>();
+
 
 	/**
 	 * Set the callback to be invoked when a task is completed.
@@ -284,10 +294,50 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 		void onProgressUpdated(NuzlockeTask task, int newProgress);
 	}
 
-	/** Queue one line in the game chat. */
-	protected void chatLine(String message)
+	// chatMessageManager.add() does not return the MessageNode of the sent message
+	// We could try and add listeners or query the chatbox buffer but this introduces possible races and is not performant
+	// Calling client.addChatMessage() directly skips message formatting passes and would need a rewrite of the messages here
+	// Reimplement chatMessageManager.add in this class to capture the MessageNode
+	private MessageNode add(QueuedMessage message)
 	{
+		// Do not send message if the player is on tutorial island
+		final Player player = client.getLocalPlayer();
+		if (player != null && TUTORIAL_ISLAND_REGIONS.contains(player.getWorldLocation().getRegionID()))
+		{
+			return null;
+		}
+
+		// this updates chat cycle
+		final MessageNode line = client.addChatMessage(
+			message.getType(),
+			MoreObjects.firstNonNull(message.getName(), ""),
+			MoreObjects.firstNonNull(message.getRuneLiteFormattedMessage(), message.getValue()),
+			message.getSender());
+
+		// Update the message with RuneLite additions
+		line.setRuneLiteFormatMessage(message.getRuneLiteFormattedMessage());
+
+		if (message.getTimestamp() != 0)
+		{
+			line.setTimestamp(message.getTimestamp());
+		}
+
+		return line;
+	}
+
+	/**
+	 * Queue one line in the game chat.
+	 */
+	protected MessageNode chatLine(String message)
+	{
+		/*
 		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.value(message)
+			.build());
+		*/
+
+		return add(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
 			.value(message)
 			.build());
@@ -296,12 +346,30 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 	/** "[ChunkBlazer] heading task-name suffix", then an indented detail line when there is one. */
 	protected void announce(String headingColor, String heading, NuzlockeTask task, String suffix, String detail)
 	{
-		chatLine("<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> <col=" + headingColor + ">" + heading + "</col> <col="
-			+ COLOR_BLACK + ">" + task.getName() + "</col>" + suffix);
+		ChatLineBuffer ccInfoBuffer = client.getChatLineMap().get(ChatMessageType.GAMEMESSAGE.getType());
+		MessageNode[] lastMessages = taskMessages.get(task);
+		if (lastMessages != null)
+		{
+			if (ccInfoBuffer != null)
+			{
+				ccInfoBuffer.removeMessageNode(lastMessages[0]);
+				if (lastMessages[1] != null)
+				{
+					ccInfoBuffer.removeMessageNode(lastMessages[1]);
+				}
+			}
+		}
+		MessageNode taskMessage = chatLine(
+			"<col=" + COLOR_BLUE + ">[ChunkBlazer]</col> <col=" + headingColor + ">" + heading + "</col> <col="
+				+ COLOR_BLACK + ">" + task.getName() + "</col>" + suffix);
+
+		MessageNode detailMessage = null;
 		if (detail != null && !detail.isEmpty())
 		{
-			chatLine("  - " + detail);
+			detailMessage = chatLine("  - " + detail);
 		}
+		MessageNode[] messages = {taskMessage, detailMessage};
+		taskMessages.put(task, messages);
 	}
 
 	protected void sendTaskSuccess(NuzlockeTask task, String details)
