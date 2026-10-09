@@ -1236,11 +1236,11 @@ public class TaskTargetHighlighter extends Overlay
 		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
 	}
 
-	/** "(Needs 20 Defence, 20 Ranged)": every level you're missing, for a task you can't do yet. */
+	/** "(20 Defence, 20 Ranged)": every level you're missing, for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
 		String missing = TaskTargetExtras.missingRequirement(client, task);
-		return missing != null ? "(Needs " + missing + ")" : "(Lvl " + task.getLevelRequirement() + ")";
+		return missing != null ? "(" + missing + ")" : "(Lvl " + task.getLevelRequirement() + ")";
 	}
 
 

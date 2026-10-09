@@ -1085,13 +1085,13 @@ public class TaskBrowserOverlay extends Overlay
 			&& quests.isReady(task);
 	}
 
-	/** "(Needs 20 Defence, 20 Ranged)", "(Lvl 40)" or "(Not ready)" for a task you can't do yet. */
+	/** "(20 Defence, 20 Ranged)", "(Lvl 40)" or "(Not ready)" for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
 		String missing = TaskTargetExtras.missingRequirement(client, task);
 		if (missing != null)
 		{
-			return "(Needs " + missing + ")";
+			return "(" + missing + ")";
 		}
 		return plugin.meetsLevelRequirement(task) ? "(Not ready)" : "(Lvl " + task.getLevelRequirement() + ")";
 	}
