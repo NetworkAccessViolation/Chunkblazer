@@ -319,7 +319,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "taskTrackerStyle",
 		name = "Task Tracker",
-		description = "How the task you select is shown in game. Off shows it in the side panel instead",
+		description = "How the task you select is shown in game. Off hides it",
 		section = taskSection,
 		position = 1,
 		hidden = true

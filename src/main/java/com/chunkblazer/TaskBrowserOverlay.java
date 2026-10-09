@@ -2212,7 +2212,7 @@ public class TaskBrowserOverlay extends Overlay
 		sections.add(java.util.Arrays.asList(
 			Setting.heading("Task box & tracking"),
 			Setting.choice("Task box", "taskTrackerStyle", config.taskTrackerStyle(),
-				"How the task you track is shown in game. Off shows it in the side panel instead.",
+				"How the task you track is shown in game. Off hides it.",
 				new Choice("Net", TaskTrackerStyle.NET), new Choice("Vani", TaskTrackerStyle.VANI),
 				new Choice("Off", TaskTrackerStyle.OFF)),
 			Setting.toggle("Auto-track tasks", "autoTrackTasks", config.autoTrackTasks(),

@@ -188,12 +188,6 @@ public class VarbitCheckModule extends AbstractTaskModule
 				else
 				{
 					watchedVarbitIds.add(varbitId);
-					if (bit != null && bit >= 0)
-					{
-					}
-					else
-					{
-					}
 				}
 
 				// Initialize tracking on client thread
@@ -359,12 +353,6 @@ public class VarbitCheckModule extends AbstractTaskModule
 
 		if (matched && !task.isCompleted())
 		{
-			if (bit != null)
-			{
-			}
-			else
-			{
-			}
 
 			task.setCurrentProgress(1);
 			task.setCompleted(true);

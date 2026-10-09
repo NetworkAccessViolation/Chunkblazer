@@ -669,7 +669,6 @@ public class ChunkBlazerPlugin extends Plugin
 				apiClient.syncPlayerState(finalSync)
 					.thenAccept(resp ->
 					{
-						log.info("Logout sync: success={}", resp != null && resp.isSuccess());
 						recordServerOutcome(resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome(),
 							resp == null ? 0 : resp.getRetryAfterMs());
 					});
@@ -796,7 +795,6 @@ public class ChunkBlazerPlugin extends Plugin
 		// even if the immediate bootstrap below runs against a null name.
 		pendingProfileBootstrap = true;
 
-		log.info("[CHUNKBLAZER] RS profile available, bootstrapping account state");
 		// One-time move of any legacy profile-global progress into this account's RSProfile,
 		// BEFORE the bootstrap, so ensureStartingChunkUnlocked sees the migrated unlocks.
 		migrateLegacyGlobalStateToRSProfile();
@@ -815,8 +813,6 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	void revokeSyncAuthorityForProfileSwitch()
 	{
-		log.info("[CHUNKBLAZER] RuneLite profile changed, revoking sync authority until "
-			+ "this profile has merged the server's record");
 
 		serverStateMerged = false;
 		serverRollRestoreResolved = false;
@@ -915,7 +911,6 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 
 			panel.updateRegionDisplay();
-			panel.updateTaskList();
 		}
 	}
 
@@ -988,11 +983,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		// Swallow the default world-map click so it doesn't also pan/select.
 		event.consume();
-		// Show the unlock confirm both as a chatbox Yes/No prompt and in the top-right
-		// side panel, matching the walk-into-a-chunk experience. unlockRegion is
-		// idempotent, so acting on either prompt is safe if both are open.
 		showChatboxUnlockPopup(regionId);
-		panel.promptUnlockForRegion(regionId);
 	}
 
 	@Subscribe
@@ -1026,10 +1017,7 @@ public class ChunkBlazerPlugin extends Plugin
 					// Not enough tokens - show info message
 					chatboxPanelManager.openTextMenuInput(
 									"You need a Boss Token to unlock " + chunkName + ".")
-							.option("OK", () ->
-							{
-								panel.hideUnlockSection();
-							})
+							.option("OK", () -> { })
 							.build();
 				}
 				else
@@ -1038,15 +1026,8 @@ public class ChunkBlazerPlugin extends Plugin
 					chatboxPanelManager.openTextMenuInput(
 									"Unlock " + chunkName + " for 1 Boss Token? " +
 											"(Remaining: " + (currentTokens - 1) + ")")
-							.option("Yes, unlock!", () ->
-							{
-								panel.hideUnlockSection();
-								unlockRegion(regionId);
-							})
-							.option("No, not yet", () ->
-							{
-								panel.hideUnlockSection();
-							})
+							.option("Yes, unlock!", () -> unlockRegion(regionId))
+							.option("No, not yet", () -> { })
 							.build();
 				}
 			}
@@ -1055,10 +1036,7 @@ public class ChunkBlazerPlugin extends Plugin
 				// Not enough points - show info message
 				chatboxPanelManager.openTextMenuInput(
 								"You need " + (cost - currentPoints) + " more points to unlock " + chunkName + ".")
-						.option("OK", () ->
-						{
-							panel.hideUnlockSection();
-						})
+						.option("OK", () -> { })
 						.build();
 			}
 			else
@@ -1067,15 +1045,8 @@ public class ChunkBlazerPlugin extends Plugin
 				chatboxPanelManager.openTextMenuInput(
 								"Unlock " + chunkName + " for " + cost + " points? " +
 										"(Remaining: " + (currentPoints - cost) + ")")
-						.option("Yes, unlock!", () ->
-						{
-							panel.hideUnlockSection();
-							unlockRegion(regionId);
-						})
-						.option("No, not yet", () ->
-						{
-							panel.hideUnlockSection();
-						})
+						.option("Yes, unlock!", () -> unlockRegion(regionId))
+						.option("No, not yet", () -> { })
 						.build();
 			}
 		});
@@ -1292,7 +1263,6 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return false;
 		}
-		log.info("[CHUNKBLAZER] applying task catalog v{} (was v{})", available, parsedCatalogVersion);
 		loadChunkData();
 		return true;
 	}
@@ -1704,13 +1674,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 		if (backfilled.isEmpty())
 		{
-			// Nothing to settle, but the baseline may have been captured just
-			// now — the panel was built before it existed and would still be
-			// listing every unearnable rung. Repaint so they drop out.
-			if (panel != null)
-			{
-				panel.updateGlobalTasks();
-			}
 			return;
 		}
 
@@ -1984,7 +1947,6 @@ public class ChunkBlazerPlugin extends Plugin
 			owner + BASELINE_OWNER_SEP + sb);
 		cachedProgressionBaseline = baseline;
 		cachedBaselineOwner = owner;
-		log.info("[CHUNKBLAZER] Progression baseline captured for {}: {}", getPlayerName(), sb);
 		return baseline;
 	}
 
@@ -2588,9 +2550,6 @@ public class ChunkBlazerPlugin extends Plugin
 				// Reload active tasks
 				loadActiveTasks();
 			}
-			else if (currentRegion > 0)
-			{
-			}
 		}
 
 		panel.updateModeDisplay();
@@ -2682,8 +2641,6 @@ public class ChunkBlazerPlugin extends Plugin
 			// Unset (not set-to-3): let it resolve to the code default so future
 			// default changes carry through, and so this reads as "never chosen".
 			configManager.unsetConfiguration(CONFIG_GROUP, "taskCompletionSoundVolume");
-			log.info("[CHUNKBLAZER] cleared stale {}% task-sound volume; now uses the 3% default",
-				OLD_DEFAULT_SOUND_VOLUME);
 		}
 		configManager.setConfiguration(CONFIG_GROUP, SOUND_VOLUME_MIGRATED_KEY, "true");
 	}
@@ -2828,7 +2785,6 @@ public class ChunkBlazerPlugin extends Plugin
 				if (outcome == ApiOutcome.REGISTRATION_CLOSED && !rsn.equals(registrationClosedRsn))
 				{
 					registrationClosedRsn = rsn;
-					log.info("[CHUNKBLAZER] server registration is closed; {} will play offline this session", rsn);
 					addPluginChatMessage("New ChunkBlazer sign-ups are closed right now, so this account "
 						+ "isn't syncing. You can keep playing, and your progress is saved locally.");
 				}
@@ -2856,9 +2812,6 @@ public class ChunkBlazerPlugin extends Plugin
 							// leak). Drop it so we stop impersonating; the server served THIS
 							// account by name. Sync re-enables once this account's own key is
 							// present (RuneLite config-sync carries it, else a one-time paste).
-							log.info("[CHUNKBLAZER] server rejected our stored key as belonging to another "
-								+ "account; cleared it and served {} by name. Paste this account's own key "
-								+ "to re-enable sync.", rsn);
 							if (isAccountStateAvailable())
 							{
 								setAccountState("apiKey", "");
@@ -3059,8 +3012,6 @@ public class ChunkBlazerPlugin extends Plugin
 		serverLoginDone = false;
 		serverStateMerged = false;
 		serverRollRestoreResolved = false;
-		log.info("[CHUNKBLAZER] cleared this account's local sync data on request; restart the client "
-			+ "and log in to restore it fresh from the server.");
 	}
 
 	/**
@@ -3173,7 +3124,6 @@ public class ChunkBlazerPlugin extends Plugin
 			.killer(killer)
 			.totalLevel(client.getTotalLevel())
 			.build();
-		log.info("[CHUNKBLAZER] hardcore status lost in region {} (killer: {})", report.getRegionId(), killer);
 		// Stored until the server confirms, so a dropped report retries on the next login.
 		setAccountState(PENDING_DEATH_KEY, gson.toJson(report));
 		sendPendingHcimDeath();
@@ -3249,11 +3199,6 @@ public class ChunkBlazerPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged event)
 	{
-		if (CONFIG_GROUP.equals(event.getGroup()) && "taskTrackerStyle".equals(event.getKey()) && panel != null)
-		{
-			// Off shows the Selected Task box in the side panel; the other styles draw it in game.
-			javax.swing.SwingUtilities.invokeLater(panel::refreshSelectedTaskDisplay);
-		}
 		if ("chunkblazer".equals(event.getGroup()) && "serverSyncEnabled".equals(event.getKey()))
 		{
 			// Turning sync off is choosing to play offline.
@@ -3876,8 +3821,6 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		if (!anyLegacy)
 		{
-			log.info("[CHUNKBLAZER] legacy migration: no global data to move (RSProfile empty AND "
-				+ "no legacy global keys), this account has no local progress in either store");
 			return;
 		}
 		// (3) Ownership evidence: migrate only a blob that belongs to THIS account.
@@ -3889,8 +3832,6 @@ public class ChunkBlazerPlugin extends Plugin
 		String owner = hashRsn(rsn);
 		String modeHash = configManager.getConfiguration(CONFIG_GROUP, "accountModeHash");   // "<rsnHash>:<MODE>"
 		String storedOwner = configManager.getConfiguration(CONFIG_GROUP, "accountStateOwner");
-		log.info("[CHUNKBLAZER] legacy migration: legacy data present for RS profile of {}; ownership "
-			+ "tags accountModeHash='{}', accountStateOwner='{}'", rsn, modeHash, storedOwner);
 		boolean mine;
 		if (modeHash != null && modeHash.contains(":"))
 		{
@@ -3906,8 +3847,6 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		if (!mine)
 		{
-			log.info("[CHUNKBLAZER] legacy global progress belongs to a different account; {} starts "
-				+ "clean under RSProfile (foreign blob left for its owner to migrate)", rsn);
 			return;
 		}
 		// (4) Copy into RSProfile; never clobber a value already there. Keep the originals.
@@ -3921,8 +3860,6 @@ public class ChunkBlazerPlugin extends Plugin
 				copied++;
 			}
 		}
-		log.info("[CHUNKBLAZER] migrated {} legacy key(s) into the RSProfile store for {} "
-			+ "(global originals kept as rollback this release)", copied, rsn);
 	}
 
 	/**
@@ -3949,8 +3886,6 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 
 		setAccountState("unlockedChunks", String.join(",", merged));
-		log.info("[CHUNKBLAZER] restored {} unlocked chunk(s) from the server (had {}, now {})",
-			merged.size() - before, before, merged.size());
 	}
 
 	/**
@@ -3983,8 +3918,6 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 
 		setAccountState("completedTasks", String.join(",", merged));
-		log.info("[CHUNKBLAZER] restored {} completed task(s) from the server (had {}, now {})",
-			merged.size() - before, before, merged.size());
 	}
 
 	/**
@@ -4033,8 +3966,6 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!merged.equals(localRoll))
 		{
 			setAccountState("regionRolledTasks", merged);
-			log.info("[CHUNKBLAZER] reconciled task roll with the server ({} region entr{})",
-				reconciled.size(), reconciled.size() == 1 ? "y" : "ies");
 		}
 
 		// The face-down card set is client-updatable (revealing a card is a live local
@@ -4075,7 +4006,6 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!merged.equals(local))
 		{
 			setAccountState("taskProgressData", merged);
-			log.info("[CHUNKBLAZER] restored task progress from the server backup");
 		}
 	}
 
@@ -4346,8 +4276,6 @@ public class ChunkBlazerPlugin extends Plugin
 			deriveInitialPointsSpent();
 			if (pdata != null && pdata.getPointsSpent() > acInt("pointsSpent", 0))
 			{
-				log.info("[CHUNKBLAZER] restored points spent from the server (had {}, now {})",
-					acInt("pointsSpent", 0), pdata.getPointsSpent());
 				setAccountState("pointsSpent", pdata.getPointsSpent());
 			}
 			adoptServerBossTokens(pdata);
@@ -4529,7 +4457,6 @@ public class ChunkBlazerPlugin extends Plugin
 					if (resp != null && resp.isSuccess() && declaredReset)
 					{
 						pendingIntentionalReset = false;
-						log.info("[CHUNKBLAZER] intentional reset accepted by the server");
 					}
 					// Adopt the server's authoritative Boss Token balance. The client
 					// mutates a local copy for immediate UX (spend on unlock, +1 on
@@ -4724,44 +4651,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 	// --- Task Methods ---
 
-	/**
-	 * Get the tasks available for the current region (only the 4-5 rolled tasks).
-	 */
-	public List<NuzlockeTask> getCurrentRegionTasks()
-	{
-		int regionId = getCurrentRegionId();
-		if (regionId < 0)
-		{
-			return new ArrayList<>();
-		}
-
-		// Get rolled tasks for this region
-		Set<String> rolledTaskIds = getRolledTasksForRegion(regionId);
-
-		// If no tasks rolled yet for this region, roll them now
-		if (rolledTaskIds.isEmpty() && isRegionUnlocked(regionId) && canRollMissing())
-		{
-			rolledTaskIds = rollTasksForRegion(regionId);
-		}
-
-		NuzlockeChunk chunk = chunksByRegionId.get(regionId);
-		if (chunk == null || chunk.getTasks() == null)
-		{
-			return new ArrayList<>();
-		}
-
-		// Return only the tasks that were rolled for this region
-		List<NuzlockeTask> rolledTasks = new ArrayList<>();
-		for (NuzlockeTask task : chunk.getTasks())
-		{
-			if (rolledTaskIds.contains(task.getTaskId()))
-			{
-				rolledTasks.add(task);
-			}
-		}
-
-		return rolledTasks;
-	}
 
 	private void loadOrAssignTask()
 	{
@@ -4917,8 +4806,6 @@ public class ChunkBlazerPlugin extends Plugin
 			merged.addAll(settledIds);
 			setAccountState("completedTasks", String.join(",", merged));
 			addPoints(settledPoints);
-			log.info("[CHUNKBLAZER] settled {} already-satisfied task(s) on load (+{} points, batched)",
-				settledIds.size(), settledPoints);
 		}
 
 		// Register all active tasks with modules for tracking
@@ -5115,108 +5002,6 @@ public class ChunkBlazerPlugin extends Plugin
 		return null;
 	}
 
-	public void assignNewTask()
-	{
-		Set<String> unlockedRegions = getUnlockedRegionIds();
-		Set<String> assignedTaskIds = getAssignedTaskIds();
-		List<NuzlockeTask> eligibleTasks = new ArrayList<>();
-
-		// Gather eligible tasks from unlocked regions (only from rolled task pools)
-		for (String regionIdStr : unlockedRegions)
-		{
-			try
-			{
-				int regionId = Integer.parseInt(regionIdStr);
-
-				// Get or roll the tasks for this region
-				Set<String> rolledTaskIds = getRolledTasksForRegion(regionId);
-				if (rolledTaskIds.isEmpty() && canRollMissing())
-				{
-					// First time seeing this region - roll 4-5 tasks
-					rolledTaskIds = rollTasksForRegion(regionId);
-				}
-
-				// Only consider tasks that are in the rolled set AND not yet assigned
-				NuzlockeChunk chunk = chunksByRegionId.get(regionId);
-				if (chunk != null && chunk.getTasks() != null)
-				{
-					for (NuzlockeTask task : chunk.getTasks())
-					{
-						String taskId = task.getTaskId();
-						if (rolledTaskIds.contains(taskId) &&
-							!assignedTaskIds.contains(taskId) &&
-							!task.isLocked())
-						{
-							eligibleTasks.add(task);
-						}
-					}
-				}
-			}
-			catch (NumberFormatException e)
-			{
-				log.warn("Invalid region ID: {}", regionIdStr);
-			}
-		}
-
-		if (eligibleTasks.isEmpty())
-		{
-			activeTask = null;
-			saveCurrentTask();
-			panel.showNoTasksMessage();
-			return;
-		}
-
-		// Weighted random selection
-		int totalWeight = eligibleTasks.stream()
-			.mapToInt(NuzlockeTask::getAssignmentWeight)
-			.sum();
-
-		int roll = random.nextInt(totalWeight);
-		int cumulative = 0;
-
-		for (NuzlockeTask task : eligibleTasks)
-		{
-			cumulative += task.getAssignmentWeight();
-			if (roll < cumulative)
-			{
-				activeTask = task;
-				break;
-			}
-		}
-
-		if (activeTask != null)
-		{
-			// Mark this task as assigned (can never be assigned again)
-			markTaskAssigned(activeTask.getTaskId());
-
-			// Calculate target quantity for this task instance
-			int targetQty = 1;
-			if (activeTask.getTargetNpc() != null)
-			{
-				targetQty = activeTask.getTargetNpc().getRequiredQuantity();
-			}
-			else if (activeTask.getRequiredItems() != null && !activeTask.getRequiredItems().isEmpty())
-			{
-				targetQty = activeTask.getRequiredItems().get(0).getRequiredQuantity();
-			}
-
-			activeTask.setTargetQuantity(targetQty);
-			activeTask.setCurrentProgress(0);
-			activeTask.setCompleted(false);
-
-			// Route task to appropriate module for auto-tracking
-			taskModuleManager.assignTask(activeTask);
-
-			saveCurrentTask();
-		}
-		else
-		{
-			// No task assigned, clear module tracking
-			taskModuleManager.clearTask();
-		}
-
-		panel.updateTaskDisplay();
-	}
 
 	// --- Rolled Tasks Management ---
 
@@ -5458,7 +5243,6 @@ public class ChunkBlazerPlugin extends Plugin
 			{
 				setAccountState("unrevealedTasks", String.join(",", cards));
 			}
-			log.info("[CHUNKBLAZER] replaced retired task(s) {}", retiredIds);
 		}
 	}
 
@@ -5623,11 +5407,6 @@ public class ChunkBlazerPlugin extends Plugin
 	}
 
 	/** True if a task with this id is already in the active list. */
-	/** For the panel: is this task in the player's active list right now? */
-	public boolean isTaskInActiveList(String taskId)
-	{
-		return isTaskActive(taskId);
-	}
 
 	/** For the panel: has the player completed this task? */
 	public boolean isTaskCompleted(String taskId)
@@ -5711,11 +5490,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	public NuzlockeTask getSelectedTask()
 	{
-		if (panel == null)
-		{
-			return null;
-		}
-		NuzlockeTask selected = panel.getSelectedTask();
+		NuzlockeTask selected = selectedTask;
 		if (selected == null || selected.getTaskId() == null)
 		{
 			return selected;
@@ -5738,45 +5513,23 @@ public class ChunkBlazerPlugin extends Plugin
 		return selected;
 	}
 
-	/**
-	 * Called from the in-game "Tasks" right-click submenu: select (and pin) a task.
-	 * When the panel's "Only tasks I have the level for" filter is on, a task the
-	 * player lacks the level for is listed but not selected.
-	 */
+	// The task the player is tracking (task window, right-click Tasks menu). In memory only.
+	private volatile NuzlockeTask selectedTask;
+
+	/** Track a task: from the task window or the in-game "Tasks" right-click submenu. */
 	public void selectTaskFromGame(NuzlockeTask task)
 	{
-		if (panel == null || task == null)
+		if (task != null)
 		{
-			return;
+			selectedTask = task;
 		}
-		if (panel.isLevelFilterOn() && !meetsLevelRequirement(task))
-		{
-			addPluginChatMessage("You need level " + task.getLevelRequirement() + " "
-				+ NuzlockeTask.displayCategory(task.getCategory()) + " for " + task.getName()
-				+ ". Turn off \"Only tasks I have the level for\" to track it anyway.");
-			return;
-		}
-		javax.swing.SwingUtilities.invokeLater(() -> panel.selectTask(task));
 	}
 
-	/** How the selected task is shown in game (see the "Overlay" setting). */
-	public TaskTrackerStyle getTaskTrackerStyle()
-	{
-		return config.taskTrackerStyle();
-	}
 
 	/** Called from the overlay's right-click menu. */
 	public void clearSelectedTask()
 	{
-		if (panel == null)
-		{
-			return;
-		}
-		javax.swing.SwingUtilities.invokeLater(() ->
-		{
-			panel.clearSelectedTask();
-			panel.updateActiveTasksDisplay();
-		});
+		selectedTask = null;
 	}
 
 	public Set<String> getRolledTasksForRegion(int regionId)
@@ -5886,87 +5639,8 @@ public class ChunkBlazerPlugin extends Plugin
 			.collect(Collectors.toSet());
 	}
 
-	private void markTaskAssigned(String taskId)
-	{
-		String assigned = acStr("assignedTasks", "");
-		if (assigned == null || assigned.isEmpty())
-		{
-			assigned = taskId;
-		}
-		else if (!getAssignedTaskIds().contains(taskId))
-		{
-			assigned = assigned + "," + taskId;
-		}
-		setAccountState("assignedTasks", assigned);
-	}
 
-	public void rerollTask()
-	{
-		int currentRegion = getCurrentRegionId();
 
-		// Clear rolled tasks for current region
-		if (currentRegion > 0)
-		{
-			clearRolledTasksForRegion(currentRegion);
-		}
-
-		// DEV: Clear globally assigned tasks so reroll can get fresh tasks
-		// This bypasses the "no duplicate tasks globally" rule for testing
-		setAccountState("assignedTasks", "");
-
-		// Clear task progress data
-		setAccountState("taskProgressData", "");
-
-		// Clear module state
-		taskModuleManager.clearTask();
-
-		// Clear active tasks
-		activeTasks.clear();
-		activeTask = null;
-
-		// Re-roll and load tasks
-		loadActiveTasks();
-		panel.updatePanel();
-
-	}
-
-	/**
-	 * Clear the rolled tasks for a specific region so they can be re-rolled.
-	 */
-	private void clearRolledTasksForRegion(int regionId)
-	{
-		String data = acStr("regionRolledTasks", "");
-		if (data == null || data.isEmpty())
-		{
-			return;
-		}
-
-		StringBuilder newData = new StringBuilder();
-		for (String entry : data.split("\\|"))
-		{
-			if (entry.isEmpty()) continue;
-			String[] parts = entry.split(":");
-			if (parts.length >= 1)
-			{
-				try
-				{
-					int entryRegionId = Integer.parseInt(parts[0]);
-					if (entryRegionId != regionId)
-					{
-						if (newData.length() > 0) newData.append('|');
-						newData.append(entry);
-					}
-				}
-				catch (NumberFormatException e)
-				{
-					// Keep malformed entries
-					if (newData.length() > 0) newData.append('|');
-					newData.append(entry);
-				}
-			}
-		}
-		setAccountState("regionRolledTasks", newData.toString());
-	}
 
 	/** Cap on completion popups shown per batch, so a login storm doesn't queue dozens. */
 	private static final int COMPLETION_ANIM_CAP = 5;
@@ -6050,7 +5724,6 @@ public class ChunkBlazerPlugin extends Plugin
 				if (panel != null)
 				{
 					panel.updateStats();
-					panel.updateTaskDisplay();
 				}
 			});
 		}
@@ -6104,10 +5777,9 @@ public class ChunkBlazerPlugin extends Plugin
 				activeTask = activeTasks.isEmpty() ? null : activeTasks.get(0);
 			}
 
-			if (panel != null)
+			if (selectedTask != null && task.getTaskId() != null && task.getTaskId().equals(selectedTask.getTaskId()))
 			{
-				// Clear selected task if it was the completed one
-				panel.clearSelectedTaskIfMatch(task);
+				selectedTask = null;
 			}
 		}
 
@@ -6129,28 +5801,9 @@ public class ChunkBlazerPlugin extends Plugin
 		if (panel != null)
 		{
 			panel.updateStats();
-			panel.updateTaskDisplay();
-			panel.updateCompletedTasks();
-			panel.updateGlobalTasks();
-			panel.updateTaskList();
 		}
 	}
 
-	private void saveCurrentTask()
-	{
-		if (activeTask != null)
-		{
-			setAccountState("currentTaskId", activeTask.getTaskId());
-			setAccountState("currentTaskQuantity", activeTask.getTargetQuantity());
-			setAccountState("currentTaskProgress", activeTask.getCurrentProgress());
-		}
-		else
-		{
-			setAccountState("currentTaskId", "");
-			setAccountState("currentTaskQuantity", 1);
-			setAccountState("currentTaskProgress", 0);
-		}
-	}
 
 	/**
 	 * Append many task ids to the completed list in a SINGLE config write.
@@ -6355,44 +6008,6 @@ public class ChunkBlazerPlugin extends Plugin
 		return firstDefiningRegion;
 	}
 
-	/**
-	 * Get all unique categories from all tasks.
-	 */
-	public Set<String> getAllCategories()
-	{
-		// TreeSet, not HashSet: this backs the Category filter combos, and a
-		// HashSet's iteration order made them list in an arbitrary order while
-		// the Active Tasks combos (already TreeSet-backed) listed A-Z.
-		Set<String> categories = new java.util.TreeSet<>();
-		for (NuzlockeChunk chunk : allChunks)
-		{
-			if (chunk.getTasks() != null)
-			{
-				for (NuzlockeTask task : chunk.getTasks())
-				{
-					if (task.getCategory() != null && !task.getCategory().isEmpty())
-					{
-						// Fold "_Set" pools (Herblore_Set, Obtain_Set) onto the base
-						// skill so the filter lists one "Herblore", not two entries.
-						categories.add(NuzlockeTask.displayCategory(task.getCategory()));
-					}
-				}
-			}
-		}
-
-		// Global tasks live in no chunk, so scanning allChunks alone left their
-		// categories (Quest, and later Progression/Mystery) out of the Completed
-		// Tasks category filter even though the tasks themselves were listed.
-		for (NuzlockeTask task : globalTasks)
-		{
-			if (task.getCategory() != null && !task.getCategory().isEmpty())
-			{
-				categories.add(NuzlockeTask.displayCategory(task.getCategory()));
-			}
-		}
-
-		return categories;
-	}
 
 	/** Whether this taskID belongs to the chunk-independent Global Tasks pool. */
 	public boolean isGlobalTask(String taskId)
@@ -6400,102 +6015,11 @@ public class ChunkBlazerPlugin extends Plugin
 		return taskId != null && globalTaskIds.contains(taskId);
 	}
 
-	/**
-	 * Area bucket for a completed task, for the Completed Tasks area filter.
-	 *
-	 * Global tasks have no chunk, so getAreaForRegionId(-1) returns null and any
-	 * specific area selection would silently drop every one of them. They get
-	 * their own bucket instead. Shared by the filter and the combo population so
-	 * the two can't disagree about what's in an area.
-	 */
-	public String getAreaForCompletedTask(String taskId, int regionId)
-	{
-		if (isGlobalTask(taskId))
-		{
-			return GLOBAL_AREA_NAME;
-		}
-		return getAreaForRegionId(regionId);
-	}
 
-	/**
-	 * Get all unique region names that have had tasks completed.
-	 */
-	public Set<String> getCompletedTaskRegions()
-	{
-		// TreeSet to match getActiveTaskRegions() — the Completed Tasks chunk
-		// filter was the odd one out, listing chunks in hash order.
-		Set<String> regions = new java.util.TreeSet<>();
-		for (CompletedTaskInfo info : getCompletedTasksWithInfo())
-		{
-			if (info.getRegionName() != null && !info.getRegionName().equals("Unknown Region"))
-			{
-				regions.add(info.getRegionName());
-			}
-		}
-		return regions;
-	}
 
-	/**
-	 * Areas (Misthalin, Asgarnia, Zeah, ...) that have at least one completed task.
-	 */
-	public Set<String> getCompletedTaskAreas()
-	{
-		Set<String> areas = new java.util.TreeSet<>();
-		for (CompletedTaskInfo info : getCompletedTasksWithInfo())
-		{
-			String area = getAreaForCompletedTask(info.getTaskId(), info.getRegionId());
-			if (area != null && !area.isEmpty())
-			{
-				areas.add(area);
-			}
-		}
-		return areas;
-	}
 
-	/**
-	 * Get all unique region names that have active tasks.
-	 */
-	public Set<String> getActiveTaskRegions()
-	{
-		Set<String> regions = new java.util.TreeSet<>();
-		for (NuzlockeTask task : activeTasks)
-		{
-			String regionName = getTaskRegionName(task);
-			if (regionName != null && !regionName.equals("Unknown Region"))
-			{
-				regions.add(regionName);
-			}
-		}
-		return regions;
-	}
 
-	/**
-	 * Areas (Misthalin, Asgarnia, Zeah, ...) that have at least one active task.
-	 * Used by the Active Tasks panel to populate its Area filter dropdown.
-	 */
-	public Set<String> getActiveTaskAreas()
-	{
-		Set<String> areas = new java.util.TreeSet<>();
-		for (NuzlockeTask task : activeTasks)
-		{
-			String area = getTaskArea(task);
-			if (area != null && !area.isEmpty())
-			{
-				areas.add(area);
-			}
-		}
-		return areas;
-	}
 
-	/**
-	 * Resolve a region ID to its overarching area name (e.g. 12850 → "Misthalin").
-	 * Returns null if the region isn't mapped to any known chunk.
-	 */
-	public String getAreaForRegionId(int regionId)
-	{
-		NuzlockeChunk chunk = chunksByRegionId.get(regionId);
-		return chunk != null ? chunk.getArea() : null;
-	}
 
 	/**
 	 * Get the region name for a specific task.
@@ -6856,8 +6380,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 		if (balance != acInt("totalPoints", 0))
 		{
-			log.info("[CHUNKBLAZER] points balance recomputed: earned {} - spent {} = {} (was {})",
-				earned, spent, balance, acInt("totalPoints", 0));
 			setAccountState("totalPoints", balance);
 		}
 	}
@@ -6909,9 +6431,6 @@ public class ChunkBlazerPlugin extends Plugin
 		// persisted balance, so it still derives correctly.
 		if (!isPointsBalancePersisted())
 		{
-			log.info("[CHUNKBLAZER] skipping spend derivation, no balance stored locally "
-				+ "(fresh profile or account switch), so a zero balance means UNKNOWN, "
-				+ "not SPENT EVERYTHING. The server's spend figure stands.");
 			return;
 		}
 
@@ -6924,8 +6443,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 		int spent = earned - balance;
 		setAccountState("pointsSpent", spent);
-		log.info("[CHUNKBLAZER] derived points spent for this account: earned {} - balance {} = {}",
-			earned, balance, spent);
 	}
 
 	/**
@@ -7271,7 +6788,6 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			if (!missing.isEmpty())
 			{
-				log.info("[CHUNKBLAZER] boss chunk {}: granting {} task(s) into the list (reconstruction, not carded)", primary, missing.size());
 				Set<String> full = new HashSet<>(rolled);
 				full.addAll(missing);
 				saveRolledTasksForRegion(primary, full);
@@ -7281,7 +6797,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 	// --- Helper Methods ---
 
-	private String getPlayerName()
+	String getPlayerName()
 	{
 		Player player = client.getLocalPlayer();
 		if (player != null)
@@ -7748,19 +7264,4 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Dismiss any open chatbox prompt (e.g. the unlock-confirmation popup that
-	 * fires on entering an unlockable region). Called by the side-panel unlock
-	 * button so the chatbox prompt doesn't linger after the player has
-	 * already confirmed the unlock through the panel — and can't be clicked
-	 * a second time, which would otherwise re-fire unlockRegion. Safe no-op if
-	 * nothing is open.
-	 */
-	public void closeChatboxPrompt()
-	{
-		if (chatboxPanelManager != null)
-		{
-			chatboxPanelManager.close();
-		}
-	}
 }

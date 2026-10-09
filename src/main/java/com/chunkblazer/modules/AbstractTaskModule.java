@@ -140,9 +140,6 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 				currentProgress = task.getCurrentProgress();
 			}
 		}
-		else
-		{
-		}
 	}
 
 	@Override
