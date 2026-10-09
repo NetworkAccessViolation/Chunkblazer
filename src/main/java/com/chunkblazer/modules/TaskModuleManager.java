@@ -57,9 +57,6 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 	private NPCKillModule npcKillModule;
 
 	@Inject
-	private SkillModule skillModule;
-
-	@Inject
 	private ObtainModule obtainModule;
 
 	@Inject
@@ -112,7 +109,6 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 		registerModule(npcKillModule);
 		registerModuleWithType(npcKillModule, "COMBAT"); // NpcKillModule handles COMBAT type too
 		registerModuleWithType(npcKillModule, "SLAYER"); // NpcKillModule handles SLAYER type with task verification
-		registerModule(skillModule);
 		registerModule(obtainModule);
 		registerModule(equipModule);
 		registerModule(firemakingModule);
@@ -267,9 +263,6 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 			activeTasks.add(task);
 			taskToModuleMap.put(task.getTaskId(), module);
 			module.addActiveTask(task);
-		}
-		else
-		{
 		}
 	}
 

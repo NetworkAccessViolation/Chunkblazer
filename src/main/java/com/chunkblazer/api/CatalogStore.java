@@ -216,7 +216,6 @@ public class CatalogStore
 			this.files = loadedFiles;
 			this.loaded = true;
 			this.loadedVersion = versionOf(loadedFiles);
-			log.info("Task catalog loaded from {} ({} files, v{})", source, loadedFiles.size(), loadedVersion);
 		}
 		else
 		{
@@ -438,8 +437,6 @@ public class CatalogStore
 			this.files = fresh;
 			this.loaded = true;
 			this.loadedVersion = versionOf(fresh);
-			log.info("Task catalog refreshed from server ({} files, v{}), applies at the login screen",
-				fresh.size(), loadedVersion);
 		}
 		catch (IOException e)
 		{

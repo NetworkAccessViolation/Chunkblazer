@@ -319,7 +319,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "taskTrackerStyle",
 		name = "Task Tracker",
-		description = "How the task you select is shown in game. Off shows it in the side panel instead",
+		description = "How the task you select is shown in game. Off hides it",
 		section = taskSection,
 		position = 1,
 		hidden = true
@@ -670,6 +670,19 @@ public interface ChunkBlazerConfig extends Config
 	default boolean showChunkNamePopups()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "chunkBannerRepeatMinutes",
+		name = "Repeat Banner Wait",
+		description = "Minutes you must be away from an unlocked chunk before its banner shows again (0 shows it every time)",
+		section = inGameSection,
+		position = 3,
+		hidden = true
+	)
+	default int chunkBannerRepeatMinutes()
+	{
+		return 2;
 	}
 
 	@ConfigItem(

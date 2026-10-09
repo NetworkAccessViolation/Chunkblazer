@@ -239,10 +239,6 @@ public class TaskCardOverlay extends Overlay
 				backs.put(tier, back);
 			}
 		}
-		if (fronts.isEmpty() && backs.isEmpty())
-		{
-			log.info("[CHUNKBLAZER] No task card art found under Task_Cards/, drawing placeholder cards");
-		}
 	}
 
 	/**

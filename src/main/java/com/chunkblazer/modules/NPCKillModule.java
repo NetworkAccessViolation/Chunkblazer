@@ -26,6 +26,7 @@
 
 package com.chunkblazer.modules;
 
+import com.google.common.collect.ImmutableSet;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -38,6 +39,7 @@ import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
 import net.runelite.api.Hitsplat;
+import net.runelite.api.HitsplatID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -58,12 +60,12 @@ import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.game.NPCManager;
 import com.chunkblazer.ChunkBlazerConfig;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TargetNpc;
 import com.chunkblazer.TaskConstraints;
 import com.chunkblazer.api.NpcKillReport;
-import com.chunkblazer.verification.VarPlayerVerificationService;
 
 /**
  * Module for handling NPC_KILL completion type tasks.
@@ -168,13 +170,13 @@ public class NPCKillModule extends AbstractTaskModule
 	private static final int CANNON_FIRE_LOOKBACK_TICKS = 2;
 
 	@Inject
-	private VarPlayerVerificationService varPlayerService;
-
-	@Inject
 	private ChunkBlazerConfig config;
 
 	@Inject
 	private TobModeTracker tobMode;
+
+	@Inject
+	private NPCManager npcManager;
 
 	// ── Fights we have a stake in, keyed by NPC index ────────────────────
 	// One record per NPC we have personally damaged. This REPLACED a single
@@ -241,6 +243,12 @@ public class NPCKillModule extends AbstractTaskModule
 		// landed our FIRST hit on it. See wasAtFullHealth().
 		boolean startedFresh = true;
 
+		// True when "fresh" above was only assumed: no health bar showed at our first
+		// hit. Bars fade a few seconds after a hit, so an NPC damaged earlier (before a
+		// death and the walk back, or before a flinch reset) looks untouched. The kill
+		// then checks our damage against its max HP instead. See softenedBeforeFight().
+		boolean freshUnverified;
+
 		// Equip-constrained tasks whose constraint was violated at ANY point during
 		// this fight. Checked on every hitsplat we land, not just the killing blow —
 		// "fight in full gear, unequip for the last hit" must not pass.
@@ -304,10 +312,6 @@ public class NPCKillModule extends AbstractTaskModule
 	// fresh-fight gate. Region crossings (LOGGED_IN → LOADING → LOGGED_IN)
 	// never pass through a pre-login state, so they can't arm this flag.
 	private boolean sessionStartPending = false;
-
-	// For boss KC verification
-	private int baselineKc = -1;
-	private String currentBossName;
 
 	// Pending drop-based kills: tasks waiting for a specific item to drop
 	// Key: task ID, Value: pending kill info
@@ -493,30 +497,12 @@ public class NPCKillModule extends AbstractTaskModule
 			previousSlayerXp = client.getSkillExperience(Skill.SLAYER);
 		}
 
-		// For boss tasks, get baseline KC from VarPlayer (instant server-side)
-		TargetNpc targetNpc = task.getTargetNpc();
-		if (targetNpc != null)
-		{
-			String bossName = targetNpc.getName();
-			if (bossName != null && varPlayerService.isBossTracked(bossName))
-			{
-				currentBossName = bossName;
-				baselineKc = varPlayerService.getBossKillCount(bossName);
-			}
-			else
-			{
-				currentBossName = null;
-				baselineKc = -1;
-			}
-		}
 	}
 
 	@Override
 	public void onTaskCleared()
 	{
 		super.onTaskCleared();
-		baselineKc = -1;
-		currentBossName = null;
 		pendingDropKills.clear();
 		pendingDeaths.clear();
 		// IMPORTANT: do NOT clear `heldDeaths` here. onTaskCleared() fires on every
@@ -768,9 +754,11 @@ public class NPCKillModule extends AbstractTaskModule
 		if (xp > previousSlayerXp)
 		{
 			int tick = client.getTickCount();
-			// Only if the counter hasn't already recorded this kill on this tick —
-			// they arrive together and describe ONE kill.
-			if (countSignalsAt(tick) == 0)
+			// Slayer XP is only evidence while the task counter is unknown this session.
+			// Once it is known, the counter alone decides: an XP lamp or book used
+			// mid-fight gives Slayer XP without the counter moving, and must not make
+			// an off-task kill look on task.
+			if (previousSlayerCount < 0 && countSignalsAt(tick) == 0)
 			{
 				recordOnTaskSignals(tick, 1);
 			}
@@ -910,6 +898,25 @@ public class NPCKillModule extends AbstractTaskModule
 	 * is treated as fresh: this gate exists to catch a specific cheat, and it must
 	 * fail OPEN on missing evidence rather than refuse honest kills.
 	 */
+	private static final Set<Integer> DAMAGE_OVER_TIME = ImmutableSet.of(
+		HitsplatID.POISON, HitsplatID.VENOM, HitsplatID.BURN, HitsplatID.DISEASE, HitsplatID.BLEED);
+
+	/**
+	 * For a fight whose freshness was only assumed (no health bar at our first hit):
+	 * did we deal clearly less than the NPC's max HP? Then it was already damaged.
+	 * Unknown max HP fails open, like the rest of this gate.
+	 */
+	private boolean softenedBeforeFight(FightRecord fight, int npcId)
+	{
+		return fight.freshUnverified && dealtTooLittle(fight.damage, npcManager.getHealth(npcId));
+	}
+
+	/** Under 90% of max HP: the 10% slack absorbs small errors in RuneLite's HP data. */
+	static boolean dealtTooLittle(int damage, Integer maxHp)
+	{
+		return maxHp != null && maxHp > 0 && damage * 10 < maxHp * 9;
+	}
+
 	private boolean wasAtFullHealth(NPC npc)
 	{
 		HealthSample sample = healthAtPreviousTick.get(npc.getIndex());
@@ -988,6 +995,18 @@ public class NPCKillModule extends AbstractTaskModule
 			return;
 		}
 
+		// Our poison/venom/burn ticks aren't "mine" splats but are our damage; count
+		// them toward the fight so the max-HP check doesn't call a poisoned kill short.
+		if (DAMAGE_OVER_TIME.contains(hitsplat.getHitsplatType()))
+		{
+			FightRecord dot = fights.get(index);
+			if (dot != null)
+			{
+				dot.damage += hitsplat.getAmount();
+			}
+			return;
+		}
+
 		if (!hitsplat.isMine())
 		{
 			return;
@@ -1004,6 +1023,8 @@ public class NPCKillModule extends AbstractTaskModule
 			// Freshness is decided ONCE, on the first hit we land, from the previous
 			// tick's health sample. Later hits obviously find it damaged — by us.
 			fight.startedFresh = wasAtFullHealth(npc);
+			HealthSample sample = healthAtPreviousTick.get(index);
+			fight.freshUnverified = sample == null || sample.ratio < 0;
 			fight.combatStartTick = tick;
 			fights.put(index, fight);
 
@@ -1311,7 +1332,7 @@ public class NPCKillModule extends AbstractTaskModule
 				// UNTOUCHED monster. This is what stops softening it with a cannon
 				// (or letting anything else chip it) and then landing the "first
 				// hit" that the timer measures from — Cruk's scorpion, 2026-07-16.
-				if (soloGated && !fight.startedFresh)
+				if (soloGated && (!fight.startedFresh || softenedBeforeFight(fight, death.npcId)))
 				{
 					sendTaskFailure(task,
 						"Restricted kill must start from full health. This monster was already damaged when you first hit it.");
@@ -1469,12 +1490,43 @@ public class NPCKillModule extends AbstractTaskModule
 	 * superset task (e.g. Ogre, a 28-id list that contains those). Tasks with
 	 * equal-size id sets (genuine duplicates — e.g. two tasks both pinned to the
 	 * single id 14704) can't be told apart, so they're all kept.
+	 *
+	 * Plain kill tasks and conditional ones (on task, timed, gear, drop) are narrowed
+	 * separately: a conditional task is a different challenge, not a narrower version
+	 * of the plain one. Narrowed together, "Defeat a White Wolf on Task" ({107, 108})
+	 * took the kill from "Defeat a White Wolf" ({107, 108, 109}) and then failed its
+	 * own condition, so the plain task never counted anything.
 	 */
-	private List<NuzlockeTask> mostSpecificMatches(List<NuzlockeTask> matches)
+	List<NuzlockeTask> mostSpecificMatches(List<NuzlockeTask> matches)
 	{
 		if (matches.size() <= 1)
 		{
 			return matches;
+		}
+		List<NuzlockeTask> plain = new ArrayList<>();
+		List<NuzlockeTask> conditional = new ArrayList<>();
+		for (NuzlockeTask task : matches)
+		{
+			(isConditional(task) ? conditional : plain).add(task);
+		}
+		List<NuzlockeTask> out = narrowest(plain);
+		out.addAll(narrowest(conditional));
+		return out;
+	}
+
+	private static boolean isConditional(NuzlockeTask task)
+	{
+		TaskConstraints c = task.getConstraints();
+		return requiresOnTaskGate(task) || (c != null && (c.hasTimeLimit() || c.hasEquipmentConstraints()
+			|| c.hasDroppedItemConstraint() || c.hasVarbitConstraints()));
+	}
+
+	/** The tasks among {@code matches} with the smallest target-NPC id set. */
+	private List<NuzlockeTask> narrowest(List<NuzlockeTask> matches)
+	{
+		if (matches.size() <= 1)
+		{
+			return new ArrayList<>(matches);
 		}
 
 		int minSize = Integer.MAX_VALUE;

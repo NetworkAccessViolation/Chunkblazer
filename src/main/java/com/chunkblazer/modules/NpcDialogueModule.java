@@ -42,6 +42,7 @@ import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.util.Text;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TargetNpc;
 
@@ -50,7 +51,9 @@ import com.chunkblazer.TargetNpc;
  * Detects when the player talks to specific NPCs.
  *
  * Tasks have target_npc with npc_ids.
- * Detection: Player interacts with watched NPC and dialogue widget opens.
+ * Detection: Player interacts with watched NPC and dialogue widget opens. When the game
+ * starts the conversation itself (Death walks you over after you die), there is no
+ * interaction to read, so the speaker's name in the dialogue box stands in for it.
  */
 @Slf4j
 @Singleton
@@ -63,6 +66,11 @@ public class NpcDialogueModule extends AbstractTaskModule
 
 	// All NPC IDs we're watching
 	private final Set<Integer> watchedNpcIds = ConcurrentHashMap.newKeySet();
+
+	// Map: taskId -> target NPC name (lower case), for the speaker-name fallback
+	private final Map<String, String> taskTargetNames = new ConcurrentHashMap<>();
+	// Tasks credited by speaker name during the dialogue that is open now
+	private final Set<String> creditedThisDialogue = new HashSet<>();
 
 	// Track recent NPC interaction to confirm dialogue
 	private int lastInteractionNpcId = -1;
@@ -96,6 +104,8 @@ public class NpcDialogueModule extends AbstractTaskModule
 		eventBus.unregister(this);
 		taskTargetNpcs.clear();
 		watchedNpcIds.clear();
+		taskTargetNames.clear();
+		creditedThisDialogue.clear();
 		lastInteractionNpcId = -1;
 		wasDialogueOpen = false;
 	}
@@ -126,6 +136,10 @@ public class NpcDialogueModule extends AbstractTaskModule
 			}
 
 			taskTargetNpcs.put(task.getTaskId(), targetNpcs);
+			if (targetNpc != null && targetNpc.getName() != null)
+			{
+				taskTargetNames.put(task.getTaskId(), targetNpc.getName().toLowerCase());
+			}
 		}
 		catch (Exception e)
 		{
@@ -146,6 +160,7 @@ public class NpcDialogueModule extends AbstractTaskModule
 		super.onTaskCleared();
 		taskTargetNpcs.clear();
 		watchedNpcIds.clear();
+		taskTargetNames.clear();
 	}
 
 	@Override
@@ -185,6 +200,30 @@ public class NpcDialogueModule extends AbstractTaskModule
 			}
 		}
 
+		// Speaker-name fallback, checked on every tick the dialogue is open: the speaker
+		// can change mid-conversation, and a scripted conversation has no interaction to
+		// read. Only while we aren't interacting with some OTHER npc, so a same-named npc
+		// that isn't a target (another "Guard") can't stand in for the real one.
+		if (isDialogueOpen)
+		{
+			String speaker = dialogueSpeaker();
+			if (speaker != null && !interactingWithOtherNpc())
+			{
+				for (NuzlockeTask task : new HashSet<>(activeTasks))
+				{
+					String taskId = task.getTaskId();
+					if (speaker.equals(taskTargetNames.get(taskId)) && creditedThisDialogue.add(taskId))
+					{
+						creditTaskProgress(task);
+					}
+				}
+			}
+		}
+		else
+		{
+			creditedThisDialogue.clear();
+		}
+
 		wasDialogueOpen = isDialogueOpen;
 	}
 
@@ -210,6 +249,26 @@ public class NpcDialogueModule extends AbstractTaskModule
 			return ((NPC) target).getId();
 		}
 		return -1;
+	}
+
+	/** The name of the NPC speaking in the dialogue box (lower case), or null. */
+	private String dialogueSpeaker()
+	{
+		Widget name = client.getWidget(InterfaceID.ChatLeft.NAME);
+		if (name == null || name.isHidden() || name.getText() == null)
+		{
+			return null;
+		}
+		String text = Text.removeTags(name.getText()).trim().toLowerCase();
+		return text.isEmpty() ? null : text;
+	}
+
+	/** Whether the player is interacting with an NPC that none of our tasks target. */
+	private boolean interactingWithOtherNpc()
+	{
+		Player me = client.getLocalPlayer();
+		Actor target = me != null ? me.getInteracting() : null;
+		return target instanceof NPC && !watchedNpcIds.contains(((NPC) target).getId());
 	}
 
 	@Subscribe
@@ -292,6 +351,7 @@ public class NpcDialogueModule extends AbstractTaskModule
 
 			// Clean up
 			taskTargetNpcs.remove(task.getTaskId());
+			taskTargetNames.remove(task.getTaskId());
 			activeTasks.remove(task);
 			rebuildWatchedNpcs();
 		}

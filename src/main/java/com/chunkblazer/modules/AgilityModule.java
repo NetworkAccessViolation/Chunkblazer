@@ -345,7 +345,7 @@ public class AgilityModule extends AbstractTaskModule
 		for (NuzlockeTask task : new HashSet<>(activeTasks))
 		{
 			Set<Integer> taskObjects = taskRequiredObjectIds.get(task.getTaskId());
-			if (taskObjects == null || !taskObjects.contains(obj))
+			if (taskObjects == null || !taskObjects.contains(obj) || !hasLevelFor(task))
 			{
 				continue;
 			}
@@ -367,6 +367,14 @@ public class AgilityModule extends AbstractTaskModule
 		{
 			return;
 		}
+		// "You need an Agility level of 62 to use this course.": the game refused the
+		// obstacle just clicked, so whatever animates or gives XP next isn't it.
+		if (Text.removeTags(event.getMessage()).toLowerCase().contains("agility level of"))
+		{
+			pendingObjectId = -1;
+			pendingTick = -1;
+			return;
+		}
 		Matcher m = LAP_COUNT.matcher(Text.removeTags(event.getMessage()));
 		if (!m.matches())
 		{
@@ -381,6 +389,16 @@ public class AgilityModule extends AbstractTaskModule
 				creditLap(task);
 			}
 		}
+	}
+
+	/**
+	 * The task's Agility level, boosts included (the game accepts boosts for courses
+	 * and shortcuts). Stops an under-levelled click on a course entrance or shortcut
+	 * crediting off the animation or XP of whatever the player did just before.
+	 */
+	private boolean hasLevelFor(NuzlockeTask task)
+	{
+		return client.getBoostedSkillLevel(Skill.AGILITY) >= task.getLevelRequirement();
 	}
 
 	/** One credit per lap, however many signals (click, lap message) report it. */
@@ -439,7 +457,7 @@ public class AgilityModule extends AbstractTaskModule
 			{
 				continue; // credited via the watched-object click + confirmation
 			}
-			if (xpGained >= SHORTCUT_XP_THRESHOLD)
+			if (xpGained >= SHORTCUT_XP_THRESHOLD && hasLevelFor(task))
 			{
 				creditTaskProgress(task, 1);
 			}

@@ -23,8 +23,6 @@ class TaskModuleManagerTest
 	@Mock
 	private NPCKillModule npcKillModule;
 
-	@Mock
-	private SkillModule skillModule;
 
 	@Mock
 	private ObtainModule obtainModule;
@@ -73,7 +71,6 @@ class TaskModuleManagerTest
 	{
 		// Inject mocks
 		injectField(taskModuleManager, "npcKillModule", npcKillModule);
-		injectField(taskModuleManager, "skillModule", skillModule);
 		injectField(taskModuleManager, "obtainModule", obtainModule);
 		injectField(taskModuleManager, "equipModule", equipModule);
 		injectField(taskModuleManager, "firemakingModule", firemakingModule);
@@ -90,7 +87,6 @@ class TaskModuleManagerTest
 
 		// Setup module completion types
 		when(npcKillModule.getCompletionType()).thenReturn("NPC_KILL");
-		when(skillModule.getCompletionType()).thenReturn("SKILL_LEVEL");
 		when(obtainModule.getCompletionType()).thenReturn("OBTAIN");
 		when(equipModule.getCompletionType()).thenReturn("EQUIP");
 		when(firemakingModule.getCompletionType()).thenReturn("FIREMAKING");
@@ -150,7 +146,6 @@ class TaskModuleManagerTest
 	{
 		// Verify all modules had their callbacks set
 		verify(npcKillModule).setCompletionCallback(taskModuleManager);
-		verify(skillModule).setCompletionCallback(taskModuleManager);
 		verify(obtainModule).setCompletionCallback(taskModuleManager);
 		verify(equipModule).setCompletionCallback(taskModuleManager);
 		verify(firemakingModule).setCompletionCallback(taskModuleManager);
@@ -167,7 +162,6 @@ class TaskModuleManagerTest
 		taskModuleManager.startUp();
 
 		verify(npcKillModule).startUp();
-		verify(skillModule).startUp();
 		verify(obtainModule).startUp();
 		verify(equipModule).startUp();
 		verify(firemakingModule).startUp();
@@ -184,7 +178,6 @@ class TaskModuleManagerTest
 		taskModuleManager.shutDown();
 
 		verify(npcKillModule).shutDown();
-		verify(skillModule).shutDown();
 		verify(obtainModule).shutDown();
 		verify(equipModule).shutDown();
 		verify(firemakingModule).shutDown();
@@ -344,16 +337,6 @@ class TaskModuleManagerTest
 		taskModuleManager.registerActiveTask(task);
 
 		verify(npcDialogueModule).addActiveTask(task);
-	}
-
-	@Test
-	void testRegisterActiveTask_SkillLevel()
-	{
-		NuzlockeTask task = createTask("Reach Level 50", "level_50", "SKILL_LEVEL");
-
-		taskModuleManager.registerActiveTask(task);
-
-		verify(skillModule).addActiveTask(task);
 	}
 
 	@Test

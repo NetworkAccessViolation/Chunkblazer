@@ -255,4 +255,66 @@ class ThievingModuleTest extends AbstractTaskModuleTest
 
 		verify(completionCallback, never()).onProgressUpdated(any(NuzlockeTask.class), anyInt());
 	}
+
+	// --- Pickpocket arming (donko526: click a guard, steal from a stall) ----------------
+
+	private static final int VARROCK_GUARD = 3010;
+
+	private MenuOptionClicked npcClick(int npcId, String option)
+	{
+		MenuOptionClicked event = mock(MenuOptionClicked.class);
+		net.runelite.api.MenuEntry entry = mock(net.runelite.api.MenuEntry.class);
+		net.runelite.api.NPC npc = mock(net.runelite.api.NPC.class);
+		when(event.getMenuAction()).thenReturn(MenuAction.NPC_SECOND_OPTION);
+		lenient().when(event.getMenuOption()).thenReturn(option);
+		lenient().when(event.getMenuEntry()).thenReturn(entry);
+		lenient().when(entry.getNpc()).thenReturn(npc);
+		lenient().when(npc.getId()).thenReturn(npcId);
+		return event;
+	}
+
+	private NuzlockeTask guardTask()
+	{
+		NuzlockeTask task = createTaskWithNpc("Pickpocket a Varrock Guard", "pickpocket_varrock_guard", "THIEVING", 1,
+			Collections.singletonList(VARROCK_GUARD));
+		when(client.getSkillExperience(Skill.THIEVING)).thenReturn(1000);
+		thievingModule.addActiveTask(task);
+		return task;
+	}
+
+	@Test
+	void pickpocketClickThenXpCredits()
+	{
+		NuzlockeTask task = guardTask();
+		when(client.getTickCount()).thenReturn(100);
+		thievingModule.onMenuOptionClicked(npcClick(VARROCK_GUARD, "Pickpocket"));
+		when(client.getTickCount()).thenReturn(102);
+		thievingModule.onStatChanged(mockThievingXp(1040));
+		verify(completionCallback).onProgressUpdated(eq(task), eq(1));
+	}
+
+	/** The report: click the guard (attack), steal from a stall, the stall's XP counted as a pickpocket. */
+	@Test
+	void attackingGuardThenStealingFromStallDoesNotCreditPickpocket()
+	{
+		NuzlockeTask task = guardTask();
+		when(client.getTickCount()).thenReturn(100);
+		thievingModule.onMenuOptionClicked(npcClick(VARROCK_GUARD, "Attack"));
+		thievingModule.onMenuOptionClicked(mockObjectClick(WINE_STALL_ID, MenuAction.GAME_OBJECT_SECOND_OPTION));
+		when(client.getTickCount()).thenReturn(102);
+		thievingModule.onStatChanged(mockThievingXp(1016));
+		verify(completionCallback, never()).onProgressUpdated(eq(task), anyInt());
+	}
+
+	@Test
+	void pickpocketClickThenStallTheftDoesNotCreditPickpocket()
+	{
+		NuzlockeTask task = guardTask();
+		when(client.getTickCount()).thenReturn(100);
+		thievingModule.onMenuOptionClicked(npcClick(VARROCK_GUARD, "Pickpocket"));
+		thievingModule.onMenuOptionClicked(mockObjectClick(WINE_STALL_ID, MenuAction.GAME_OBJECT_SECOND_OPTION));
+		when(client.getTickCount()).thenReturn(102);
+		thievingModule.onStatChanged(mockThievingXp(1016));
+		verify(completionCallback, never()).onProgressUpdated(eq(task), anyInt());
+	}
 }

@@ -247,7 +247,6 @@ class QuestRequirements
 			}
 			catch (RuntimeException e)
 			{
-				log.debug("Quest state unavailable for {}", quest, e);
 			}
 		}
 	}

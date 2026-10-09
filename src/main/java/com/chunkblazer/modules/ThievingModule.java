@@ -26,6 +26,7 @@
 
 package com.chunkblazer.modules;
 
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -34,9 +35,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Skill;
-import net.runelite.api.events.InteractingChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
 import net.runelite.client.eventbus.Subscribe;
@@ -48,7 +49,9 @@ import com.chunkblazer.TargetNpc;
  * Module for handling THIEVING completion type tasks.
  *
  * Two detection paths run in parallel:
- *   1. NPC pickpockets — task has target_npc; we track InteractingChanged with watched NPC IDs.
+ *   1. NPC pickpockets — task has target_npc; we track a "Pickpocket" click on a watched NPC.
+ *      Any other interaction (attack, talk, a stall, walking) cancels it, so clicking a
+ *      guard and then stealing from a stall can't pass the stall's XP off as a pickpocket.
  *   2. GameObject thefts (stalls, chests) — task has required_object; we track MenuOptionClicked
  *      on watched object IDs.
  * Either path gates a credit on a Thieving XP gain inside INTERACTION_TIMEOUT_TICKS of the
@@ -66,6 +69,9 @@ public class ThievingModule extends AbstractTaskModule
 
 	// How many ticks after interacting with an NPC we consider XP gains as pickpockets
 	private static final int INTERACTION_TIMEOUT_TICKS = 5;
+	private static final Set<MenuAction> NPC_ACTIONS = EnumSet.of(
+		MenuAction.NPC_FIRST_OPTION, MenuAction.NPC_SECOND_OPTION, MenuAction.NPC_THIRD_OPTION,
+		MenuAction.NPC_FOURTH_OPTION, MenuAction.NPC_FIFTH_OPTION);
 
 	// Per-task NPC IDs (pickpocket tasks).
 	private final Map<String, Set<Integer>> taskTargetNpcs = new ConcurrentHashMap<>();
@@ -208,46 +214,40 @@ public class ThievingModule extends AbstractTaskModule
 	}
 
 	@Subscribe
-	public void onInteractingChanged(InteractingChanged event)
-	{
-		if (activeTasks.isEmpty() || watchedNpcIds.isEmpty())
-		{
-			return;
-		}
-
-		// Check if the player is interacting with a watched NPC
-		if (event.getSource() == client.getLocalPlayer() && event.getTarget() instanceof NPC)
-		{
-			NPC npc = (NPC) event.getTarget();
-			int npcId = npc.getId();
-
-			if (watchedNpcIds.contains(npcId))
-			{
-				lastInteractionNpcId = npcId;
-				lastInteractionTick = client.getTickCount();
-			}
-		}
-	}
-
-	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		if (activeTasks.isEmpty() || watchedObjectIds.isEmpty())
+		if (activeTasks.isEmpty())
+		{
+			return;
+		}
+		MenuAction action = event.getMenuAction();
+		boolean npcAction = NPC_ACTIONS.contains(action);
+		boolean objectAction = GAME_OBJECT_ACTIONS.contains(action);
+
+		// Only a Pickpocket click arms an NPC task. Anything else done to the world
+		// replaces it: the XP that follows belongs to that, not to the pickpocket.
+		if (npcAction && "Pickpocket".equalsIgnoreCase(event.getMenuOption()))
+		{
+			NPC npc = event.getMenuEntry() != null ? event.getMenuEntry().getNpc() : null;
+			int npcId = npc != null ? npc.getId() : -1;
+			lastInteractionNpcId = watchedNpcIds.contains(npcId) ? npcId : -1;
+			lastInteractionTick = client.getTickCount();
+			lastInteractionObjectId = -1;
+			return;
+		}
+		if (npcAction || objectAction || action == MenuAction.WALK)
+		{
+			lastInteractionNpcId = -1;
+		}
+		if (!objectAction)
 		{
 			return;
 		}
 
-		if (!GAME_OBJECT_ACTIONS.contains(event.getMenuAction()))
-		{
-			return;
-		}
-
+		// An unrelated stall replaces a pending task stall too.
 		int objectId = event.getId();
-		if (watchedObjectIds.contains(objectId))
-		{
-			lastInteractionObjectId = objectId;
-			lastInteractionObjectTick = client.getTickCount();
-		}
+		lastInteractionObjectId = watchedObjectIds.contains(objectId) ? objectId : -1;
+		lastInteractionObjectTick = client.getTickCount();
 	}
 
 	@Subscribe
