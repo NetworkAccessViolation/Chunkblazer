@@ -3497,10 +3497,17 @@ public class ChunkBlazerPlugin extends Plugin
 					}
 					else
 					{
-						// Players read "all set" as done and never picked a mode, so point them at it.
-						clientThread.invoke(() -> addPluginChatMessage(isModeLocked()
-							? "Account verified! You're all set."
-							: "Account verified! " + SELECT_MODE_MESSAGE));
+						// Players read "all set" as done and never picked a mode, so point them at it,
+						// and open the ChunkBlazer panel so the mode picker is already in front of them.
+						clientThread.invoke(() ->
+						{
+							boolean locked = isModeLocked();
+							addPluginChatMessage(locked ? "Account verified! You're all set." : "Account verified! " + SELECT_MODE_MESSAGE);
+							if (!locked && navButton != null)
+							{
+								javax.swing.SwingUtilities.invokeLater(() -> clientToolbar.openPanel(navButton));
+							}
+						});
 					}
 				}
 				else

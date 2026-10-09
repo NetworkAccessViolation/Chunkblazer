@@ -1491,4 +1491,41 @@ class NPCKillModuleTest extends AbstractTaskModuleTest
 		assertTrue(NPCKillModule.dealtTooLittle(4, 35));
 		assertFalse(NPCKillModule.dealtTooLittle(4, null), "unknown max HP fails open");
 	}
+
+	/** An XP lamp rubbed mid-fight: Slayer XP lands, but the task counter doesn't move. */
+	@Test
+	void testSlayerGate_lampXpIsNotOnTaskEvidenceOnceCounterKnown() throws Exception
+	{
+		NuzlockeTask moss = createTaskWithNpc("Defeat a Moss Giant on Task", "defeat_moss_giant_on_task", "SLAYER", 1, Arrays.asList(2090));
+		npcKillModule.addActiveTask(moss);
+		setSlayerCount(25); // assigned to something else, counter known
+
+		NPC npc = mockNpc(2090, 1, "Moss Giant");
+		fireMyHitsplat(npc, 10);
+		killAndDrain(npc);
+		setTick(now + 1);
+		grantSlayerXp(); // the lamp
+		npcKillModule.onGameTick(new GameTick());
+		advance(ON_TASK_WAIT_TICKS);
+
+		assertEquals(0, moss.getCurrentProgress(), "lamp XP without a counter drop is not an on-task kill");
+	}
+
+	@Test
+	void testSlayerGate_counterDropStillCreditsOnceCounterKnown() throws Exception
+	{
+		NuzlockeTask moss = createTaskWithNpc("Defeat a Moss Giant on Task", "defeat_moss_giant_on_task", "SLAYER", 1, Arrays.asList(2090));
+		npcKillModule.addActiveTask(moss);
+		setSlayerCount(25);
+
+		NPC npc = mockNpc(2090, 1, "Moss Giant");
+		fireMyHitsplat(npc, 10);
+		killAndDrain(npc);
+		setTick(now + 1);
+		grantSlayerXp();
+		setSlayerCount(24); // the real on-task kill
+		npcKillModule.onGameTick(new GameTick());
+
+		assertEquals(1, moss.getCurrentProgress());
+	}
 }

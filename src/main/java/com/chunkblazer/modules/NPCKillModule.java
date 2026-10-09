@@ -780,9 +780,11 @@ public class NPCKillModule extends AbstractTaskModule
 		if (xp > previousSlayerXp)
 		{
 			int tick = client.getTickCount();
-			// Only if the counter hasn't already recorded this kill on this tick —
-			// they arrive together and describe ONE kill.
-			if (countSignalsAt(tick) == 0)
+			// Slayer XP is only evidence while the task counter is unknown this session.
+			// Once it is known, the counter alone decides: an XP lamp or book used
+			// mid-fight gives Slayer XP without the counter moving, and must not make
+			// an off-task kill look on task.
+			if (previousSlayerCount < 0 && countSignalsAt(tick) == 0)
 			{
 				recordOnTaskSignals(tick, 1);
 			}
