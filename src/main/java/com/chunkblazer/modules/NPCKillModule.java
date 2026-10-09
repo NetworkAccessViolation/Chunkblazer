@@ -66,7 +66,6 @@ import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TargetNpc;
 import com.chunkblazer.TaskConstraints;
 import com.chunkblazer.api.NpcKillReport;
-import com.chunkblazer.verification.VarPlayerVerificationService;
 
 /**
  * Module for handling NPC_KILL completion type tasks.
@@ -169,9 +168,6 @@ public class NPCKillModule extends AbstractTaskModule
 	// a cannon fight can precede combatStartTick. Look back this far past the fight's
 	// start when deciding whether a cannon was involved.
 	private static final int CANNON_FIRE_LOOKBACK_TICKS = 2;
-
-	@Inject
-	private VarPlayerVerificationService varPlayerService;
 
 	@Inject
 	private ChunkBlazerConfig config;
@@ -316,10 +312,6 @@ public class NPCKillModule extends AbstractTaskModule
 	// fresh-fight gate. Region crossings (LOGGED_IN → LOADING → LOGGED_IN)
 	// never pass through a pre-login state, so they can't arm this flag.
 	private boolean sessionStartPending = false;
-
-	// For boss KC verification
-	private int baselineKc = -1;
-	private String currentBossName;
 
 	// Pending drop-based kills: tasks waiting for a specific item to drop
 	// Key: task ID, Value: pending kill info
@@ -505,30 +497,12 @@ public class NPCKillModule extends AbstractTaskModule
 			previousSlayerXp = client.getSkillExperience(Skill.SLAYER);
 		}
 
-		// For boss tasks, get baseline KC from VarPlayer (instant server-side)
-		TargetNpc targetNpc = task.getTargetNpc();
-		if (targetNpc != null)
-		{
-			String bossName = targetNpc.getName();
-			if (bossName != null && varPlayerService.isBossTracked(bossName))
-			{
-				currentBossName = bossName;
-				baselineKc = varPlayerService.getBossKillCount(bossName);
-			}
-			else
-			{
-				currentBossName = null;
-				baselineKc = -1;
-			}
-		}
 	}
 
 	@Override
 	public void onTaskCleared()
 	{
 		super.onTaskCleared();
-		baselineKc = -1;
-		currentBossName = null;
 		pendingDropKills.clear();
 		pendingDeaths.clear();
 		// IMPORTANT: do NOT clear `heldDeaths` here. onTaskCleared() fires on every

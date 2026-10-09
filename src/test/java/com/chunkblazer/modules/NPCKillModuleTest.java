@@ -18,7 +18,6 @@ import net.runelite.client.chat.ChatMessageManager;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.TaskConstraints;
 import com.chunkblazer.api.ChunkBlazerApiClient;
-import com.chunkblazer.verification.VarPlayerVerificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,8 +38,6 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class NPCKillModuleTest extends AbstractTaskModuleTest
 {
-	@Mock
-	private VarPlayerVerificationService varPlayerService;
 
 	@Mock
 	private ChatMessageManager chatMessageManager;

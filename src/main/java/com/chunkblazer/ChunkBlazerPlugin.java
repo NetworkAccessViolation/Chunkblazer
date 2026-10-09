@@ -390,9 +390,6 @@ public class ChunkBlazerPlugin extends Plugin
 			@Override
 			public void onServerVerified(NuzlockeTask task, int pointsAwarded)
 			{
-				// Server verified completion
-				// Points already awarded in completeTask, but this confirms server agreement
-				scheduleTaskDisplayRefresh();
 			}
 
 			@Override
@@ -409,14 +406,6 @@ public class ChunkBlazerPlugin extends Plugin
 				// stale instance has the default targetQuantity=1 and corrupts the
 				// saved rolled value.
 				saveTaskProgress(task.getTaskId(), newProgress, task.getTargetQuantity());
-
-				// Coalesced UI refresh (see scheduleTaskDisplayRefresh). NEVER a raw
-				// invokeLater per call: progress updates arrive in bursts (module init,
-				// the login varbit storm), each rebuild does Container.removeAll whose
-				// removeSourceEvents scans the WHOLE EDT queue, and a queue full of
-				// these rebuild events makes that quadratic — it froze a maxed tester's
-				// client on the login screen for ~30s (thread dump 2026-08-22).
-				scheduleTaskDisplayRefresh();
 			}
 		});
 		taskModuleManager.startUp();
@@ -1124,8 +1113,6 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 		}
 
-		// Update panel
-		panel.updateStats();
 	}
 
 	/**
@@ -1274,6 +1261,7 @@ public class ChunkBlazerPlugin extends Plugin
 		parsedCatalogVersion = catalogStore != null ? catalogStore.getCatalogVersion() : 0;
 		allChunks.clear();
 		chunksByRegionId.clear();
+		TaskTargetExtras.load(readTaskFileContent("_Target_Extras.json"), gson);
 
 
 		Type mapType = new TypeToken<Map<String, List<NuzlockeChunk>>>()
@@ -5420,11 +5408,7 @@ public class ChunkBlazerPlugin extends Plugin
 	@Subscribe
 	public void onStatChanged(StatChanged event)
 	{
-		Integer old = realLevels.put(event.getSkill(), event.getLevel());
-		if (old != null && old != event.getLevel())
-		{
-			scheduleTaskDisplayRefresh(); // a level-up can make a task doable
-		}
+		realLevels.put(event.getSkill(), event.getLevel());
 	}
 
 	/**
@@ -5693,41 +5677,6 @@ public class ChunkBlazerPlugin extends Plugin
 		completeTasks(batch);
 	}
 
-	/**
-	 * Guards {@link #scheduleTaskDisplayRefresh()} so a burst of refresh requests
-	 * collapses to a single queued panel rebuild.
-	 */
-	private final java.util.concurrent.atomic.AtomicBoolean taskDisplayRefreshPending =
-		new java.util.concurrent.atomic.AtomicBoolean(false);
-
-	/**
-	 * Queue AT MOST ONE task-panel rebuild at a time. onProgressUpdated /
-	 * onServerVerified fire in bursts (module init, the login varbit storm), and each
-	 * rebuild is a Container.removeAll whose removeSourceEvents scans the entire EDT
-	 * event queue — so N queued rebuilds cost O(N^2) and spun the EDT for ~30s,
-	 * freezing the client on the login screen (Taylor's thread dump, 2026-08-22).
-	 * Collapsing a burst to one rebuild keeps the queue tiny and the UI responsive.
-	 * The flag is cleared BEFORE the rebuild so a late update still schedules a
-	 * trailing refresh.
-	 */
-	private void scheduleTaskDisplayRefresh()
-	{
-		if (panel == null)
-		{
-			return;
-		}
-		if (taskDisplayRefreshPending.compareAndSet(false, true))
-		{
-			javax.swing.SwingUtilities.invokeLater(() ->
-			{
-				taskDisplayRefreshPending.set(false);
-				if (panel != null)
-				{
-					panel.updateStats();
-				}
-			});
-		}
-	}
 
 	private void completeTask(NuzlockeTask task)
 	{
@@ -5798,10 +5747,6 @@ public class ChunkBlazerPlugin extends Plugin
 		// Points + completed list just changed; get them onto disk.
 		flushConfigToDisk();
 
-		if (panel != null)
-		{
-			panel.updateStats();
-		}
 	}
 
 
@@ -6235,15 +6180,6 @@ public class ChunkBlazerPlugin extends Plugin
 		return acInt("totalPoints", 0);
 	}
 
-	public int getCompletedTaskCount()
-	{
-		String completed = acStr("completedTasks", "");
-		if (completed == null || completed.isEmpty())
-		{
-			return 0;
-		}
-		return completed.split(",").length;
-	}
 
 	/**
 	 * Force RuneLite to write config to DISK now, instead of whenever its timer
@@ -6538,10 +6474,6 @@ public class ChunkBlazerPlugin extends Plugin
 	{
 		int updated = Math.max(0, acInt("bossTokens", 2) + amount);
 		setAccountState("bossTokens", updated);
-		if (panel != null)
-		{
-			panel.updateStats();
-		}
 	}
 
 	/**
@@ -6557,10 +6489,6 @@ public class ChunkBlazerPlugin extends Plugin
 			return false;
 		}
 		setAccountState("bossTokens", current - 1);
-		if (panel != null)
-		{
-			panel.updateStats();
-		}
 		return true;
 	}
 

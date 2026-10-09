@@ -31,13 +31,12 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
-import java.awt.GridLayout;
-import java.awt.Insets;
 import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -51,6 +50,7 @@ import com.chunkblazer.ui.WrappingTextLabel;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
 
 
@@ -67,8 +67,7 @@ public class ChunkBlazerPanel extends PluginPanel
 	private ChunkBlazerPlugin plugin;
 
 	private JPanel modeSelectionPanel;
-	private JPanel lockedModePanel;
-	private JLabel lockedModeValueLabel;
+	private JPanel overlayHint;
 	private JPanel loggedOutPanel;
 	// Data-sync header: the "Progress synced" notice (sync ON) or the first-run
 	// "Enable Sync" prompt (sync OFF, the default), toggled in updatePanel.
@@ -79,13 +78,8 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JPanel syncPromptPanel;
 	private WrappingTextLabel syncChoiceHint;
 	private JButton playOfflineButton;
-	private JPanel statsPanel;
 	private JLabel regionLabel;
 	private JLabel modeLabel;
-	private JLabel totalPointsLabel;
-	private JLabel bossTokensLabel;
-	private JLabel chunksUnlockedLabel;
-	private JLabel tasksCompletedLabel;
 	private JRadioButton casualRadio;
 	private JRadioButton nuzlockeRadio;
 
@@ -142,16 +136,15 @@ public class ChunkBlazerPanel extends PluginPanel
 		mainPanel.add(verificationPanel);
 		mainPanel.add(Box.createVerticalStrut(8));
 
-		statsPanel = createStatsSection();
-		statsPanel.setAlignmentX(LEFT_ALIGNMENT);
-		mainPanel.add(statsPanel);
-		mainPanel.add(Box.createVerticalStrut(8));
-
 		modeSelectionPanel = createModeSelectionSection();
 		mainPanel.add(modeSelectionPanel);
-		lockedModePanel = createLockedModeSection();
-		lockedModePanel.setVisible(false);
-		mainPanel.add(lockedModePanel);
+		// Points, chunks and tasks all live in the in-game task window now.
+		overlayHint = boxPanel(ColorScheme.DARK_GRAY_COLOR);
+		overlayHint.setAlignmentX(LEFT_ALIGNMENT);
+		overlayHint.add(new WrappingTextLabel("Please click the Pts orb for the new Task Overlay!",
+			FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 4));
+		overlayHint.setVisible(false);
+		mainPanel.add(overlayHint);
 		mainPanel.add(Box.createVerticalStrut(8));
 
 		historyButton = linkButton("View my task history", new Color(140, 140, 140),
@@ -170,9 +163,26 @@ public class ChunkBlazerPanel extends PluginPanel
 			+ "Your server progress is not touched.");
 		resetAccountButton.addActionListener(e -> confirmResetAccountData());
 		mainPanel.add(resetAccountButton);
+		mainPanel.add(Box.createVerticalStrut(6));
+
+		JPanel socials = styledPanel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARK_GRAY_COLOR);
+		socials.setAlignmentX(LEFT_ALIGNMENT);
+		socials.add(iconLink("discord_icon.png", "Join the ChunkBlazer Discord", "https://discord.com/invite/2AmVDYBBE4"));
+		socials.add(iconLink("patreon_icon.png", "Support ChunkBlazer on Patreon", "https://www.patreon.com/cw/Crukken"));
+		mainPanel.add(socials);
 
 		mainPanel.add(Box.createVerticalGlue());
 		return mainPanel;
+	}
+
+	/** A borderless icon button that opens a link. */
+	private JButton iconLink(String icon, String tooltip, String url)
+	{
+		JButton button = linkButton("", Color.WHITE, tooltip);
+		button.setIcon(new ImageIcon(ImageUtil.loadImageResource(ChunkBlazerPanel.class, icon)));
+		button.setBorder(new EmptyBorder(0, 0, 0, 0));
+		button.addActionListener(e -> openLink(url));
+		return button;
 	}
 
 	/** A subtle text-only link button. */
@@ -592,7 +602,6 @@ public class ChunkBlazerPanel extends PluginPanel
 			new EmptyBorder(3, 6, 3, 6)
 		));
 
-		// Title row with Discord button
 		JPanel titleRow = styledPanel(new BorderLayout(3, 0), ColorScheme.DARKER_GRAY_COLOR);
 		titleRow.setAlignmentX(CENTER_ALIGNMENT);
 		titleRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 20));
@@ -600,15 +609,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Orange title
 		titleRow.add(styledLabel("ChunkBlazer", FontManager.getRunescapeBoldFont(), new Color(255, 152, 0)), BorderLayout.WEST);
 
-		// Discord button with icon character
-		JButton discordButton = new JButton("\uD83D\uDCAC Discord"); // Speech bubble icon
-		discordButton.setFont(FontManager.getRunescapeSmallFont());
-		discordButton.setForeground(new Color(88, 101, 242)); // Discord blurple
-		discordButton.setPreferredSize(new Dimension(70, 18));
-		discordButton.setMargin(new Insets(0, 2, 0, 2));
-		discordButton.setToolTipText("Join the ChunkBlazer Discord");
-		discordButton.addActionListener(e -> openLink("https://discord.com/invite/2AmVDYBBE4"));
-		titleRow.add(discordButton, BorderLayout.EAST);
 
 		headerPanel.add(titleRow);
 
@@ -627,54 +627,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		return headerPanel;
 	}
 
-	private JPanel createStatsSection()
-	{
-		JPanel statsPanel = styledPanel(new GridLayout(1, 4, 2, 0), ColorScheme.DARKER_GRAY_COLOR);
-		statsPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME), // Gold border
-			new EmptyBorder(2, 3, 2, 3)
-		));
 
-		JPanel pointsPanel = createStatBox("Points", "0");
-		totalPointsLabel = (JLabel) ((JPanel) pointsPanel.getComponent(0)).getComponent(1);
-		statsPanel.add(pointsPanel);
-
-		JPanel chunksPanel = createStatBox("Chunks", "1");
-		chunksUnlockedLabel = (JLabel) ((JPanel) chunksPanel.getComponent(0)).getComponent(1);
-		statsPanel.add(chunksPanel);
-
-		JPanel tasksPanel = createStatBox("Tasks", "0");
-		tasksCompletedLabel = (JLabel) ((JPanel) tasksPanel.getComponent(0)).getComponent(1);
-		statsPanel.add(tasksPanel);
-
-		// Boss Tokens — secondary currency, shown last (far right) for a cleaner layout.
-		JPanel tokensPanel = createStatBox("Tokens", "2");
-		bossTokensLabel = (JLabel) ((JPanel) tokensPanel.getComponent(0)).getComponent(1);
-		statsPanel.add(tokensPanel);
-
-		return statsPanel;
-	}
-
-	private JPanel createStatBox(String label, String value)
-	{
-		JPanel box = styledPanel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
-
-		JPanel innerPanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-
-		// muted grey
-		JLabel labelText = styledLabel(label.toUpperCase(), new Font("Arial", Font.PLAIN, 9), new Color(150, 150, 150));
-		labelText.setAlignmentX(CENTER_ALIGNMENT);
-
-		// gold
-		JLabel valueText = styledLabel(value, FontManager.getRunescapeBoldFont().deriveFont(15f), FLAME);
-		valueText.setAlignmentX(CENTER_ALIGNMENT);
-
-		innerPanel.add(labelText);
-		innerPanel.add(valueText);
-		box.add(innerPanel, BorderLayout.CENTER);
-
-		return box;
-	}
 
 	private JPanel createModeSelectionSection()
 	{
@@ -745,27 +698,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		return modePanel;
 	}
 
-	/**
-	 * The read-only card shown once a game mode is locked, replacing the
-	 * selector. The mode name + colour are filled in by updateModeDisplay().
-	 */
-	private JPanel createLockedModeSection()
-	{
-		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(10, 10, 10, 10)
-		));
-
-		addLabel(panel, "Game Mode", FontManager.getRunescapeBoldFont(), Color.WHITE);
-		panel.add(Box.createVerticalStrut(5));
-
-		lockedModeValueLabel = addLabel(panel, "Casual", FontManager.getRunescapeBoldFont(), new Color(100, 200, 100));
-
-		addLabel(panel, "Locked for this account", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
-
-		return panel;
-	}
 
 	/**
 	 * Prompt shown while the player is logged out, in place of the gameplay
@@ -852,37 +784,19 @@ public class ChunkBlazerPanel extends PluginPanel
 			resetAccountButton.setVisible(syncOn);
 			historyButton.setVisible(syncOn && loggedIn);
 
-			statsPanel.setVisible(loggedIn);
 			if (!loggedIn)
 			{
 				modeSelectionPanel.setVisible(false);
-				lockedModePanel.setVisible(false);
+				overlayHint.setVisible(false);
 				revalidate();
 				repaint();
 				return;
 			}
 			updateModeDisplay();
 			updateRegionDisplay();
-			updateStats();
 		});
 	}
 
-	public void updateStats()
-	{
-		if (!SwingUtilities.isEventDispatchThread())
-		{
-			SwingUtilities.invokeLater(this::updateStats);
-			return;
-		}
-		int points = plugin.getTotalPoints();
-		int chunks = plugin.getUnlockedRegionIds().size();
-		int tasks = plugin.getCompletedTaskCount();
-
-		totalPointsLabel.setText(String.valueOf(points));
-		bossTokensLabel.setText(String.valueOf(plugin.getBossTokens()));
-		chunksUnlockedLabel.setText(String.valueOf(chunks));
-		tasksCompletedLabel.setText(String.valueOf(tasks));
-	}
 
 	public void updateModeDisplay()
 	{
@@ -893,7 +807,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 		boolean isLocked = plugin.isModeLocked();
 		modeSelectionPanel.setVisible(!isLocked);
-		lockedModePanel.setVisible(isLocked);
+		overlayHint.setVisible(isLocked);
 
 		if (isLocked)
 		{
@@ -902,8 +816,6 @@ public class ChunkBlazerPanel extends PluginPanel
 				new Color(255, 100, 100) : new Color(100, 200, 100);
 			modeLabel.setText(" | " + mode.getName());
 			modeLabel.setForeground(modeColor);
-			lockedModeValueLabel.setText(mode.getName());
-			lockedModeValueLabel.setForeground(modeColor);
 		}
 		else
 		{
