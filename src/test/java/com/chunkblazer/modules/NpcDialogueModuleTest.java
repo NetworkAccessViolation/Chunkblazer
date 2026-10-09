@@ -257,4 +257,16 @@ class NpcDialogueModuleTest extends AbstractTaskModuleTest
 		dialogueWith("Death");
 		assertFalse(task.isCompleted());
 	}
+
+	/** Morgan Le Faye talks the moment Sir Mordred dies, while the player is still on his corpse. */
+	@Test
+	void scriptedTalkRightAfterAKillCredits()
+	{
+		NuzlockeTask task = talkToDeath();
+		lenient().when(otherNpc.getId()).thenReturn(12345);
+		lenient().when(otherNpc.isDead()).thenReturn(true);
+		lenient().when(localPlayer.getInteracting()).thenReturn(otherNpc);
+		dialogueWith("Death");
+		assertTrue(task.isCompleted(), "a dead target isn't someone else being talked to");
+	}
 }

@@ -263,12 +263,16 @@ public class NpcDialogueModule extends AbstractTaskModule
 		return text.isEmpty() ? null : text;
 	}
 
-	/** Whether the player is interacting with an NPC that none of our tasks target. */
+	/**
+	 * Whether the player is interacting with a living NPC that none of our tasks target.
+	 * A dead one doesn't count: Morgan Le Faye starts talking the moment Sir Mordred
+	 * dies, while the player is still locked onto his corpse.
+	 */
 	private boolean interactingWithOtherNpc()
 	{
 		Player me = client.getLocalPlayer();
 		Actor target = me != null ? me.getInteracting() : null;
-		return target instanceof NPC && !watchedNpcIds.contains(((NPC) target).getId());
+		return target instanceof NPC && !target.isDead() && !watchedNpcIds.contains(((NPC) target).getId());
 	}
 
 	@Subscribe
