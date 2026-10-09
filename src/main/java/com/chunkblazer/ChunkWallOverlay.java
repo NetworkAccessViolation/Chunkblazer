@@ -61,6 +61,9 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * section surges up and then drops away, the wave running outwards along the wall in
  * both directions until it's gone. If the unlock dealt reveal cards, the wall waits
  * until every card has been flipped and cleared off the screen, then opens.
+ *
+ * The top edge always ripples like flames, and the wall flares up taller and brighter
+ * as the player walks up to it.
  */
 @Singleton
 public class ChunkWallOverlay extends Overlay
@@ -80,6 +83,12 @@ public class ChunkWallOverlay extends Overlay
 	private static final double SURGE_HEIGHT = 0.6;
 	// Long enough for the wave to cross a whole chunk (about 90 tiles from a corner).
 	private static final long WAVE_LIFETIME_MS = (long) (90 * WAVE_MS_PER_TILE) + SURGE_MS + DROP_MS;
+
+	// Flames: how much the top ripples normally, and how close (tiles) the player has to be
+	// for the wall to flare up, and how much taller it gets when they're right next to it.
+	private static final double FLAME = 0.12;
+	private static final double FLARE_TILES = 6;
+	private static final double FLARE_HEIGHT = 0.45;
 
 	/**
 	 * One chunk's wall opening: which chunk, when it started (-1 while it's waiting for
@@ -106,6 +115,12 @@ public class ChunkWallOverlay extends Overlay
 	// Unlocked or not, for the chunks seen last frame, to notice the moment one unlocks.
 	private final Map<Integer, Boolean> lastSeen = new HashMap<>();
 	private final List<Opening> openings = new ArrayList<>();
+	// This frame's time, scene origin and player position (world tiles), for the flames.
+	private long now;
+	private int baseX;
+	private int baseY;
+	private double playerX;
+	private double playerY;
 
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
@@ -144,8 +159,10 @@ public class ChunkWallOverlay extends Overlay
 		}
 
 		int plane = client.getPlane();
-		int baseX = client.getBaseX();
-		int baseY = client.getBaseY();
+		baseX = client.getBaseX();
+		baseY = client.getBaseY();
+		playerX = baseX + playerPos.getX() / (double) LOCAL_TILE;
+		playerY = baseY + playerPos.getY() / (double) LOCAL_TILE;
 		int last = Constants.SCENE_SIZE - 1;
 		int minX = Math.max(1, playerPos.getSceneX() - DRAW_DISTANCE);
 		int maxX = Math.min(last, playerPos.getSceneX() + DRAW_DISTANCE);
@@ -155,7 +172,7 @@ public class ChunkWallOverlay extends Overlay
 		Color base = config.chunkWallColor();
 		Map<Integer, Boolean> unlocked = new HashMap<>();
 		Paint previousPaint = graphics.getPaint();
-		long now = System.currentTimeMillis();
+		now = System.currentTimeMillis();
 		noticeUnlocks(unlocked, baseX, baseY, local, now);
 
 		for (int sx = minX; sx < maxX; sx++)
@@ -307,17 +324,25 @@ public class ChunkWallOverlay extends Overlay
 	/**
 	 * One wall panel standing on the edge between two scene grid corners. {@code scale}
 	 * is its height (1 = normal, more during an opening surge, 0 = gone); {@code glow}
-	 * (0 to 1) brightens it towards white at the top of the surge.
+	 * (0 to 1) brightens it towards white at the top of the surge. On top of that, each
+	 * corner's height flickers like a flame, and the panel flares when the player is near.
 	 */
 	private void drawWall(Graphics2D graphics, int plane, int cx1, int cy1, int cx2, int cy2,
 		Color wallColor, double scale, double glow)
 	{
-		int height = (int) Math.round(WALL_HEIGHT * scale);
-		if (height <= 0)
+		if (scale <= 0)
 		{
 			return;
 		}
-		Color base = glow > 0 ? brighten(wallColor, glow * 0.6) : wallColor;
+		double midX = baseX + (cx1 + cx2) / 2.0;
+		double midY = baseY + (cy1 + cy2) / 2.0;
+		double near = Math.max(0, 1 - Math.hypot(midX - playerX, midY - playerY) / FLARE_TILES);
+		double flare = near * near;
+		double flicker = FLAME + FLAME * 2 * flare;
+		int heightA = flameHeight(cx1, cy1, scale, flicker, flare);
+		int heightB = flameHeight(cx2, cy2, scale, flicker, flare);
+		glow = Math.max(glow, 0.1 * (1 + flame(midX, midY)) + 0.5 * flare);
+		Color base = brighten(wallColor, glow * 0.6);
 		Color clear = new Color(base.getRed(), base.getGreen(), base.getBlue(), 0);
 		Color line = new Color(base.getRed(), base.getGreen(), base.getBlue(), Math.min(255, base.getAlpha() * 2));
 
@@ -325,8 +350,8 @@ public class ChunkWallOverlay extends Overlay
 		LocalPoint b = new LocalPoint(cx2 * LOCAL_TILE, cy2 * LOCAL_TILE);
 		Point groundA = Perspective.localToCanvas(client, a, plane);
 		Point groundB = Perspective.localToCanvas(client, b, plane);
-		Point topA = Perspective.localToCanvas(client, a, plane, height);
-		Point topB = Perspective.localToCanvas(client, b, plane, height);
+		Point topA = Perspective.localToCanvas(client, a, plane, heightA);
+		Point topB = Perspective.localToCanvas(client, b, plane, heightB);
 		if (groundA == null || groundB == null || topA == null || topB == null)
 		{
 			return;
@@ -348,6 +373,20 @@ public class ChunkWallOverlay extends Overlay
 		// A stronger line along the ground so the exact border is clear.
 		graphics.setPaint(line);
 		graphics.drawLine(groundA.getX(), groundA.getY(), groundB.getX(), groundB.getY());
+	}
+
+	/** Height at one grid corner: its flame flicker, plus the flare when the player is close. */
+	private int flameHeight(int cx, int cy, double scale, double flicker, double flare)
+	{
+		double k = 1 + flicker * flame(baseX + cx, baseY + cy) + FLARE_HEIGHT * flare;
+		return (int) Math.round(WALL_HEIGHT * scale * k);
+	}
+
+	/** -1 to 1: two waves rolling along the wall at different speeds, so it reads as fire. */
+	private double flame(double worldX, double worldY)
+	{
+		double along = worldX + worldY;
+		return 0.6 * Math.sin(along * 0.7 + now / 260.0) + 0.4 * Math.sin(along * 1.9 - now / 170.0);
 	}
 
 	/** Blend towards white, keeping the colour's transparency (a little more opaque when bright). */
