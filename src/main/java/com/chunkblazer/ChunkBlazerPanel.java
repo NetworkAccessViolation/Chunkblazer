@@ -139,10 +139,13 @@ public class ChunkBlazerPanel extends PluginPanel
 		modeSelectionPanel = createModeSelectionSection();
 		mainPanel.add(modeSelectionPanel);
 		// Points, chunks and tasks all live in the in-game task window now.
-		overlayHint = boxPanel(ColorScheme.DARK_GRAY_COLOR);
+		overlayHint = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		overlayHint.setAlignmentX(LEFT_ALIGNMENT);
+		overlayHint.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(FLAME),
+			new EmptyBorder(5, 6, 5, 6)));
 		overlayHint.add(new WrappingTextLabel("Please click the Pts orb for the new Task Overlay!",
-			FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 4));
+			FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 16));
 		overlayHint.setVisible(false);
 		mainPanel.add(overlayHint);
 		mainPanel.add(Box.createVerticalStrut(8));
