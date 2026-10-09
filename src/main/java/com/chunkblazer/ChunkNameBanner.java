@@ -35,6 +35,8 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.util.HashMap;
+import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
@@ -56,6 +58,11 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * It only goes once you unlock the chunk (it flashes "Unlocked!" first) or walk into
  * another chunk; when one banner replaces another, the old one slides away quickly
  * before the new one comes in.
+ *
+ * An unlocked chunk you were in recently (chunkBannerRepeatMinutes) doesn't get its
+ * banner again, so a training loop through 2-3 chunks stays quiet after the first lap.
+ * The wait counts from when you were last in the chunk, not from the last banner.
+ * Locked chunks always get theirs, and so does a chunk whose status changed.
  */
 @Singleton
 public class ChunkNameBanner extends Overlay
@@ -104,6 +111,9 @@ public class ChunkNameBanner extends Overlay
 
 	private int lastRegionId = -1;
 	private String lastName;
+	// Per chunk name: when you were last in it, and the status its last banner showed.
+	private final Map<String, Long> lastInChunk = new HashMap<>();
+	private final Map<String, ChunkUnlockType> lastShownType = new HashMap<>();
 
 	// The banner on screen and where it is in its animation.
 	private Phase phase = Phase.HIDDEN;
@@ -271,6 +281,11 @@ public class ChunkNameBanner extends Overlay
 		{
 			return;
 		}
+		long now = System.currentTimeMillis();
+		if (lastName != null)
+		{
+			lastInChunk.put(lastName, now);
+		}
 		int regionId = location.getRegionID();
 		if (regionId == lastRegionId)
 		{
@@ -297,6 +312,14 @@ public class ChunkNameBanner extends Overlay
 		}
 		boolean neighbor = !unlocked && plugin.getNeighborRegionIds().contains(regionId);
 		ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, unlocked, neighbor);
+		Long seen = lastInChunk.get(name);
+		ChunkUnlockType shown = lastShownType.get(name);
+		if (unlocked && seen != null && now - seen < config.chunkBannerRepeatMinutes() * 60_000L
+			&& (shown == null || shown == type))
+		{
+			return;
+		}
+		lastShownType.put(name, type);
 		queue(new Banner(name, statusText(type, ChunkUnlockType.costLabel(plugin, regionId, type)),
 			type.color, regionId, !unlocked));
 	}
