@@ -34,6 +34,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.GridLayout;
 import java.awt.Polygon;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
@@ -61,8 +62,10 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.swing.BorderFactory;
 import javax.swing.DefaultListModel;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JList;
+import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
 import net.runelite.api.ChatMessageType;
@@ -656,6 +659,7 @@ public class TaskBrowserOverlay extends Overlay
 	private String sideKey = "";
 	private boolean sideAdded;
 	private final IconTextField sideSearch = new IconTextField();
+	private final Set<Filter> sideOn = ConcurrentHashMap.newKeySet();
 
 	/** Once a tick: add the list to the side panel, and refresh it while it's on screen. */
 	private void updateSideList()
@@ -727,6 +731,30 @@ public class TaskBrowserOverlay extends Overlay
 				}
 			});
 			panel.addTaskList(sideSearch);
+			// Filter tickboxes, two per row: any ticked type, and every ticked condition.
+			JPanel filters = new JPanel(new GridLayout(0, 2));
+			filters.setBackground(new Color(30, 30, 30));
+			for (Filter f : Filter.values())
+			{
+				JCheckBox box = new JCheckBox(f.shortLabel);
+				box.setForeground(Color.WHITE);
+				box.setOpaque(false);
+				box.addActionListener(e ->
+				{
+					if (box.isSelected())
+					{
+						sideOn.add(f);
+					}
+					else
+					{
+						sideOn.remove(f);
+					}
+					research.run();
+				});
+				filters.add(box);
+			}
+			filters.setMaximumSize(new Dimension(Integer.MAX_VALUE, filters.getPreferredSize().height));
+			panel.addTaskList(filters);
 			panel.addTaskList(sideList);
 		}
 		if (!sideList.isShowing())
@@ -739,10 +767,12 @@ public class TaskBrowserOverlay extends Overlay
 		List<NuzlockeTask> chunk = new ArrayList<>();
 		List<NuzlockeTask> globals = new ArrayList<>();
 		String query = sideSearch.getText().trim().toLowerCase();
+		Predicate<NuzlockeTask> test = filterTest(sideOn, Collections.emptySet(), null, null);
 		for (NuzlockeTask task : pool(true))
 		{
 			chunkNames.computeIfAbsent(task.getTaskId(), k -> chunkName(task));
-			if (!archived.contains(task.getTaskId()) && (query.isEmpty() || matchesSearch(task, query)))
+			if (!archived.contains(task.getTaskId()) && (query.isEmpty() || matchesSearch(task, query))
+				&& test.test(task))
 			{
 				(plugin.isGlobalTask(task.getTaskId()) ? globals : chunk).add(task);
 			}
@@ -763,7 +793,7 @@ public class TaskBrowserOverlay extends Overlay
 		addSection(items, "Global", globals);
 
 		// Only rebuild when something changed, so the panel doesn't jump while scrolling.
-		StringBuilder key = new StringBuilder(query + saved);
+		StringBuilder key = new StringBuilder(query + sideOn + saved);
 		items.forEach(o -> key.append(o instanceof NuzlockeTask ? ((NuzlockeTask) o).getTaskId() : o));
 		if (key.toString().equals(sideKey))
 		{
@@ -780,11 +810,17 @@ public class TaskBrowserOverlay extends Overlay
 		});
 	}
 
+	/** Searching or filtering opens every section, so results never hide in a folded one. */
+	private boolean sideFiltering()
+	{
+		return !sideSearch.getText().trim().isEmpty() || !sideOn.isEmpty();
+	}
+
 	/** A header with its count, then (unless folded) up to SIDE_MAX tasks and a "+N more" line. */
 	private void addSection(List<Object> items, String title, List<NuzlockeTask> tasks)
 	{
 		items.add(title + " (" + tasks.size() + ")");
-		if (sideFolded.contains(title) && sideSearch.getText().trim().isEmpty())
+		if (sideFolded.contains(title) && !sideFiltering())
 		{
 			return;
 		}
@@ -809,7 +845,7 @@ public class TaskBrowserOverlay extends Overlay
 		if (item instanceof String)
 		{
 			String title = (String) item;
-			boolean folded = sideFolded.contains(title.replaceAll(" \\(.*", "")) && sideSearch.getText().trim().isEmpty();
+			boolean folded = sideFolded.contains(title.replaceAll(" \\(.*", "")) && !sideFiltering();
 			JLabel header = new JLabel((folded ? "\u25B6 " : "\u25BC ") + title);
 			header.setFont(FontManager.getRunescapeBoldFont());
 			header.setForeground(new Color(255, 200, 80));
@@ -978,12 +1014,8 @@ public class TaskBrowserOverlay extends Overlay
 	 * Skill and tier must match, at least one ticked type (if any), every ticked
 	 * condition, and no hidden filter.
 	 */
-	private Predicate<NuzlockeTask> filterTest()
+	private Predicate<NuzlockeTask> filterTest(Set<Filter> on, Set<Filter> hidden, Skill skill, TaskCardTier tier)
 	{
-		Set<Filter> on = filterOn;
-		Set<Filter> hidden = filterHidden;
-		Skill skill = filterSkill;
-		TaskCardTier tier = filterTier;
 		boolean anyType = on.stream().anyMatch(f -> !f.condition);
 		return task -> (skill == null || isSkillTask(task, skill))
 			&& (tier == null || TaskCardTier.fromTask(task) == tier)
@@ -1145,7 +1177,7 @@ public class TaskBrowserOverlay extends Overlay
 		Set<String> archived = archive.ids();
 		Set<String> shown = shownNew;
 		Set<Filter> on = filterOn;
-		Predicate<NuzlockeTask> test = filterTest();
+		Predicate<NuzlockeTask> test = filterTest(filterOn, filterHidden, filterSkill, filterTier);
 		String here = pinnedChunk != null ? pinnedChunk : currentChunkOnly ? currentChunkName() : null;
 		// Global tasks (quests, level-ups) join the Active list when asked for, or when searching.
 		boolean global = tab == Tab.SAVED || tab == Tab.ARCHIVED || (tab == Tab.ACTIVE && (filterSkill != null
