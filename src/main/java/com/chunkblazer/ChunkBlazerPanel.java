@@ -37,6 +37,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.ImageIcon;
+import javax.swing.JComponent;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -144,8 +145,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		overlayHint.setBorder(BorderFactory.createCompoundBorder(
 			BorderFactory.createLineBorder(FLAME),
 			new EmptyBorder(5, 6, 5, 6)));
-		overlayHint.add(new WrappingTextLabel("Please click the Pts orb for the new Task Overlay!",
-			FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 16));
+		overlayHint.add(new WrappingTextLabel("Click a task to track it, right-click to star it, "
+			+ "click a heading to fold it.", FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 16));
 		overlayHint.setVisible(false);
 		mainPanel.add(overlayHint);
 		mainPanel.add(Box.createVerticalStrut(8));
@@ -800,6 +801,17 @@ public class ChunkBlazerPanel extends PluginPanel
 		});
 	}
 
+
+	/** The task list (from TaskBrowserOverlay), shown under the hint once a mode is picked. */
+	public void addTaskList(JComponent list)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			list.setAlignmentX(LEFT_ALIGNMENT);
+			overlayHint.add(list);
+			revalidate();
+		});
+	}
 
 	public void updateModeDisplay()
 	{
