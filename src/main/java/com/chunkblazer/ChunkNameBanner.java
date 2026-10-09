@@ -35,7 +35,7 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -59,10 +59,12 @@ import net.runelite.client.ui.overlay.OverlayPosition;
  * another chunk; when one banner replaces another, the old one slides away quickly
  * before the new one comes in.
  *
- * An unlocked chunk you were in recently (chunkBannerRepeatMinutes) doesn't get its
- * banner again, so a training loop through 2-3 chunks stays quiet after the first lap.
- * The wait counts from when you were last in the chunk, not from the last banner.
- * Locked chunks always get theirs, and so does a chunk whose status changed.
+ * An unlocked chunk among the last few you were in doesn't get its banner again, so
+ * running laps across chunk borders (agility courses, herbiboar, a bank and a skilling
+ * spot) stays quiet however long you train, while somewhere new always gets one. A
+ * dungeon counts as the same place as the land above it, so going down and back up
+ * stays quiet too; coming out in a different chunk doesn't. Locked chunks always get
+ * their banner.
  */
 @Singleton
 public class ChunkNameBanner extends Overlay
@@ -76,6 +78,10 @@ public class ChunkNameBanner extends Overlay
 	private static final int TOP_MARGIN = 12;
 	private static final int PAD_X = 18;
 	private static final int PAD_Y = 8;
+	// How many recent places stay quiet: enough for a course or loop over 3-4 chunks.
+	private static final int RECENT_PLACES = 4;
+	// Dungeons sit 6400 tiles (100 regions) north of the land above them.
+	private static final int UNDERGROUND_REGION_Y = 100;
 
 	private static final Color BACKGROUND = new Color(25, 22, 18, 225);
 	private static final Color BORDER = new Color(200, 160, 70);
@@ -111,9 +117,16 @@ public class ChunkNameBanner extends Overlay
 
 	private int lastRegionId = -1;
 	private String lastName;
-	// Per chunk name: when you were last in it, and the status its last banner showed.
-	private final Map<String, Long> lastInChunk = new HashMap<>();
-	private final Map<String, ChunkUnlockType> lastShownType = new HashMap<>();
+	// The last few unlocked places you were in (dungeons count as the land above them),
+	// oldest first.
+	private final Map<Integer, Boolean> recent = new LinkedHashMap<Integer, Boolean>(8, 0.75f, true)
+	{
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<Integer, Boolean> eldest)
+		{
+			return size() > RECENT_PLACES;
+		}
+	};
 
 	// The banner on screen and where it is in its animation.
 	private Phase phase = Phase.HIDDEN;
@@ -281,11 +294,6 @@ public class ChunkNameBanner extends Overlay
 		{
 			return;
 		}
-		long now = System.currentTimeMillis();
-		if (lastName != null)
-		{
-			lastInChunk.put(lastName, now);
-		}
 		int regionId = location.getRegionID();
 		if (regionId == lastRegionId)
 		{
@@ -306,20 +314,15 @@ public class ChunkNameBanner extends Overlay
 
 		boolean unlocked = plugin.isRegionUnlocked(regionId);
 		// On login, only a locked chunk gets a sign (it's the one asking to be unlocked).
-		if (firstLook && unlocked)
+		// After that, an unlocked chunk only gets one if you haven't been there recently.
+		// Locked places aren't remembered, so a chunk you've since unlocked gets one.
+		int place = (regionId & 0xFF) >= UNDERGROUND_REGION_Y ? regionId - UNDERGROUND_REGION_Y : regionId;
+		if (unlocked && (recent.put(place, true) != null || firstLook))
 		{
 			return;
 		}
 		boolean neighbor = !unlocked && plugin.getNeighborRegionIds().contains(regionId);
 		ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, unlocked, neighbor);
-		Long seen = lastInChunk.get(name);
-		ChunkUnlockType shown = lastShownType.get(name);
-		if (unlocked && seen != null && now - seen < config.chunkBannerRepeatMinutes() * 60_000L
-			&& (shown == null || shown == type))
-		{
-			return;
-		}
-		lastShownType.put(name, type);
 		queue(new Banner(name, statusText(type, ChunkUnlockType.costLabel(plugin, regionId, type)),
 			type.color, regionId, !unlocked));
 	}
