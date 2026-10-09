@@ -141,6 +141,8 @@ public class TaskBrowserOverlay extends Overlay
 	private static final int DETAIL_LINE = 13;
 	// A section header's text starts this far right, after its open/closed arrow.
 	private static final int SECTION_TEXT = 11;
+	// Width of the hide-category (eye) button at the end of each filter row.
+	private static final int HIDE_BUTTON = 20;
 	// Quest states checked per tick while the window is open (each runs a client script).
 	private static final int QUEST_CHECKS_PER_TICK = 15;
 	private static final int MAX_SEARCH = 40;
@@ -300,6 +302,8 @@ public class TaskBrowserOverlay extends Overlay
 	// Filters: ticked task types (empty = any), plus one skill and one tier (null = any).
 	// Replaced, never changed in place, so a list being built sees one consistent set.
 	private volatile Set<Filter> filterTypes = Collections.emptySet();
+	// Categories hidden with the eye button: a task matching any of these never shows.
+	private volatile Set<Filter> hiddenTypes = Collections.emptySet();
 	private volatile Skill filterSkill;
 	private volatile TaskCardTier filterTier;
 	private final Set<String> expandedGroups = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -835,15 +839,17 @@ public class TaskBrowserOverlay extends Overlay
 		return pool;
 	}
 
-	/** Every active filter must match: the skill, the tier, and every ticked filter. */
+	/** Every active filter must match (skill, tier, every ticked filter), and no hidden one may. */
 	private Predicate<NuzlockeTask> filterTest()
 	{
 		Set<Filter> types = filterTypes;
+		Set<Filter> hidden = hiddenTypes;
 		Skill skill = filterSkill;
 		TaskCardTier tier = filterTier;
 		return task -> (skill == null || isSkillTask(task, skill))
 			&& (tier == null || TaskCardTier.fromTask(task) == tier)
-			&& types.stream().allMatch(f -> typeTest(f, task));
+			&& types.stream().allMatch(f -> typeTest(f, task))
+			&& hidden.stream().noneMatch(f -> typeTest(f, task));
 	}
 
 	private boolean typeTest(Filter f, NuzlockeTask task)
@@ -899,26 +905,48 @@ public class TaskBrowserOverlay extends Overlay
 
 	private boolean anyFilter()
 	{
-		return filterSkill != null || filterTier != null || !filterTypes.isEmpty();
+		return filterSkill != null || filterTier != null || !filterTypes.isEmpty() || !hiddenTypes.isEmpty();
 	}
 
 	private void clearFilters()
 	{
 		filterTypes = Collections.emptySet();
+		hiddenTypes = Collections.emptySet();
 		filterSkill = null;
 		filterTier = null;
 	}
 
+	/** Tick or untick "only show" for a category. Ticking it un-hides it. */
 	private void toggleType(Filter f)
 	{
-		Set<Filter> next = filterTypes.isEmpty() ? EnumSet.noneOf(Filter.class) : EnumSet.copyOf(filterTypes);
+		filterTypes = toggled(filterTypes, f);
+		hiddenTypes = without(hiddenTypes, f);
+		menu = Menu.NONE;
+		refresh();
+	}
+
+	/** Hide or un-hide a category. Hiding it unticks it. */
+	private void toggleHidden(Filter f)
+	{
+		hiddenTypes = toggled(hiddenTypes, f);
+		filterTypes = without(filterTypes, f);
+		menu = Menu.NONE;
+		refresh();
+	}
+
+	private static Set<Filter> toggled(Set<Filter> set, Filter f)
+	{
+		Set<Filter> next = set.isEmpty() ? EnumSet.noneOf(Filter.class) : EnumSet.copyOf(set);
 		if (!next.remove(f))
 		{
 			next.add(f);
 		}
-		filterTypes = Collections.unmodifiableSet(next);
-		menu = Menu.NONE;
-		refresh();
+		return Collections.unmodifiableSet(next);
+	}
+
+	private static Set<Filter> without(Set<Filter> set, Filter f)
+	{
+		return set.contains(f) ? toggled(set, f) : set;
 	}
 
 	/** "Mining + Tier 5 + Combat": every active filter, shortest names first. */
@@ -936,6 +964,10 @@ public class TaskBrowserOverlay extends Overlay
 		for (Filter f : filterTypes)
 		{
 			parts.add(shortLabel(f));
+		}
+		for (Filter f : hiddenTypes)
+		{
+			parts.add("no " + shortLabel(f));
 		}
 		return parts.isEmpty() ? "All" : String.join(" + ", parts);
 	}
@@ -1831,9 +1863,10 @@ public class TaskBrowserOverlay extends Overlay
 	}
 
 	/**
-	 * Filter dropdown. Skill and Tier open pickers; the filters below tick on and off.
-	 * Each pick closes the menu; open it again to add another filter on top. A task
-	 * shows only if it matches everything picked.
+	 * Filter dropdown. Skill and Tier open pickers; each category below can be ticked
+	 * (show only these) or hidden with its eye button (never show these). Each pick
+	 * closes the menu; open it again to add another on top. A task shows only if it
+	 * matches everything ticked and nothing hidden.
 	 */
 	private void drawFilterMenu(Graphics2D graphics, Font font, Rectangle button, int mx, int my)
 	{
@@ -1858,13 +1891,25 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.setColor(BORDER);
 		graphics.drawLine(box.x + 6, rowY - 2, box.x + box.width - 6, rowY - 2);
 
-		// Task types: tick any number.
+		// Categories: tick to show only those, or click the eye to hide them.
 		Set<Filter> ticked = filterTypes;
+		Set<Filter> hidden = hiddenTypes;
 		for (Filter f : types)
 		{
-			Rectangle row = new Rectangle(box.x + 2, rowY, box.width - 4, MENU_ROW);
+			Rectangle row = new Rectangle(box.x + 2, rowY, box.width - 4 - HIDE_BUTTON, MENU_ROW);
+			Rectangle eye = new Rectangle(row.x + row.width, rowY, HIDE_BUTTON, MENU_ROW);
+			menuHits.add(new Hit(eye, () -> toggleHidden(f)));
 			menuHits.add(new Hit(row, () -> toggleType(f)));
-			drawCheckRow(graphics, row, f.label, ticked.contains(f), null, mx, my);
+			boolean isHidden = hidden.contains(f);
+			drawCheckRow(graphics, row, f.label, ticked.contains(f), isHidden ? STAR_OFF : null, mx, my);
+			boolean eyeHover = eye.contains(mx, my);
+			if (eyeHover)
+			{
+				graphics.setColor(ROW_HOVER);
+				graphics.fillRect(eye.x, eye.y, eye.width, eye.height);
+			}
+			drawHiddenEye(graphics, eye.x + eye.width / 2, eye.y + MENU_ROW / 2,
+				isHidden ? NO_LEVEL : eyeHover ? Color.WHITE : STAR_OFF);
 			rowY += MENU_ROW;
 		}
 
@@ -2411,6 +2456,19 @@ public class TaskBrowserOverlay extends Overlay
 		}
 	}
 
+	/** The "hide this category" button: an eye with a line through it. */
+	private static void drawHiddenEye(Graphics2D graphics, int cx, int cy, Color color)
+	{
+		Stroke previous = graphics.getStroke();
+		graphics.setColor(color);
+		graphics.setStroke(new BasicStroke(1.4f));
+		graphics.drawArc(cx - 6, cy - 4, 12, 9, 0, 180);
+		graphics.drawArc(cx - 6, cy - 5, 12, 9, 180, 180);
+		graphics.fillOval(cx - 2, cy - 2, 4, 4);
+		graphics.drawLine(cx - 6, cy + 5, cx + 6, cy - 5);
+		graphics.setStroke(previous);
+	}
+
 	/** A small gear: eight teeth around a ring. */
 	private static void drawCog(Graphics2D graphics, int cx, int cy, Color color)
 	{
@@ -2703,6 +2761,7 @@ public class TaskBrowserOverlay extends Overlay
 		finishNew();
 		tab = archive.ids().contains(id) ? Tab.ARCHIVED : Tab.ACTIVE;
 		filterTypes = Collections.unmodifiableSet(EnumSet.of(Filter.QUESTS));
+		hiddenTypes = Collections.emptySet();
 		filterSkill = null;
 		filterTier = null;
 		search = "";

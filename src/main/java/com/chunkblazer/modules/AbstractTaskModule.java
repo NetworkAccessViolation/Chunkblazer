@@ -40,6 +40,7 @@ import net.runelite.api.ChatMessageType;
 import com.google.common.hash.Hashing;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import javax.inject.Inject;
 import lombok.Getter;
@@ -302,7 +303,8 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 	{
 		// Do not send message if the player is on tutorial island
 		final Player player = client.getLocalPlayer();
-		if (player != null && TUTORIAL_ISLAND_REGIONS.contains(player.getWorldLocation().getRegionID()))
+		if (player != null && player.getWorldLocation() != null
+			&& TUTORIAL_ISLAND_REGIONS.contains(player.getWorldLocation().getRegionID()))
 		{
 			return null;
 		}
@@ -313,6 +315,12 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 			MoreObjects.firstNonNull(message.getName(), ""),
 			MoreObjects.firstNonNull(message.getRuneLiteFormattedMessage(), message.getValue()),
 			message.getSender());
+
+		// Null when the client didn't add the line (a mocked Client in tests).
+		if (line == null)
+		{
+			return null;
+		}
 
 		// Update the message with RuneLite additions
 		line.setRuneLiteFormatMessage(message.getRuneLiteFormattedMessage());
@@ -346,13 +354,18 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 	/** "[ChunkBlazer] heading task-name suffix", then an indented detail line when there is one. */
 	protected void announce(String headingColor, String heading, NuzlockeTask task, String suffix, String detail)
 	{
-		ChatLineBuffer ccInfoBuffer = client.getChatLineMap().get(ChatMessageType.GAMEMESSAGE.getType());
+		// The chat line map is null on a mocked Client (tests), so guard it.
+		Map<Integer, ChatLineBuffer> chatLines = client.getChatLineMap();
+		ChatLineBuffer ccInfoBuffer = chatLines == null ? null : chatLines.get(ChatMessageType.GAMEMESSAGE.getType());
 		MessageNode[] lastMessages = taskMessages.get(task);
 		if (lastMessages != null)
 		{
 			if (ccInfoBuffer != null)
 			{
-				ccInfoBuffer.removeMessageNode(lastMessages[0]);
+				if (lastMessages[0] != null)
+				{
+					ccInfoBuffer.removeMessageNode(lastMessages[0]);
+				}
 				if (lastMessages[1] != null)
 				{
 					ccInfoBuffer.removeMessageNode(lastMessages[1]);
