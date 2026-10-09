@@ -673,19 +673,6 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "chunkBannerRepeatMinutes",
-		name = "Repeat Banner Wait",
-		description = "Minutes you must be away from an unlocked chunk before its banner shows again (0 shows it every time)",
-		section = inGameSection,
-		position = 3,
-		hidden = true
-	)
-	default int chunkBannerRepeatMinutes()
-	{
-		return 2;
-	}
-
-	@ConfigItem(
 		keyName = "showTaskCompletionPopup",
 		name = "Task Completion Popup",
 		description = "Display a popup when you complete a task",
