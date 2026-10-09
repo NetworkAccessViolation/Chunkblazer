@@ -53,6 +53,12 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  * Alt + drag to move it; click the X (or right-click, then Deselect) to stop tracking.
  * Click the book in the top-left corner to archive the task (see TaskArchive), which
  * also stops tracking it.
+ *
+ * Timed kill tasks ("Kill a Frog in 21 seconds") show a live countdown instead of a
+ * progress bar, starting on your first hit (the same tick the kill tracker starts
+ * timing): green, then yellow, orange and red, and "Too slow" once time runs out.
+ * Multi-kill timed tasks also show "Kills x/y". Single-action tasks, including
+ * 1-tick tasks, get no bar at all.
  */
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
@@ -91,11 +97,14 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
 	private final TaskArchive archive;
+	private final NPCKillModule killModule;
 
 	@Inject
-	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, TaskArchive archive)
+	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, TaskArchive archive,
+		NPCKillModule killModule)
 	{
 		super(plugin);
+		this.killModule = killModule;
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
@@ -151,7 +160,16 @@ public class SelectedTaskOverlay extends OverlayPanel
 					.leftColor(REQUIREMENT_TEXT)
 					.build());
 		}
-		if (!plugin.meetsLevelRequirement(task))
+		// Every level you're missing, e.g. "Needs 20 Defence, 20 Ranged".
+		String missing = TaskTargetExtras.missingRequirement(client, task);
+		if (missing != null)
+		{
+			panelComponent.getChildren().add(LineComponent.builder()
+					.left("Needs " + missing)
+					.leftColor(MISSING_LEVEL)
+					.build());
+		}
+		else if (!plugin.meetsLevelRequirement(task))
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 					.left("Needs level " + task.getLevelRequirement() + " "
@@ -163,8 +181,23 @@ public class SelectedTaskOverlay extends OverlayPanel
 		int progress = task.getCurrentProgress();
 		int target = Math.max(1, task.getTargetQuantity());
 
-		// One-off tasks (a target of 1) get no bar: "0/1" says nothing useful.
-		if (target > 1)
+		int limitTicks = timeLimitTicks(task);
+		if (limitTicks > 0)
+		{
+			// Timed kill task: "Kills x/y" for multi-kill ones, then the countdown.
+			if (target > 1)
+			{
+				panelComponent.getChildren().add(LineComponent.builder()
+						.left("Kills")
+						.right(Math.min(progress, target) + "/" + target)
+						.leftColor(REQUIREMENT_TEXT)
+						.rightColor(Color.WHITE)
+						.build());
+			}
+			panelComponent.getChildren().add(countdownBar(task, limitTicks));
+		}
+		// One-off tasks (a target of 1, 1-tick tasks included) get no bar: "0/1" says nothing useful.
+		else if (target > 1)
 		{
 			ProgressBarComponent bar = new ProgressBarComponent();
 			bar.setMinimum(0);
@@ -207,6 +240,86 @@ public class SelectedTaskOverlay extends OverlayPanel
 		archiveButton = book;
 		shownTaskId = task.getTaskId();
 		return size;
+	}
+
+	/**
+	 * The task's time limit in ticks, if it's a timed kill task that gets a countdown;
+	 * 0 otherwise. 1-tick tasks ("in the first hit") are single actions, so they get none.
+	 */
+	private static int timeLimitTicks(NuzlockeTask task)
+	{
+		TaskConstraints c = task.getConstraints();
+		if (c == null || c.getTimeInTicks() == null || c.getTimeInTicks() <= 1 || task.getTargetNpc() == null)
+		{
+			return 0;
+		}
+		String type = task.getCompletionType();
+		return "NPC_KILL".equalsIgnoreCase(type) || "SLAYER".equalsIgnoreCase(type) ? c.getTimeInTicks() : 0;
+	}
+
+	/**
+	 * Countdown bar for a timed kill: full and waiting until the first hit, then
+	 * draining smoothly between game ticks, changing colour as time runs low.
+	 */
+	private ProgressBarComponent countdownBar(NuzlockeTask task, int limitTicks)
+	{
+		int tick = client.getTickCount();
+		long now = System.currentTimeMillis();
+		if (tick != lastTick)
+		{
+			lastTick = tick;
+			lastTickAt = now;
+		}
+
+		long limitMs = (long) limitTicks * TICK_MS;
+		int startTick = killModule.getActiveFightStartTick(task.getTargetNpc());
+		long remaining;
+		String label;
+		if (startTick < 0)
+		{
+			remaining = limitMs;
+			label = formatSeconds(limitMs) + " (starts on first hit)";
+		}
+		else
+		{
+			long elapsed = (long) (tick - startTick) * TICK_MS + Math.min(TICK_MS, now - lastTickAt);
+			remaining = Math.max(0, limitMs - elapsed);
+			label = remaining > 0 ? formatSeconds(remaining) : "Too slow";
+		}
+
+		double fraction = limitMs > 0 ? remaining / (double) limitMs : 0;
+		Color color;
+		if (remaining <= 0)
+		{
+			color = TIMER_FAIL;
+		}
+		else if (fraction > 0.5)
+		{
+			color = TIMER_OK;
+		}
+		else if (fraction > 0.25)
+		{
+			color = TIMER_WARN;
+		}
+		else
+		{
+			color = TIMER_LATE;
+		}
+
+		ProgressBarComponent bar = new ProgressBarComponent();
+		bar.setMinimum(0);
+		bar.setMaximum(limitMs);
+		bar.setValue(remaining);
+		bar.setForegroundColor(color);
+		bar.setBackgroundColor(BAR_BACKGROUND);
+		bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.TEXT_ONLY);
+		bar.setCenterLabel(label);
+		return bar;
+	}
+
+	private static String formatSeconds(long ms)
+	{
+		return String.format("%.1fs", ms / 1000.0);
 	}
 
 	/** Mouse over a corner button, with a few pixels of slack around it. */

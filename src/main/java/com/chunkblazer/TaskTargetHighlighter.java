@@ -46,6 +46,7 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.KeyCode;
 import net.runelite.api.Menu;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
@@ -73,6 +74,8 @@ import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.outline.ModelOutlineRenderer;
+import net.runelite.client.ui.overlay.tooltip.Tooltip;
+import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.util.Text;
 import net.runelite.api.gameval.InterfaceID;
 
@@ -98,6 +101,9 @@ import net.runelite.api.gameval.InterfaceID;
  * Which targets get an outline is the Outline Mode (task window cogwheel): all task
  * targets, only those of saved tasks, only those with a task you have the level
  * for, or none. The right-click Tasks menu always lists every task.
+ *
+ * Holding Shift over a task target lists its tasks in a tooltip at the cursor (names,
+ * progress, and any levels you're missing), without opening the right-click menu.
  *
  * Inventory tools get a Tasks menu too (knife: fletching, tinderbox: firemaking,
  * pestle and mortar: herblore...; see TaskTargetExtras.matchesItem).
@@ -365,6 +371,10 @@ public class TaskTargetHighlighter extends Overlay
 	private final Set<TileObject> trackedObjects = new HashSet<>();
 
 	private final ConfigManager configManager;
+	private final TooltipManager tooltipManager;
+
+	// Most tasks listed in the Shift + hover tooltip before it says "and N more".
+	private static final int HOVER_MAX_TASKS = 8;
 
 	// Saved (starred) task ids, re-read only when the stored list changes.
 	private String savedRaw;
@@ -373,8 +383,9 @@ public class TaskTargetHighlighter extends Overlay
 	@Inject
 	public TaskTargetHighlighter(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
 		ModelOutlineRenderer outlineRenderer, TaskArchive archive, ConfigManager configManager,
-		TaskItemOverlay itemOverlay)
+		TaskItemOverlay itemOverlay, TooltipManager tooltipManager)
 	{
+		this.tooltipManager = tooltipManager;
 		this.itemOverlay = itemOverlay;
 		this.configManager = configManager;
 		this.client = client;
@@ -803,7 +814,7 @@ public class TaskTargetHighlighter extends Overlay
 	{
 		for (NuzlockeTask task : tasks)
 		{
-			if (plugin.meetsLevelRequirement(task))
+			if (canDo(task))
 			{
 				return true;
 			}
@@ -922,6 +933,7 @@ public class TaskTargetHighlighter extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		showHoveredTasks();
 		OutlineMode mode = config.taskOutlineMode();
 		if (mode == OutlineMode.OFF)
 		{
@@ -1138,7 +1150,7 @@ public class TaskTargetHighlighter extends Overlay
 			.thenComparing(t -> t.getName() == null ? "" : t.getName());
 		for (NuzlockeTask task : tasks)
 		{
-			if (plugin.meetsLevelRequirement(task) && (pick == null || order.compare(task, pick) < 0))
+			if (canDo(task) && (pick == null || order.compare(task, pick) < 0))
 			{
 				pick = task;
 			}
@@ -1206,10 +1218,9 @@ public class TaskTargetHighlighter extends Overlay
 		Menu submenu = parent.createSubMenu();
 		for (NuzlockeTask task : tasks)
 		{
-			boolean canDo = plugin.meetsLevelRequirement(task);
-			String option = canDo
+			String option = canDo(task)
 				? task.getName()
-				: "<col=ff5050>" + task.getName() + " (Lvl " + task.getLevelRequirement() + ")</col>";
+				: "<col=ff5050>" + task.getName() + " " + levelNote(task) + "</col>";
 			submenu.createMenuEntry(0)
 				.setOption(option)
 				.setTarget("<col=ffff00>" + task.getCurrentProgress() + "/" + task.getTargetQuantity() + "</col>")
@@ -1218,4 +1229,82 @@ public class TaskTargetHighlighter extends Overlay
 		}
 	}
 
+
+	/** The task's own level check, plus any real requirements it's missing (see TaskTargetExtras). */
+	private boolean canDo(NuzlockeTask task)
+	{
+		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
+	}
+
+	/** "(Needs 20 Defence, 20 Ranged)": every level you're missing, for a task you can't do yet. */
+	private String levelNote(NuzlockeTask task)
+	{
+		String missing = TaskTargetExtras.missingRequirement(client, task);
+		return missing != null ? "(Needs " + missing + ")" : "(Lvl " + task.getLevelRequirement() + ")";
+	}
+
+
+	// --- Shift + hover ---------------------------------------------------------------
+
+	/**
+	 * While Shift is held over an NPC or object with tasks (the action the game would
+	 * show at the top left, like "Attack Cow"), list its tasks in a tooltip at the cursor.
+	 */
+	private void showHoveredTasks()
+	{
+		if (!client.isKeyPressed(KeyCode.KC_SHIFT) || client.isMenuOpen())
+		{
+			return;
+		}
+		MenuEntry[] entries = client.getMenu().getMenuEntries();
+		if (entries == null || entries.length == 0)
+		{
+			return;
+		}
+		MenuEntry top = entries[entries.length - 1];
+		List<NuzlockeTask> tasks;
+		if (top.getNpc() != null)
+		{
+			tasks = tasksForNpc(top.getNpc());
+		}
+		else if (isObjectAction(top.getType()) || top.getType() == MenuAction.EXAMINE_OBJECT)
+		{
+			tasks = tasksForObject(top.getIdentifier());
+		}
+		else
+		{
+			return;
+		}
+		if (tasks == null || tasks.isEmpty())
+		{
+			return;
+		}
+
+		StringBuilder text = new StringBuilder("<col=ff9040>Tasks</col>");
+		int shown = 0;
+		for (NuzlockeTask task : tasks)
+		{
+			if (shown == HOVER_MAX_TASKS)
+			{
+				text.append("</br><col=9f9f9f>and ").append(tasks.size() - shown).append(" more</col>");
+				break;
+			}
+			text.append("</br>");
+			if (canDo(task))
+			{
+				text.append(task.getName());
+			}
+			else
+			{
+				text.append("<col=ff5050>").append(task.getName()).append(' ').append(levelNote(task)).append("</col>");
+			}
+			if (task.getTargetQuantity() > 1)
+			{
+				text.append(" <col=ffff00>").append(Math.min(task.getCurrentProgress(), task.getTargetQuantity()))
+					.append('/').append(task.getTargetQuantity()).append("</col>");
+			}
+			shown++;
+		}
+		tooltipManager.add(new Tooltip(text.toString()));
+	}
 }

@@ -31,7 +31,9 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.BasicStroke;
 import java.awt.Rectangle;
+import java.awt.Stroke;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -40,6 +42,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.api.Client;
 import net.runelite.api.Point;
+import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.worldmap.WorldMap;
@@ -63,6 +66,8 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	// One outline colour for every chunk, so neighbouring edges never clash; the
 	// chunk's type is shown by its fill instead (see ChunkUnlockType).
 	private static final Color CHUNK_BORDER = new Color(255, 255, 255, 70);
+	// Tint strength on the chunk under the mouse, so you can see the map inside it.
+	private static final int HOVER_ALPHA = 55;
 	// Below this many pixels per chunk the cost text won't fit, so it's skipped.
 	private static final int MIN_LABEL_CHUNK_PIXELS = 48;
 
@@ -74,6 +79,14 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 
 	private int hoveredRegionId = -1;
 	private boolean isHoveredUnlockable = false;
+
+	// A chunk to point out (clicked in a quest's requirement list): the map jumps to it
+	// once it's open, then outlines it with a pulse for FOCUS_MS.
+	private static final long FOCUS_MS = 6000;
+	private static final Color FOCUS_COLOR = new Color(255, 200, 60);
+	private volatile int focusRegion = -1;
+	private volatile boolean focusPending;
+	private volatile long focusShownAt;
 
 	@Inject
 	private ChunkBlazerWorldMapOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
@@ -99,8 +112,78 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		return hoveredRegionId;
 	}
 
+	/**
+	 * Point out a chunk on the world map: jumps there now if the map is open, or as soon
+	 * as it's opened, and outlines it for a few seconds.
+	 */
+	void focusRegion(int regionId)
+	{
+		focusRegion = regionId;
+		focusShownAt = 0;
+		focusPending = true;
+	}
+
+	/** True if the world map is open right now. */
+	boolean isMapOpen()
+	{
+		return client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) != null;
+	}
+
 	@Override
 	public Dimension render(Graphics2D graphics)
+	{
+		// The focus outline goes on top of the chunk tints.
+		Dimension size = renderChunks(graphics);
+		renderFocus(graphics);
+		return size;
+	}
+
+	/** Moves the map to the focused chunk and draws its pulsing outline. Independent of the chunk overlay setting. */
+	private void renderFocus(Graphics2D graphics)
+	{
+		int region = focusRegion;
+		Widget map = client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER);
+		WorldMap worldMap = client.getWorldMap();
+		if (region <= 0 || map == null || worldMap == null)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (focusPending)
+		{
+			focusPending = false;
+			focusShownAt = now;
+			worldMap.setWorldMapPositionTarget(new WorldPoint(((region >> 8) << 6) + 32, ((region & 0xFF) << 6) + 32, 0));
+		}
+		if (now - focusShownAt > FOCUS_MS)
+		{
+			focusRegion = -1;
+			return;
+		}
+
+		Rectangle mapRect = map.getBounds();
+		float pixelsPerTile = worldMap.getWorldMapZoom();
+		Point centre = worldMap.getWorldMapPosition();
+		int size = (int) Math.ceil(REGION_SIZE * pixelsPerTile);
+		int x = mapRect.x + mapRect.width / 2 + (int) ((((region >> 8) << 6) - centre.getX()) * pixelsPerTile);
+		int y = mapRect.y + mapRect.height / 2 - (int) ((((region & 0xFF) << 6) - centre.getY()) * pixelsPerTile) - size;
+
+		// Pulse: the outline breathes in and out, one beat a second.
+		double pulse = 0.5 + 0.5 * Math.sin((now - focusShownAt) / 1000.0 * Math.PI * 2);
+		java.awt.Shape oldClip = graphics.getClip();
+		Stroke oldStroke = graphics.getStroke();
+		graphics.setClip(mapRect);
+		graphics.setColor(new Color(FOCUS_COLOR.getRed(), FOCUS_COLOR.getGreen(), FOCUS_COLOR.getBlue(),
+			(int) (60 * pulse)));
+		graphics.fillRect(x, y, size, size);
+		graphics.setColor(FOCUS_COLOR);
+		graphics.setStroke(new BasicStroke(2f + 2f * (float) pulse));
+		graphics.drawRect(x, y, size, size);
+		graphics.setStroke(oldStroke);
+		graphics.setClip(oldClip);
+	}
+
+	private Dimension renderChunks(Graphics2D graphics)
 	{
 		// Chunk borders render on three independent surfaces: the minimap
 		// (showMinimapChunks), the 3D scene (showSceneChunks), and this world map
@@ -182,9 +265,15 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 					}
 				}
 
-				// Each chunk gets a faint tint for its type: green owned, gold/teal/
-				// blue/purple for the ways it can be unlocked, dark for locked.
-				graphics.setColor(ChunkUnlockType.of(plugin, regionId, isUnlocked, isNeighbor).fill);
+				// Each chunk gets a tint for its type: none for owned, gold/teal/blue/
+				// purple for the ways it can be unlocked, dark for locked. The chunk
+				// under the mouse is tinted more lightly, so you can see what's in it.
+				Color fill = fillFor(ChunkUnlockType.of(plugin, regionId, isUnlocked, isNeighbor));
+				if (regionId == hoveredRegionId && fill.getAlpha() > HOVER_ALPHA)
+				{
+					fill = new Color(fill.getRed(), fill.getGreen(), fill.getBlue(), HOVER_ALPHA);
+				}
+				graphics.setColor(fill);
 				graphics.fillRect(xPos, yPos, regionPixelSize, regionPixelSize);
 			}
 		}
@@ -215,25 +304,27 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 
 				ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, isUnlocked, isNeighbor);
 
-				// Uniform outline, except between two unlocked chunks: those edges are
-				// skipped, so your whole unlocked area reads as one connected piece of
-				// map. North is +1 in region id, east is +256.
+				// Uniform outline round every chunk. With "Lines Between Unlocked Chunks"
+				// off, edges between two unlocked chunks are skipped, so your whole
+				// unlocked area reads as one connected piece of map. North is +1 in
+				// region id, east is +256.
 				graphics.setColor(CHUNK_BORDER);
 				int right = xPos + regionPixelSize;
 				int bottom = yPos + regionPixelSize;
-				if (!(isUnlocked && isOpen(unlockedRegions, regionId + 1)))
+				boolean gridLines = config.showChunkGridLines();
+				if (gridLines || !(isUnlocked && isOpen(unlockedRegions, regionId + 1)))
 				{
 					graphics.drawLine(xPos, yPos, right, yPos);
 				}
-				if (!(isUnlocked && isOpen(unlockedRegions, regionId - 1)))
+				if (gridLines || !(isUnlocked && isOpen(unlockedRegions, regionId - 1)))
 				{
 					graphics.drawLine(xPos, bottom, right, bottom);
 				}
-				if (!(isUnlocked && isOpen(unlockedRegions, regionId - 256)))
+				if (gridLines || !(isUnlocked && isOpen(unlockedRegions, regionId - 256)))
 				{
 					graphics.drawLine(xPos, yPos, xPos, bottom);
 				}
-				if (!(isUnlocked && isOpen(unlockedRegions, regionId + 256)))
+				if (gridLines || !(isUnlocked && isOpen(unlockedRegions, regionId + 256)))
 				{
 					graphics.drawLine(right, yPos, right, bottom);
 				}
@@ -307,10 +398,7 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 			drawUnlockedTooltip(graphics, mousePos, hoveredRegionId);
 		}
 
-		if (config.showChunkLegend())
-		{
-			drawLegend(graphics, worldMapRect);
-		}
+		// (The colour legend is its own always-on-top overlay: WorldMapLegendOverlay.)
 
 		// Draw region ID in top-left corner of world map
 		if (hoveredRegionId > 0)
@@ -472,7 +560,7 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		}
 		String line1 = plugin.getRegionName(regionId);
 		String line2 = "Unlocked";
-		String line3 = "Hold " + config.worldMapUnlockKey() + " + click to view tasks";
+		String line3 = "Hold " + config.worldMapTasksKey() + " + click to view tasks";
 
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		FontMetrics fm = graphics.getFontMetrics();
@@ -520,50 +608,29 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	}
 
 	/** Key in the bottom-left of the world map explaining each chunk colour. */
-	private void drawLegend(Graphics2D graphics, Rectangle worldMapRect)
+	/** The tint for a chunk type: the player's colour from the World Map settings (unlocked stays clear). */
+	private Color fillFor(ChunkUnlockType type)
 	{
-		ChunkUnlockType[] rows = {
-			ChunkUnlockType.UNLOCKED, ChunkUnlockType.PAID, ChunkUnlockType.FREE,
-			ChunkUnlockType.CHARTER, ChunkUnlockType.BOSS, ChunkUnlockType.LOCKED
-		};
-		graphics.setFont(FontManager.getRunescapeSmallFont());
-		FontMetrics fm = graphics.getFontMetrics();
+		return fillFor(config, type);
+	}
 
-		int padding = 6;
-		int swatch = 10;
-		int lineHeight = Math.max(fm.getHeight(), swatch + 4);
-		int textWidth = 0;
-		for (ChunkUnlockType row : rows)
+	/** Shared with WorldMapLegendOverlay, so the legend always matches the map. */
+	static Color fillFor(ChunkBlazerConfig config, ChunkUnlockType type)
+	{
+		switch (type)
 		{
-			textWidth = Math.max(textWidth, fm.stringWidth(row.legend));
-		}
-		int width = padding * 3 + swatch + textWidth;
-		int height = padding * 2 + lineHeight * rows.length;
-		int x = (int) worldMapRect.getX() + 8;
-		int y = (int) (worldMapRect.getY() + worldMapRect.getHeight()) - height - 8;
-
-		graphics.setColor(new Color(30, 30, 30, 220));
-		graphics.fillRect(x, y, width, height);
-		graphics.setColor(new Color(90, 90, 90));
-		graphics.drawRect(x, y, width, height);
-
-		int rowY = y + padding;
-		for (ChunkUnlockType row : rows)
-		{
-			int sx = x + padding;
-			int sy = rowY + (lineHeight - swatch) / 2;
-			// The swatch is drawn over the map's own dark backing so it matches the
-			// faint tint players see on the chunks.
-			graphics.setColor(new Color(110, 110, 90));
-			graphics.fillRect(sx, sy, swatch, swatch);
-			graphics.setColor(row.fill);
-			graphics.fillRect(sx, sy, swatch, swatch);
-			graphics.setColor(CHUNK_BORDER);
-			graphics.drawRect(sx, sy, swatch, swatch);
-
-			graphics.setColor(Color.WHITE);
-			graphics.drawString(row.legend, sx + swatch + padding, rowY + (lineHeight + fm.getAscent()) / 2 - 2);
-			rowY += lineHeight;
+			case LOCKED:
+				return config.worldMapLockedColor();
+			case PAID:
+				return config.worldMapPaidColor();
+			case FREE:
+				return config.worldMapFreeColor();
+			case CHARTER:
+				return config.worldMapCharterColor();
+			case BOSS:
+				return config.worldMapBossColor();
+			default:
+				return type.fill;
 		}
 	}
 }

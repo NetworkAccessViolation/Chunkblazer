@@ -29,12 +29,15 @@ package com.chunkblazer;
 import com.chunkblazer.TaskTargetHighlighter.Rule;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.runelite.api.Client;
+import net.runelite.api.Skill;
 
 /**
  * Extra knowledge of where tasks happen, for the UI only: outlines, the right-click
@@ -70,6 +73,13 @@ public final class TaskTargetExtras
 	 * task id to the NPC's name in game.
 	 */
 	private static final Map<String, String> NAMED_NPCS = new HashMap<>();
+
+	/**
+	 * Real level requirements for tasks whose own data doesn't hold them all: equip tasks
+	 * (from each item's equipment requirements, every skill it needs) and a couple of
+	 * prayers. Used by the UI's "can you do it" checks; the plugin's own check still applies.
+	 */
+	private static final Map<String, Map<Skill, Integer>> REQUIREMENTS = new HashMap<>();
 
 	/** Crop (part of the task name or seed) to the patch it grows in. Checked in order. */
 	private static final Map<String, String> PATCHES = new LinkedHashMap<>();
@@ -271,6 +281,168 @@ public final class TaskTargetExtras
 		EXTRA_NPCS.put("equip_abyssal_whip", ids(415, 416)); // Equip an Abyssal Whip (Wilderness Slayer Cave): Abyssal demon
 		EXTRA_NPCS.put("obtain_ensouled_dragon_head", ids(260, 261, 262, 263, 264, 2918)); // Obtain an Ensouled Dragon Head (Wilderness Slayer Cave): Brutal green dragon, Green dragon
 
+		// --- Real level requirements (equip gear from the item database; Rigour and Augury) ---
+		// Tasks needing two skills: the data lists both, but only the first is read.
+		REQUIREMENTS.put("build_spirit_tree", levels(Skill.CONSTRUCTION, 70, Skill.FARMING, 83)); // Build a Spirit Tree
+		REQUIREMENTS.put("mine_dense_essence_blocks", levels(Skill.MINING, 38, Skill.CRAFTING, 38)); // Mine some Dense Essence Blocks
+		REQUIREMENTS.put("catch_bluegill", levels(Skill.FISHING, 43, Skill.HUNTER, 35)); // Catch a Bluegill
+		REQUIREMENTS.put("catch_common_tench", levels(Skill.FISHING, 56, Skill.HUNTER, 51)); // Catch a Common Tench
+		REQUIREMENTS.put("catch_mottled_eel", levels(Skill.FISHING, 73, Skill.HUNTER, 68)); // Catch a Mottled Eel
+		REQUIREMENTS.put("catch_greater_siren", levels(Skill.FISHING, 91, Skill.HUNTER, 87)); // Catch a Greater Siren
+		// Filed under "Combat" with its level, so it isn't checked as Slayer.
+		REQUIREMENTS.put("defeat_aberrant_spectre_fast", levels(Skill.SLAYER, 60)); // Defeat an Aberrant Spectre in 18 Seconds
+		REQUIREMENTS.put("mix_combat_potions", levels(Skill.HERBLORE, 36)); // Mix some Combat Potions (no level in the task data)
+		REQUIREMENTS.put("gwd_nex_mix_ancient_brew", levels(Skill.HERBLORE, 85)); // Mix an Ancient Brew (no level in the task data)
+		REQUIREMENTS.put("tob_mix_bastion_potion", levels(Skill.HERBLORE, 80)); // Mix a Bastion Potion (no level in the task data)
+		REQUIREMENTS.put("toa_mix_menaphite_remedy", levels(Skill.HERBLORE, 88)); // Mix a Menaphite Remedy (no level in the task data)
+		REQUIREMENTS.put("cox_activate_augury", levels(Skill.PRAYER, 77, Skill.DEFENCE, 70)); // Activate Augury
+		REQUIREMENTS.put("cox_activate_rigour", levels(Skill.PRAYER, 74, Skill.DEFENCE, 70)); // Activate Rigour
+		REQUIREMENTS.put("gwd_graardor_equip_boots", levels(Skill.DEFENCE, 65)); // Equip Bandos Boots
+		REQUIREMENTS.put("gwd_graardor_equip_tassets", levels(Skill.DEFENCE, 65)); // Equip Bandos Tassets
+		REQUIREMENTS.put("equip_bryophytas_staff", levels(Skill.ATTACK, 30, Skill.MAGIC, 30)); // Equip Bryophyta's Staff
+		REQUIREMENTS.put("corrupted_gauntlet_equip_crystal_legs", levels(Skill.DEFENCE, 70)); // Equip Crystal Legs
+		REQUIREMENTS.put("equip_decorative_armour_(white_platebody)", levels(Skill.DEFENCE, 5)); // Equip Decorative Armour (White Platebody)
+		REQUIREMENTS.put("equip_decorative_sword_(gold)", levels(Skill.ATTACK, 5)); // Equip Decorative Sword (Gold)
+		REQUIREMENTS.put("equip_decorative_sword_(white)", levels(Skill.ATTACK, 5)); // Equip Decorative Sword (White)
+		REQUIREMENTS.put("cox_equip_dinhs_bulwark", levels(Skill.ATTACK, 75, Skill.DEFENCE, 75)); // Equip Dinh's Bulwark
+		REQUIREMENTS.put("cox_equip_dragon_claws", levels(Skill.ATTACK, 60)); // Equip Dragon Claws
+		REQUIREMENTS.put("equip_dragon_platelegs", levels(Skill.DEFENCE, 60)); // Equip Dragon Platelegs
+		REQUIREMENTS.put("equip_ferocious_gloves", levels(Skill.ATTACK, 80, Skill.DEFENCE, 80)); // Equip Ferocious Gloves
+		REQUIREMENTS.put("equip_iban's_staff", levels(Skill.MAGIC, 50, Skill.ATTACK, 50)); // Equip Iban's Staff
+		REQUIREMENTS.put("equip_iban's_staff(u)", levels(Skill.ATTACK, 50, Skill.MAGIC, 50)); // Equip Iban's Staff(u)
+		REQUIREMENTS.put("equip_proselyte_tassets_or_cuisse", levels(Skill.DEFENCE, 30, Skill.PRAYER, 20)); // Equip Proselyte Tassets or Cuisse
+		REQUIREMENTS.put("equip_ranger_boots", levels(Skill.RANGED, 40)); // Equip Ranger Boots
+		REQUIREMENTS.put("equip_red_d'hide_vambraces", levels(Skill.RANGED, 60)); // Equip Red D'Hide Vambrances
+		REQUIREMENTS.put("equip_void_knight_gloves", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip Void Knight Gloves
+		REQUIREMENTS.put("gwd_graardor_equip_chestplate", levels(Skill.DEFENCE, 65)); // Equip a Bandos Chestplate
+		REQUIREMENTS.put("gwd_graardor_equip_bgs", levels(Skill.ATTACK, 75)); // Equip a Bandos Godsword
+		REQUIREMENTS.put("equip_barrelchest_anchor", levels(Skill.ATTACK, 60, Skill.STRENGTH, 40)); // Equip a Barrelchest Anchor
+		REQUIREMENTS.put("equip_beginner_wand", levels(Skill.MAGIC, 45)); // Equip a Beginner Wand
+		REQUIREMENTS.put("equip_black_battleaxe", levels(Skill.ATTACK, 10)); // Equip a Black Battleaxe
+		REQUIREMENTS.put("equip_black_d'hide_body", levels(Skill.RANGED, 70, Skill.DEFENCE, 40)); // Equip a Black D'hide Body
+		REQUIREMENTS.put("equip_black_sq_shield", levels(Skill.DEFENCE, 10)); // Equip a Black Square Shield
+		REQUIREMENTS.put("equip_brine_sabre", levels(Skill.ATTACK, 40)); // Equip a Brine Sabre
+		REQUIREMENTS.put("equip_coif", levels(Skill.RANGED, 20)); // Equip a Coif
+		REQUIREMENTS.put("corrupted_gauntlet_equip_crystal_body", levels(Skill.DEFENCE, 70)); // Equip a Crystal Body
+		REQUIREMENTS.put("equip_crystal_bow", levels(Skill.RANGED, 70, Skill.AGILITY, 50)); // Equip a Crystal Bow
+		REQUIREMENTS.put("equip_crystal_halberd", levels(Skill.ATTACK, 70, Skill.AGILITY, 50, Skill.STRENGTH, 35)); // Equip a Crystal Halberd
+		REQUIREMENTS.put("corrupted_gauntlet_equip_crystal_helm", levels(Skill.DEFENCE, 70)); // Equip a Crystal Helm
+		REQUIREMENTS.put("equip_crystal_shield", levels(Skill.DEFENCE, 70, Skill.AGILITY, 50)); // Equip a Crystal Shield
+		REQUIREMENTS.put("equip_dagon'hai_hat", levels(Skill.MAGIC, 70, Skill.DEFENCE, 40)); // Equip a Dagon'hai Hat
+		REQUIREMENTS.put("equip_dagon'hai_robe_bottom", levels(Skill.MAGIC, 70, Skill.DEFENCE, 40)); // Equip a Dagon'hai Robe Bottom
+		REQUIREMENTS.put("equip_dagon'hai_robe_top", levels(Skill.MAGIC, 70, Skill.DEFENCE, 40)); // Equip a Dagon'hai Robe Top
+		REQUIREMENTS.put("equip_dragon_chainbody", levels(Skill.DEFENCE, 60)); // Equip a Dragon Chainbody
+		REQUIREMENTS.put("equip_dragon_halberd", levels(Skill.ATTACK, 60, Skill.STRENGTH, 30)); // Equip a Dragon Halberd
+		REQUIREMENTS.put("cox_equip_dh_crossbow", levels(Skill.RANGED, 65)); // Equip a Dragon Hunter Crossbow
+		REQUIREMENTS.put("equip_dragon_longsword", levels(Skill.ATTACK, 60)); // Equip a Dragon Longsword
+		REQUIREMENTS.put("equip_dragon_plateskirt", levels(Skill.DEFENCE, 60)); // Equip a Dragon Plateskirt
+		REQUIREMENTS.put("vorkath_equip_dragonbone_necklace", levels(Skill.PRAYER, 80)); // Equip a Dragonbone Necklace
+		REQUIREMENTS.put("vorkath_equip_dragonfire_ward", levels(Skill.DEFENCE, 75, Skill.RANGED, 70)); // Equip a Dragonfire Ward
+		REQUIREMENTS.put("equip_granite_body", levels(Skill.STRENGTH, 50, Skill.DEFENCE, 50)); // Equip a Granite Body
+		REQUIREMENTS.put("equip_granite_helm", levels(Skill.STRENGTH, 50, Skill.DEFENCE, 50)); // Equip a Granite Helm
+		REQUIREMENTS.put("equip_granite_longsword", levels(Skill.ATTACK, 50, Skill.STRENGTH, 50)); // Equip a Granite Longsword
+		REQUIREMENTS.put("equip_granite_shield", levels(Skill.DEFENCE, 50, Skill.STRENGTH, 50)); // Equip a Granite Shield
+		REQUIREMENTS.put("equip_guthix_cape", levels(Skill.MAGIC, 50)); // Equip a Guthix Cape
+		REQUIREMENTS.put("equip_hill_giant_club", levels(Skill.ATTACK, 40)); // Equip a Hill Giant Club
+		REQUIREMENTS.put("equip_keris", levels(Skill.ATTACK, 50)); // Equip a Keris
+		REQUIREMENTS.put("cox_equip_kodai_wand", levels(Skill.MAGIC, 75)); // Equip a Kodai Wand
+		REQUIREMENTS.put("equip_leaf-bladed_battleaxe", levels(Skill.ATTACK, 65, Skill.SLAYER, 55)); // Equip a Leaf-bladed Battleaxe
+		REQUIREMENTS.put("equip_leaf-bladed_sword", levels(Skill.SLAYER, 55, Skill.ATTACK, 50)); // Equip a Leaf-bladed Sword
+		REQUIREMENTS.put("equip_light_mystic_hat", levels(Skill.MAGIC, 40, Skill.DEFENCE, 20)); // Equip a Light Mystic Hat
+		REQUIREMENTS.put("equip_mage's_book", levels(Skill.MAGIC, 60)); // Equip a Mage's Book
+		REQUIREMENTS.put("equip_master_wand", levels(Skill.MAGIC, 60)); // Equip a Master Wand
+		REQUIREMENTS.put("equip_max_cape", levels(Skill.ATTACK, 99, Skill.STRENGTH, 99, Skill.DEFENCE, 99, Skill.HITPOINTS, 99, Skill.RANGED, 99, Skill.PRAYER, 99, Skill.MAGIC, 99, Skill.COOKING, 99, Skill.WOODCUTTING, 99, Skill.FLETCHING, 99, Skill.FISHING, 99, Skill.FIREMAKING, 99, Skill.CRAFTING, 99, Skill.SMITHING, 99, Skill.MINING, 99, Skill.HERBLORE, 99, Skill.AGILITY, 99, Skill.THIEVING, 99, Skill.SLAYER, 99, Skill.FARMING, 99, Skill.RUNECRAFT, 99, Skill.HUNTER, 99, Skill.CONSTRUCTION, 99)); // Equip a Max Cape
+		REQUIREMENTS.put("equip_mithril_mace_sword", levels(Skill.ATTACK, 20)); // Equip a Mithirl Mace
+		REQUIREMENTS.put("equip_mithril_2h_sword", levels(Skill.ATTACK, 20)); // Equip a Mithril 2H Sword
+		REQUIREMENTS.put("equip_mithril_sword", levels(Skill.ATTACK, 20)); // Equip a Mithril Sword
+		REQUIREMENTS.put("dagannoth_kings_equip_mud_battlestaff", levels(Skill.ATTACK, 30, Skill.MAGIC, 30)); // Equip a Mud Battlestaff
+		REQUIREMENTS.put("equip_neitiznot_shield", levels(Skill.DEFENCE, 30)); // Equip a Neitiznot Shield
+		REQUIREMENTS.put("equip_penance_skirt", levels(Skill.RANGED, 60, Skill.DEFENCE, 40)); // Equip a Penance Skirt
+		REQUIREMENTS.put("equip_proselyte_hauberk", levels(Skill.DEFENCE, 30, Skill.PRAYER, 20)); // Equip a Proselyte Hauberk
+		REQUIREMENTS.put("equip_proselyte_sallet", levels(Skill.DEFENCE, 30, Skill.PRAYER, 20)); // Equip a Proselyte Sallet
+		REQUIREMENTS.put("equip_red_d'hide_body", levels(Skill.RANGED, 60, Skill.DEFENCE, 40)); // Equip a Red D'hide Body
+		REQUIREMENTS.put("equip_rune_defender", levels(Skill.ATTACK, 40, Skill.DEFENCE, 40)); // Equip a Rune Defender
+		REQUIREMENTS.put("equip_rune_hasta", levels(Skill.ATTACK, 40)); // Equip a Rune Hasta
+		REQUIREMENTS.put("equip_rune_pickaxe", levels(Skill.MINING, 41, Skill.ATTACK, 40)); // Equip a Rune Pickaxe
+		REQUIREMENTS.put("equip_rune_square_shield", levels(Skill.DEFENCE, 40)); // Equip a Rune Square Shield
+		REQUIREMENTS.put("equip_saradomin_cape", levels(Skill.MAGIC, 50)); // Equip a Saradomin Cape
+		REQUIREMENTS.put("gwd_zilyana_equip_sgs", levels(Skill.ATTACK, 75)); // Equip a Saradomin Godsword
+		REQUIREMENTS.put("gwd_zilyana_equip_sara_sword", levels(Skill.ATTACK, 70)); // Equip a Saradomin Sword
+		REQUIREMENTS.put("dagannoth_kings_equip_seercull", levels(Skill.RANGED, 50)); // Equip a Seercull
+		REQUIREMENTS.put("equip_smoke_battlestaff", levels(Skill.ATTACK, 30, Skill.MAGIC, 30)); // Equip a Smoke Battlestaff
+		REQUIREMENTS.put("equip_spirit_shield", levels(Skill.PRAYER, 55, Skill.DEFENCE, 45)); // Equip a Spirit Shield
+		REQUIREMENTS.put("equip_splitbark_body", levels(Skill.MAGIC, 40, Skill.DEFENCE, 40)); // Equip a Splitbark Body
+		REQUIREMENTS.put("equip_splitbark_legs", levels(Skill.MAGIC, 40, Skill.DEFENCE, 40)); // Equip a Splitbark Legs
+		REQUIREMENTS.put("gwd_kril_equip_staff_of_light", levels(Skill.MAGIC, 75, Skill.ATTACK, 75)); // Equip a Staff of Light
+		REQUIREMENTS.put("gwd_kril_equip_staff_of_the_dead", levels(Skill.ATTACK, 75, Skill.MAGIC, 75)); // Equip a Staff of the Dead
+		REQUIREMENTS.put("gwd_kril_equip_steam_battlestaff", levels(Skill.ATTACK, 30, Skill.MAGIC, 30)); // Equip a Steam Battlestaff
+		REQUIREMENTS.put("equip_steel_longsword", levels(Skill.ATTACK, 5)); // Equip a Steel Longsword
+		REQUIREMENTS.put("equip_steel_med_helm", levels(Skill.DEFENCE, 5)); // Equip a Steel Med Helm
+		REQUIREMENTS.put("equip_studded_body", levels(Skill.RANGED, 20, Skill.DEFENCE, 20)); // Equip a Studded Body
+		REQUIREMENTS.put("equip_teacher_wand", levels(Skill.MAGIC, 50)); // Equip a Teacher Wand
+		REQUIREMENTS.put("cox_equip_twisted_bow", levels(Skill.RANGED, 75)); // Equip a Twisted Bow
+		REQUIREMENTS.put("cox_equip_twisted_buckler", levels(Skill.DEFENCE, 75, Skill.RANGED, 75)); // Equip a Twisted Buckler
+		REQUIREMENTS.put("equip_void_knight_mace", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip a Void Knight Mace
+		REQUIREMENTS.put("equip_void_knight_robe", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip a Void Knight Robe
+		REQUIREMENTS.put("equip_void_knight_top", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip a Void Knight Top
+		REQUIREMENTS.put("equip_void_mage_helm", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip a Void Mage Helm
+		REQUIREMENTS.put("equip_void_melee_helm", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip a Void Melee Helm
+		REQUIREMENTS.put("equip_void_ranger_helm", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip a Void Ranger Helm
+		REQUIREMENTS.put("equip_xerician_hat", levels(Skill.MAGIC, 20, Skill.DEFENCE, 10)); // Equip a Xerician Hat
+		REQUIREMENTS.put("equip_xerician_robe", levels(Skill.MAGIC, 20, Skill.DEFENCE, 10)); // Equip a Xerician Robe
+		REQUIREMENTS.put("equip_xerician_top", levels(Skill.MAGIC, 20, Skill.DEFENCE, 10)); // Equip a Xerician Top
+		REQUIREMENTS.put("equip_zamorak_cape", levels(Skill.MAGIC, 50)); // Equip a Zamorak Cape
+		REQUIREMENTS.put("gwd_kril_equip_zgs", levels(Skill.ATTACK, 75)); // Equip a Zamorak Godsword
+		REQUIREMENTS.put("gwd_kril_equip_zammy_spear", levels(Skill.ATTACK, 70)); // Equip a Zamorakian Spear
+		REQUIREMENTS.put("equip_adamant_battleaxe", levels(Skill.ATTACK, 30)); // Equip an Adamant Battleaxe
+		REQUIREMENTS.put("equip_adamant_mace_sword", levels(Skill.ATTACK, 30)); // Equip an Adamant Mace
+		REQUIREMENTS.put("cox_equip_ancestral_hat", levels(Skill.MAGIC, 75, Skill.DEFENCE, 65)); // Equip an Ancestral Hat
+		REQUIREMENTS.put("cox_equip_ancestral_bottom", levels(Skill.MAGIC, 75, Skill.DEFENCE, 65)); // Equip an Ancestral Robe Bottom
+		REQUIREMENTS.put("cox_equip_ancestral_top", levels(Skill.MAGIC, 75, Skill.DEFENCE, 65)); // Equip an Ancestral Robe Top
+		REQUIREMENTS.put("equip_ancient_staff", levels(Skill.MAGIC, 50, Skill.ATTACK, 50)); // Equip an Ancient Staff
+		REQUIREMENTS.put("equip_ancient_wyvern_shield", levels(Skill.DEFENCE, 75, Skill.MAGIC, 70)); // Equip an Ancient Wyvern Shield
+		REQUIREMENTS.put("equip_apprentice_wand", levels(Skill.MAGIC, 50)); // Equip an Apprentice Wand
+		REQUIREMENTS.put("gwd_kreearra_equip_chainskirt", levels(Skill.DEFENCE, 70, Skill.RANGED, 70)); // Equip an Armadyl Chainskirt
+		REQUIREMENTS.put("gwd_kreearra_equip_chestplate", levels(Skill.DEFENCE, 70, Skill.RANGED, 70)); // Equip an Armadyl Chestplate
+		REQUIREMENTS.put("gwd_zilyana_equip_acb", levels(Skill.RANGED, 70)); // Equip an Armadyl Crossbow
+		REQUIREMENTS.put("gwd_kreearra_equip_ags", levels(Skill.ATTACK, 75)); // Equip an Armadyl Godsword
+		REQUIREMENTS.put("gwd_kreearra_equip_helm", levels(Skill.DEFENCE, 70, Skill.RANGED, 70)); // Equip an Armadyl Helmet
+		REQUIREMENTS.put("vorkath_equip_avas_assembler", levels(Skill.RANGED, 70)); // Equip an Ava's Assembler
+		REQUIREMENTS.put("tob_equip_avernic_defender", levels(Skill.ATTACK, 70, Skill.DEFENCE, 70)); // Equip an Avernic Defender
+		REQUIREMENTS.put("cox_equip_elder_maul", levels(Skill.ATTACK, 75, Skill.STRENGTH, 75)); // Equip an Elder Maul
+		REQUIREMENTS.put("equip_elite_void_knight_robe", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip an Elite Void Knight Robe
+		REQUIREMENTS.put("equip_elite_void_knight_top", levels(Skill.ATTACK, 42, Skill.STRENGTH, 42, Skill.HITPOINTS, 42, Skill.RANGED, 42, Skill.MAGIC, 42, Skill.DEFENCE, 42, Skill.PRAYER, 22)); // Equip an Elite Void Knight Top
+		REQUIREMENTS.put("equip_imbued_guthix_cape", levels(Skill.MAGIC, 50)); // Equip an Imbued Guthix Cape
+		REQUIREMENTS.put("equip_imbued_max_cape", levels(Skill.ATTACK, 99, Skill.STRENGTH, 99, Skill.DEFENCE, 99, Skill.HITPOINTS, 99, Skill.RANGED, 99, Skill.PRAYER, 99, Skill.MAGIC, 99, Skill.COOKING, 99, Skill.WOODCUTTING, 99, Skill.FLETCHING, 99, Skill.FISHING, 99, Skill.FIREMAKING, 99, Skill.CRAFTING, 99, Skill.SMITHING, 99, Skill.MINING, 99, Skill.HERBLORE, 99, Skill.AGILITY, 99, Skill.THIEVING, 99, Skill.SLAYER, 99, Skill.FARMING, 99, Skill.RUNECRAFT, 99, Skill.HUNTER, 99, Skill.CONSTRUCTION, 99)); // Equip an Imbued Max Cape
+		REQUIREMENTS.put("equip_imbued_saradomin_cape", levels(Skill.MAGIC, 50)); // Equip an Imbued Saradomin Cape
+		REQUIREMENTS.put("equip_imbued_zamorak_cape", levels(Skill.MAGIC, 50)); // Equip an Imbued Zamorak Cape
+		REQUIREMENTS.put("equip_infernal_max_cape", levels(Skill.ATTACK, 99, Skill.STRENGTH, 99, Skill.DEFENCE, 99, Skill.HITPOINTS, 99, Skill.RANGED, 99, Skill.PRAYER, 99, Skill.MAGIC, 99, Skill.COOKING, 99, Skill.WOODCUTTING, 99, Skill.FLETCHING, 99, Skill.FISHING, 99, Skill.FIREMAKING, 99, Skill.CRAFTING, 99, Skill.SMITHING, 99, Skill.MINING, 99, Skill.HERBLORE, 99, Skill.AGILITY, 99, Skill.THIEVING, 99, Skill.SLAYER, 99, Skill.FARMING, 99, Skill.RUNECRAFT, 99, Skill.HUNTER, 99, Skill.CONSTRUCTION, 99)); // Equip an Infernal Max Cape
+		REQUIREMENTS.put("barrows_equip_ahrims_set", levels(Skill.MAGIC, 70, Skill.DEFENCE, 70)); // Equip an Undamaged Ahrim's Set
+		REQUIREMENTS.put("barrows_equip_dharoks_set", levels(Skill.DEFENCE, 70)); // Equip an Undamaged Dharok's Set
+		REQUIREMENTS.put("barrows_equip_guthans_set", levels(Skill.DEFENCE, 70)); // Equip an Undamaged Guthan's Set
+		REQUIREMENTS.put("barrows_equip_karils_set", levels(Skill.RANGED, 70)); // Equip an Undamaged Karil's Set
+		REQUIREMENTS.put("barrows_equip_torags_set", levels(Skill.DEFENCE, 70)); // Equip an Undamaged Torag's Set
+		REQUIREMENTS.put("barrows_equip_veracs_set", levels(Skill.DEFENCE, 70)); // Equip an Undamaged Verac's Set
+		REQUIREMENTS.put("barrows_equip_any_piece", levels(Skill.DEFENCE, 70)); // Equip any piece of Undamaged Barrows Gear
+		REQUIREMENTS.put("phosani_equip_eldritch_staff", levels(Skill.MAGIC, 75, Skill.HITPOINTS, 50)); // Equip the Eldritch Nightmare Staff
+		REQUIREMENTS.put("tob_equip_ghrazi_rapier", levels(Skill.ATTACK, 75)); // Equip the Ghrazi Rapier
+		REQUIREMENTS.put("phosani_equip_harmonised_staff", levels(Skill.MAGIC, 75, Skill.HITPOINTS, 50)); // Equip the Harmonised Nightmare Staff
+		REQUIREMENTS.put("phosani_equip_inq_helm", levels(Skill.STRENGTH, 70, Skill.DEFENCE, 30)); // Equip the Inquisitor's Great Helm
+		REQUIREMENTS.put("phosani_equip_inq_hauberk", levels(Skill.STRENGTH, 70, Skill.DEFENCE, 30)); // Equip the Inquisitor's Hauberk
+		REQUIREMENTS.put("phosani_equip_inq_mace", levels(Skill.ATTACK, 75)); // Equip the Inquisitor's Mace
+		REQUIREMENTS.put("phosani_equip_inq_plateskirt", levels(Skill.STRENGTH, 70, Skill.DEFENCE, 30)); // Equip the Inquisitor's Plateskirt
+		REQUIREMENTS.put("tob_equip_justiciar_chestguard", levels(Skill.DEFENCE, 75)); // Equip the Justiciar Chestguard
+		REQUIREMENTS.put("tob_equip_justiciar_faceguard", levels(Skill.DEFENCE, 75)); // Equip the Justiciar Faceguard
+		REQUIREMENTS.put("tob_equip_justiciar_legguards", levels(Skill.DEFENCE, 75)); // Equip the Justiciar Legguards
+		REQUIREMENTS.put("phosani_equip_nightmare_staff", levels(Skill.MAGIC, 65, Skill.HITPOINTS, 50)); // Equip the Nightmare Staff
+		REQUIREMENTS.put("tob_equip_sanguinesti_staff", levels(Skill.MAGIC, 75)); // Equip the Sanguinesti Staff
+		REQUIREMENTS.put("sarachnis_equip_cudgel", levels(Skill.ATTACK, 65)); // Equip the Sarachnis Cudgel
+		REQUIREMENTS.put("tob_equip_scythe_of_vitur", levels(Skill.ATTACK, 75, Skill.STRENGTH, 75)); // Equip the Scythe of Vitur
+		REQUIREMENTS.put("zulrah_equip_serpent_helm", levels(Skill.DEFENCE, 75)); // Equip the Serpent Helm
+		REQUIREMENTS.put("zulrah_equip_blowpipe", levels(Skill.RANGED, 75)); // Equip the Toxic Blowpipe
+		REQUIREMENTS.put("zulrah_equip_trident", levels(Skill.MAGIC, 75)); // Equip the Trident of the Swamp
+		REQUIREMENTS.put("phosani_equip_volatile_staff", levels(Skill.MAGIC, 75, Skill.HITPOINTS, 50)); // Equip the Volatile Nightmare Staff
+
 		// --- Agility shortcuts and courses ---
 		// Filled from RuneLite's own lists (AgilityShortcut and the agility plugin's course
 		// obstacles), matched by level, location and name.
@@ -357,6 +529,90 @@ public final class TaskTargetExtras
 		EXTRA_OBJECTS.put("use_werewolf_agility_zipline", ids(11643, 11638, 11639, 11640, 11657, 1747, 11644, 11645, 11646)); // Use the Werewolf Agility Course Zip Line (West Haunted Woods, 14134) [RuneLite course Werewolf]
 		EXTRA_OBJECTS.put("agility_level_39_west_yanille_wall_grapple_shortcut", ids(17047, 17048)); // Use the Level 39 Agility West Yanille Wall Grapple Shortcut (West Yanille, 10032) [RuneLite shortcut YANILLE_WALL_GRAPPLE]
 
+	}
+
+	private static Map<Skill, Integer> levels(Object... skillsAndLevels)
+	{
+		Map<Skill, Integer> map = new EnumMap<>(Skill.class);
+		for (int i = 0; i + 1 < skillsAndLevels.length; i += 2)
+		{
+			map.put((Skill) skillsAndLevels[i], (Integer) skillsAndLevels[i + 1]);
+		}
+		return map;
+	}
+
+	/**
+	 * Every level a task needs: its own (category + level, "_Set" categories included)
+	 * plus any listed in REQUIREMENTS (gear needing several skills, multi-skill tasks the
+	 * data only half-holds, tasks with no level). The highest wins where both name a skill.
+	 */
+	static Map<Skill, Integer> requirements(NuzlockeTask task)
+	{
+		Map<Skill, Integer> needs = new EnumMap<>(Skill.class);
+		Skill own = categorySkill(task.getCategory());
+		if (own != null && task.getLevelRequirement() > 1)
+		{
+			needs.put(own, task.getLevelRequirement());
+		}
+		Map<Skill, Integer> extra = task.getTaskId() == null ? null : REQUIREMENTS.get(task.getTaskId());
+		if (extra != null)
+		{
+			for (Map.Entry<Skill, Integer> need : extra.entrySet())
+			{
+				needs.merge(need.getKey(), need.getValue(), Math::max);
+			}
+		}
+		return needs;
+	}
+
+	/**
+	 * Every requirement the player is missing, like "20 Defence, 20 Ranged", or null if
+	 * they have them all.
+	 */
+	static String missingRequirement(Client client, NuzlockeTask task)
+	{
+		StringBuilder missing = new StringBuilder();
+		for (Map.Entry<Skill, Integer> need : requirements(task).entrySet())
+		{
+			if (client.getRealSkillLevel(need.getKey()) < need.getValue())
+			{
+				if (missing.length() > 0)
+				{
+					missing.append(", ");
+				}
+				missing.append(need.getValue()).append(' ').append(need.getKey().getName());
+			}
+		}
+		return missing.length() == 0 ? null : missing.toString();
+	}
+
+	/**
+	 * The skill a task category names: "Mining", "Runecrafting" (Runecraft), and "_Set"
+	 * categories like "Herblore_Set" (Herblore). Null for Combat, Quest, Progression, etc.
+	 */
+	static Skill categorySkill(String category)
+	{
+		if (category == null)
+		{
+			return null;
+		}
+		String name = category.trim().toUpperCase();
+		if (name.endsWith("_SET"))
+		{
+			name = name.substring(0, name.length() - 4);
+		}
+		if (name.equals("RUNECRAFTING"))
+		{
+			name = "RUNECRAFT";
+		}
+		try
+		{
+			return Skill.valueOf(name);
+		}
+		catch (IllegalArgumentException e)
+		{
+			return null;
+		}
 	}
 
 	private static Set<Integer> ids(int... ids)

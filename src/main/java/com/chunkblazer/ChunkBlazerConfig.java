@@ -488,6 +488,96 @@ public interface ChunkBlazerConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "showChunkGridLines",
+		name = "Lines Between Unlocked Chunks",
+		description = "Draw chunk outlines between your unlocked chunks too. Off shows your unlocked area as one connected piece.",
+		section = worldMapSection,
+		position = 3
+	)
+	default boolean showChunkGridLines()
+	{
+		return true;
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "worldMapLockedColor",
+		name = "Locked Chunk Colour",
+		description = "Tint over chunks you can't unlock yet (lower the alpha to see more of the map)",
+		section = worldMapSection,
+		position = 4
+	)
+	default java.awt.Color worldMapLockedColor()
+	{
+		return new java.awt.Color(0, 0, 0, 160);
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "worldMapPaidColor",
+		name = "Unlock With Points Colour",
+		description = "Tint over chunks you can unlock with points",
+		section = worldMapSection,
+		position = 5
+	)
+	default java.awt.Color worldMapPaidColor()
+	{
+		return new java.awt.Color(255, 215, 0, 110);
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "worldMapFreeColor",
+		name = "Free Chunk Colour",
+		description = "Tint over chunks you unlock for free by walking in",
+		section = worldMapSection,
+		position = 6
+	)
+	default java.awt.Color worldMapFreeColor()
+	{
+		return new java.awt.Color(80, 230, 230, 110);
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "worldMapCharterColor",
+		name = "Charter Port Colour",
+		description = "Tint over charter port chunks",
+		section = worldMapSection,
+		position = 7
+	)
+	default java.awt.Color worldMapCharterColor()
+	{
+		return new java.awt.Color(90, 150, 255, 110);
+	}
+
+	@net.runelite.client.config.Alpha
+	@ConfigItem(
+		keyName = "worldMapBossColor",
+		name = "Boss Chunk Colour",
+		description = "Tint over boss chunks (unlocked with a boss token)",
+		section = worldMapSection,
+		position = 8
+	)
+	default java.awt.Color worldMapBossColor()
+	{
+		return new java.awt.Color(200, 110, 255, 110);
+	}
+
+	@ConfigItem(
+		keyName = "worldMapTasksKey",
+		name = "View Chunk Tasks Key",
+		description = "Hold this key (Ctrl by default) and click an unlocked chunk on the world map to open the "
+			+ "task window on that chunk's tasks",
+		section = worldMapSection,
+		position = 9
+	)
+	default Keybind worldMapTasksKey()
+	{
+		return Keybind.CTRL;
+	}
+
 	// ── Minimap ──────────────────────────────────────────────────────────
 
 	@ConfigSection(
@@ -715,8 +805,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "worldMapUnlockKey",
 		name = "Map Unlock Key",
-		description = "Hold this key (Shift by default) and click a neighbouring chunk on the world map to unlock it, "
-			+ "or an unlocked chunk to see its tasks",
+		description = "Hold this key (Shift by default) and click a neighbouring chunk on the world map to unlock it",
 		section = regionSection,
 		position = 1
 	)
