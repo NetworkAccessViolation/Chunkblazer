@@ -2082,10 +2082,7 @@ public class TaskBrowserOverlay extends Overlay
 				toggle("Locked chunk walls", config.showChunkWalls(),
 					"A see-through wall between unlocked and locked chunks.", "showChunkWalls"),
 				toggle("Chunk name banner", config.showChunkNamePopups(),
-					"Shows the chunk's name at the top of the screen when you walk into a new one.", "showChunkNamePopups"),
-				choice("Banner repeat wait", "chunkBannerRepeatMinutes", config.chunkBannerRepeatMinutes(),
-					"How long you must be away from an unlocked chunk before its banner shows again. Locked chunks always show.",
-					"Off", 0, "1m", 1, "2m", 2, "5m", 5)),
+					"Shows the chunk's name at the top of the screen when you walk into a new one.", "showChunkNamePopups")),
 			Arrays.asList(
 				heading("World map"),
 				toggle("Chunk borders", config.showWorldMapChunks(),
