@@ -198,4 +198,63 @@ class NpcDialogueModuleTest extends AbstractTaskModuleTest
 		talk(100, 112, false);
 		assertFalse(task.isCompleted(), "a dialogue long after, with nobody targeted, isn't the NPC");
 	}
+
+	private static final int DEATH = 9855;
+
+	@Mock
+	private Widget speakerName;
+
+	@Mock
+	private NPC otherNpc;
+
+	private NuzlockeTask talkToDeath()
+	{
+		NuzlockeTask task = createTaskWithNpc("Talk to Death", "talk_to_death", "NPC_DIALOGUE", 1, Arrays.asList(DEATH));
+		task.getTargetNpc().setName("Death");
+		npcDialogueModule.addActiveTask(task);
+		return task;
+	}
+
+	/** Dialogue box open, with {@code name} as the speaker. */
+	private void dialogueWith(String name)
+	{
+		lenient().when(client.getLocalPlayer()).thenReturn(localPlayer);
+		lenient().when(client.getWidget(InterfaceID.ChatLeft.TEXT)).thenReturn(npcChat);
+		lenient().when(npcChat.isHidden()).thenReturn(false);
+		lenient().when(client.getWidget(InterfaceID.ChatLeft.NAME)).thenReturn(speakerName);
+		lenient().when(speakerName.isHidden()).thenReturn(false);
+		lenient().when(speakerName.getText()).thenReturn(name);
+		npcDialogueModule.onGameTick(new GameTick());
+	}
+
+	/** The report: after dying, the game walks you to Death and starts the talk itself. */
+	@Test
+	void scriptedTalkWithDeathCredits()
+	{
+		NuzlockeTask task = talkToDeath();
+		dialogueWith("Death");
+		assertTrue(task.isCompleted(), "no click, no interaction: the speaker's name is all there is");
+	}
+
+	/** Death's dialogue was already open when he started speaking (no closed-to-open edge). */
+	@Test
+	void speakerChangingMidConversationCredits()
+	{
+		NuzlockeTask task = talkToDeath();
+		dialogueWith("Player");
+		assertFalse(task.isCompleted());
+		dialogueWith("Death");
+		assertTrue(task.isCompleted());
+	}
+
+	/** Talking to a different NPC that happens to share the target's name doesn't count. */
+	@Test
+	void sameNamedOtherNpcDoesNotCredit()
+	{
+		NuzlockeTask task = talkToDeath();
+		lenient().when(otherNpc.getId()).thenReturn(12345);
+		lenient().when(localPlayer.getInteracting()).thenReturn(otherNpc);
+		dialogueWith("Death");
+		assertFalse(task.isCompleted());
+	}
 }

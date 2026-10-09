@@ -106,7 +106,7 @@ import com.chunkblazer.modules.TaskModuleManager;
 @Slf4j
 @PluginDescriptor(
 	name = "ChunkBlazer",
-	description = "A Nuzlocke Chunk Unlocker Plugin with RNG Task Assignment",
+	description = "ChunkBlazer is a Randomized, Automated, Task rolling, Area-Restricted, Plugin / Game Mode.",
 	tags = {"chunk", "chunkblazer", "nuzlocke", "challenge", "task"},
 	// Roots getPluginDirectory() at .runelite/plugin-data/chunkblazer. legacy dir
 	// moves the old .runelite/chunkblazer cache over on first run, so existing
@@ -7400,9 +7400,17 @@ public class ChunkBlazerPlugin extends Plugin
 	}
 
 	/** True if the region is a task chunk (any type) or a Free_Chunks.json chunk. */
-	boolean isKnownRegion(int regionId)
+	public boolean isKnownRegion(int regionId)
 	{
 		return chunksByRegionId.containsKey(regionId) || freeUnlockableRegionIds.contains(regionId);
+	}
+
+	/** True if the task is authored on the chunk at this region (a task can sit on several). */
+	public boolean regionHasTask(int regionId, String taskId)
+	{
+		NuzlockeChunk chunk = chunksByRegionId.get(regionId);
+		return chunk != null && chunk.getTasks() != null
+			&& chunk.getTasks().stream().anyMatch(t -> taskId.equals(t.getTaskId()));
 	}
 
 	public String getRegionName(int regionId)

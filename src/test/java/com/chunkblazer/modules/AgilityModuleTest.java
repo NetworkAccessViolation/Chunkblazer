@@ -48,6 +48,8 @@ class AgilityModuleTest extends AbstractTaskModuleTest
 		injectField(agilityModule, "config", config);
 
 		agilityModule.setCompletionCallback(completionCallback);
+		// Level-capable by default; the level-gate tests lower it.
+		lenient().when(client.getBoostedSkillLevel(Skill.AGILITY)).thenReturn(99);
 	}
 
 	private void injectField(Object target, String fieldName, Object value) throws Exception
@@ -738,5 +740,56 @@ class AgilityModuleTest extends AbstractTaskModuleTest
 
 		assertEquals(0, tunnel.getCurrentProgress(),
 			"a gated shortcut is not credited by Agility XP unless its own object was clicked");
+	}
+
+	// --- Level gate (Tokays: the Colossal Wyrm advanced ladder at 50 Agility) ----------
+
+	private static final int WYRM_ADVANCED_LADDER = 55191;
+
+	private NuzlockeTask wyrmAdvancedTask()
+	{
+		NuzlockeTask task = createTaskWithRequiredObject("Take the Advanced Path at the Colossal Wyrm Agility Course",
+			"agility_level_62_path_colossal_wyrm_course", "AGILITY", 1, Collections.singletonList(WYRM_ADVANCED_LADDER));
+		task.setHasRequiredObject(true);
+		task.setLevel(62);
+		when(client.getSkillExperience(Skill.AGILITY)).thenReturn(0);
+		agilityModule.addActiveTask(task);
+		return task;
+	}
+
+	@Test
+	void underLevelledClickOnCourseEntranceDoesNotCredit()
+	{
+		when(client.getBoostedSkillLevel(Skill.AGILITY)).thenReturn(50);
+		NuzlockeTask task = wyrmAdvancedTask();
+		lenient().when(client.getTickCount()).thenReturn(100);
+		agilityModule.onMenuOptionClicked(mockObjectClick(WYRM_ADVANCED_LADDER, MenuAction.GAME_OBJECT_FIRST_OPTION));
+		simulatePlayerAnimation(828); // e.g. the basic obstacle just finished
+		assertEquals(0, task.getCurrentProgress());
+	}
+
+	@Test
+	void gameRefusingTheObstacleCancelsThePendingClick()
+	{
+		NuzlockeTask task = wyrmAdvancedTask();
+		lenient().when(client.getTickCount()).thenReturn(100);
+		agilityModule.onMenuOptionClicked(mockObjectClick(WYRM_ADVANCED_LADDER, MenuAction.GAME_OBJECT_FIRST_OPTION));
+		ChatMessage refused = mock(ChatMessage.class);
+		when(refused.getType()).thenReturn(ChatMessageType.GAMEMESSAGE);
+		when(refused.getMessage()).thenReturn("You need an Agility level of 62 to use this course.");
+		agilityModule.onChatMessage(refused);
+		simulatePlayerAnimation(828);
+		assertEquals(0, task.getCurrentProgress());
+	}
+
+	@Test
+	void boostedToTheLevelStillCredits()
+	{
+		when(client.getBoostedSkillLevel(Skill.AGILITY)).thenReturn(62); // e.g. 57 + summer pie
+		NuzlockeTask task = wyrmAdvancedTask();
+		lenient().when(client.getTickCount()).thenReturn(100);
+		agilityModule.onMenuOptionClicked(mockObjectClick(WYRM_ADVANCED_LADDER, MenuAction.GAME_OBJECT_FIRST_OPTION));
+		simulatePlayerAnimation(828);
+		assertEquals(1, task.getCurrentProgress());
 	}
 }

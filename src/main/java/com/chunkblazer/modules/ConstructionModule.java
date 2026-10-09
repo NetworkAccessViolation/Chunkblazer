@@ -37,9 +37,12 @@ import javax.inject.Inject;
 import javax.inject.Provider;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.GameState;
+import net.runelite.api.MenuAction;
 import net.runelite.api.Skill;
 import net.runelite.api.TileObject;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.DecorativeObjectSpawned;
 import net.runelite.api.events.GameObjectSpawned;
 import net.runelite.api.events.GameStateChanged;
@@ -118,8 +121,10 @@ public class ConstructionModule extends AbstractTaskModule
 
 	// How long after a "Build" click on a watched object its Construction XP
 	// still confirms the build. Covers walking to the object plus the build
-	// animation — same allowance as AgilityModule's traversal timeout.
-	private static final int BUILD_CLICK_WINDOW_TICKS = 12;
+	// animation. Generous because a click right after a teleport can be a long
+	// walk away (12 ticks lost STASH builds); walking off or using another
+	// object cancels the pending build instead.
+	private static final int BUILD_CLICK_WINDOW_TICKS = 50;
 
 	// Provider (not direct injection) to break the plugin <-> module cycle —
 	// ChunkBlazerPlugin instantiates this module via Guice, so we can't depend
@@ -144,6 +149,13 @@ public class ConstructionModule extends AbstractTaskModule
 	// object discriminator. Survives onTaskCleared for the same reason as
 	// recentWatchedSpawns; ages out of BUILD_CLICK_WINDOW_TICKS lazily.
 	private final Map<Integer, Integer> recentBuildClicks = new ConcurrentHashMap<>();
+
+	// Recent "Search" clicks on WATCHED objects: objectId -> tick. Only a BUILT STASH
+	// can be searched, and searching it without the clue items prints
+	// STASH_BUILT_MESSAGE, so the pair proves the STASH stands. That credits STASHes
+	// built before the task was rolled, or before this detection existed.
+	private final Map<Integer, Integer> recentSearchClicks = new ConcurrentHashMap<>();
+	private static final String STASH_BUILT_MESSAGE = "you need all of the required items in order to store them here";
 
 	// Tick of the most recent Construction XP gain (-1 = none yet). Lets a
 	// watched spawn that arrives AFTER the XP event still credit.
@@ -185,6 +197,7 @@ public class ConstructionModule extends AbstractTaskModule
 		watchedObjectIds.clear();
 		recentWatchedSpawns.clear();
 		recentBuildClicks.clear();
+		recentSearchClicks.clear();
 		debugSpawnRing.clear();
 		lastXpGainTick = -1;
 		previousConstructionXp = -1;
@@ -323,13 +336,20 @@ public class ConstructionModule extends AbstractTaskModule
 		{
 			return;
 		}
-		if (!GAME_OBJECT_ACTIONS.contains(event.getMenuAction()))
+		boolean objectAction = GAME_OBJECT_ACTIONS.contains(event.getMenuAction());
+		String option = event.getMenuOption();
+		if (objectAction && "Search".equalsIgnoreCase(option) && watchedObjectIds.contains(event.getId()))
 		{
+			recentSearchClicks.put(event.getId(), getGameTick());
 			return;
 		}
-		String option = event.getMenuOption();
-		if (option == null || !option.equalsIgnoreCase("Build"))
+		if (!objectAction || option == null || !option.equalsIgnoreCase("Build"))
 		{
+			// Walking off or using another object abandons a pending build.
+			if (objectAction || event.getMenuAction() == MenuAction.WALK)
+			{
+				recentBuildClicks.clear();
+			}
 			return;
 		}
 		int objectId = event.getId();
@@ -383,6 +403,30 @@ public class ConstructionModule extends AbstractTaskModule
 		if (lastXpGainTick >= 0 && tick - lastXpGainTick <= MATCH_WINDOW_TICKS)
 		{
 			creditMatchingTasks();
+		}
+	}
+
+	/** A searched STASH answered that it's built: credit its build task (retroactive). */
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (activeTasks.isEmpty() || recentSearchClicks.isEmpty() || event.getType() != ChatMessageType.GAMEMESSAGE
+			|| event.getMessage() == null || !event.getMessage().toLowerCase().contains(STASH_BUILT_MESSAGE))
+		{
+			return;
+		}
+		int tick = getGameTick();
+		recentSearchClicks.entrySet().removeIf(e -> tick - e.getValue() > BUILD_CLICK_WINDOW_TICKS);
+		for (NuzlockeTask task : new HashSet<>(activeTasks))
+		{
+			Set<Integer> taskObjects = taskRequiredObjectIds.get(task.getTaskId());
+			Integer searched = taskObjects == null ? null
+				: taskObjects.stream().filter(recentSearchClicks::containsKey).findFirst().orElse(null);
+			if (searched != null && passesRegionGate(task))
+			{
+				recentSearchClicks.remove(searched);
+				applyCredit(task, "Built: " + task.getName());
+			}
 		}
 	}
 
@@ -537,7 +581,11 @@ public class ConstructionModule extends AbstractTaskModule
 		int playerRegionId = getCurrentRegionId();
 		if (taskRegionId > 0 && playerRegionId > 0 && taskRegionId != playerRegionId)
 		{
-			return false;
+			// The task can sit on several chunks (the Exam Centre STASH is on the Digsite
+			// charter chunk too), and some objects are under ground, outside every chunk
+			// (Lumbridge Swamp Caves). The object id still has to match.
+			ChunkBlazerPlugin plugin = pluginProvider.get();
+			return plugin.regionHasTask(playerRegionId, task.getTaskId()) || !plugin.isKnownRegion(playerRegionId);
 		}
 		return true;
 	}

@@ -78,6 +78,8 @@ class ConstructionModuleTest extends AbstractTaskModuleTest
 		// which the module treats as a non-enforced check. Tests that exercise
 		// the gate stub a real region per-test.
 		lenient().when(chunkBlazerPlugin.findRegionForTask(anyString())).thenReturn(-1);
+		// Overworld regions in these tests are chunks unless a test says otherwise.
+		lenient().when(chunkBlazerPlugin.isKnownRegion(anyInt())).thenReturn(true);
 	}
 
 	private void injectField(Object target, String fieldName, Object value) throws Exception
@@ -448,7 +450,7 @@ class ConstructionModuleTest extends AbstractTaskModuleTest
 
 		currentTick = 100;
 		constructionModule.onMenuOptionClicked(buildClick(STASH_OBJECT));
-		currentTick = 120; // click window is 12 ticks
+		currentTick = 160; // click window is 50 ticks
 		gainConstructionXp(150);
 
 		assertEquals(0, task.getCurrentProgress());
@@ -548,5 +550,124 @@ class ConstructionModuleTest extends AbstractTaskModuleTest
 		verify(eventBus).register(constructionModule);
 		constructionModule.shutDown();
 		verify(eventBus).unregister(constructionModule);
+	}
+
+	/** Blade's report: teleport in, click Build from far off, the walk outlasts a short window. */
+	@Test
+	void buildAfterLongWalkStillCredits()
+	{
+		NuzlockeTask task = buildTask("Build an Easy STASH Unit at the Port Sarim Docks",
+			"build_easy_stash_port_sarim_docks", 28964);
+		constructionModule.addActiveTask(task);
+
+		currentTick = 100;
+		constructionModule.onMenuOptionClicked(buildClick(28964));
+		currentTick = 130; // 18 seconds of walking
+		gainConstructionXp(150);
+
+		assertTrue(task.isCompleted());
+	}
+
+	@Test
+	void walkingOffCancelsPendingBuild()
+	{
+		NuzlockeTask task = buildTask("Build an Easy STASH Unit at the Port Sarim Docks",
+			"build_easy_stash_port_sarim_docks", 28964);
+		constructionModule.addActiveTask(task);
+
+		currentTick = 100;
+		constructionModule.onMenuOptionClicked(buildClick(28964));
+		MenuOptionClicked walk = mock(MenuOptionClicked.class);
+		when(walk.getMenuAction()).thenReturn(MenuAction.WALK);
+		constructionModule.onMenuOptionClicked(walk);
+		currentTick = 105;
+		gainConstructionXp(150); // XP from something else
+
+		assertEquals(0, task.getCurrentProgress());
+	}
+
+	/** The Exam Centre STASH task is on two chunks; it was rolled on the other one. */
+	@Test
+	void regionGatePassesInAnyChunkTheTaskIsOn()
+	{
+		NuzlockeTask task = buildTask("Build an Easy STASH Unit in the Exam Centre", "build_easy_stash_exam_centre", 28980);
+		constructionModule.addActiveTask(task);
+		when(chunkBlazerPlugin.findRegionForTask("build_easy_stash_exam_centre")).thenReturn(13365);
+		when(playerLocation.getRegionID()).thenReturn(13364);
+		when(chunkBlazerPlugin.regionHasTask(13364, "build_easy_stash_exam_centre")).thenReturn(true);
+
+		currentTick = 100;
+		constructionModule.onMenuOptionClicked(buildClick(28980));
+		currentTick = 103;
+		gainConstructionXp(150);
+
+		assertTrue(task.isCompleted());
+	}
+
+	/** Lumbridge Swamp Caves sit outside every chunk, under the task's surface chunk. */
+	@Test
+	void regionGatePassesUnderGroundOutsideEveryChunk()
+	{
+		NuzlockeTask task = buildTask("Build a Medium STASH Unit in Lumbridge Cave", "build_rock_medium_stash_lumbridge_cave", 29000);
+		constructionModule.addActiveTask(task);
+		when(chunkBlazerPlugin.findRegionForTask("build_rock_medium_stash_lumbridge_cave")).thenReturn(12593);
+		when(playerLocation.getRegionID()).thenReturn(12949);
+		when(chunkBlazerPlugin.isKnownRegion(12949)).thenReturn(false);
+
+		currentTick = 100;
+		constructionModule.onMenuOptionClicked(buildClick(29000));
+		currentTick = 103;
+		gainConstructionXp(150);
+
+		assertTrue(task.isCompleted());
+	}
+
+	private MenuOptionClicked searchClick(int objectId)
+	{
+		MenuOptionClicked click = mock(MenuOptionClicked.class);
+		when(click.getMenuAction()).thenReturn(MenuAction.GAME_OBJECT_FIRST_OPTION);
+		lenient().when(click.getId()).thenReturn(objectId);
+		lenient().when(click.getMenuOption()).thenReturn("Search");
+		return click;
+	}
+
+	private void gameMessage(String text)
+	{
+		constructionModule.onChatMessage(new net.runelite.api.events.ChatMessage(
+			null, net.runelite.api.ChatMessageType.GAMEMESSAGE, "", text, null, 0));
+	}
+
+	private static final String BUILT_REPLY = "You need all of the required items in order to store them here.";
+
+	/** A STASH built before the task was rolled credits when searched (it can only be searched once built). */
+	@Test
+	void searchingABuiltStashCreditsRetroactively()
+	{
+		NuzlockeTask task = buildTask("Build an Easy STASH Unit at the Port Sarim Docks",
+			"build_easy_stash_port_sarim_docks", 28964);
+		constructionModule.addActiveTask(task);
+
+		currentTick = 100;
+		constructionModule.onMenuOptionClicked(searchClick(28964));
+		currentTick = 104;
+		gameMessage(BUILT_REPLY);
+
+		assertTrue(task.isCompleted());
+	}
+
+	@Test
+	void builtReplyWithoutSearchingThatStashDoesNotCredit()
+	{
+		NuzlockeTask task = buildTask("Build an Easy STASH Unit at the Port Sarim Docks",
+			"build_easy_stash_port_sarim_docks", 28964);
+		constructionModule.addActiveTask(task);
+
+		currentTick = 100;
+		gameMessage(BUILT_REPLY); // some other STASH, nothing of ours searched
+		assertFalse(task.isCompleted());
+
+		constructionModule.onMenuOptionClicked(searchClick(28969)); // a different STASH
+		gameMessage(BUILT_REPLY);
+		assertFalse(task.isCompleted());
 	}
 }

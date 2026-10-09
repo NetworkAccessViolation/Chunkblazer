@@ -48,6 +48,9 @@ class NPCKillModuleTest extends AbstractTaskModuleTest
 	@Mock
 	private ChunkBlazerApiClient apiClient;
 
+	@Mock
+	private net.runelite.client.game.NPCManager npcManager;
+
 	@InjectMocks
 	private NPCKillModule npcKillModule;
 
@@ -1368,5 +1371,124 @@ class NPCKillModuleTest extends AbstractTaskModuleTest
 
 		assertEquals(1, ogress.getCurrentProgress(), "the specific Ogress task credits");
 		assertEquals(0, ogre.getCurrentProgress(), "the broad Ogre superset task must NOT also credit");
+	}
+
+	private NuzlockeTask wolfTask(String name, String id, String type, Integer timeTicks, Integer... npcIds)
+	{
+		NuzlockeTask task = createTaskWithNpc(name, id, type, 1, Arrays.asList(npcIds));
+		if (timeTicks != null)
+		{
+			TaskConstraints c = new TaskConstraints();
+			c.setTimeInTicks(timeTicks);
+			task.setConstraints(c);
+		}
+		return task;
+	}
+
+	/** The report: the on-task and timed tasks took the kill and the plain task got nothing. */
+	@Test
+	void conditionalTasksDontStarvePlainTaskOfTheKill()
+	{
+		NuzlockeTask plain = wolfTask("Defeat a White Wolf", "defeat_white_wolves", "NPC_Kill", null, 107, 108, 109);
+		NuzlockeTask onTask = wolfTask("Defeat a White Wolf on Task", "defeat_white_wolf_on_task", "SLAYER", null, 107, 108);
+		NuzlockeTask timed = wolfTask("Defeat a White Wolf in 12 Seconds", "defeat_white_wolf_fast", "NPC_Kill", 20, 107, 108);
+
+		java.util.List<NuzlockeTask> credited = npcKillModule.mostSpecificMatches(Arrays.asList(plain, onTask, timed));
+
+		assertTrue(credited.contains(plain), "the plain task still gets the kill");
+		assertTrue(credited.contains(onTask));
+		assertTrue(credited.contains(timed));
+	}
+
+	/** Within plain tasks the narrower one still wins (an Ogress isn't counted as an Ogre). */
+	@Test
+	void narrowerPlainTaskStillWinsOverBroaderPlainTask()
+	{
+		NuzlockeTask ogre = wolfTask("Defeat an Ogre", "defeat_ogre", "NPC_Kill", null, 136, 1153, 7989, 7990);
+		NuzlockeTask ogress = wolfTask("Defeat an Ogress", "defeat_ogress", "NPC_Kill", null, 7989, 7990);
+
+		java.util.List<NuzlockeTask> credited = npcKillModule.mostSpecificMatches(Arrays.asList(ogre, ogress));
+
+		assertEquals(Arrays.asList(ogress), credited);
+	}
+
+	// --- Hidden health bar (BlazeIWill's hill giant, Pyro's flinching) -------------
+
+	private void firePoisonHitsplat(NPC target, int dmg)
+	{
+		HitsplatApplied e = mock(HitsplatApplied.class);
+		Hitsplat h = mock(Hitsplat.class);
+		when(e.getActor()).thenReturn(target);
+		when(e.getHitsplat()).thenReturn(h);
+		when(h.getHitsplatType()).thenReturn(net.runelite.api.HitsplatID.POISON);
+		lenient().when(h.getAmount()).thenReturn(dmg);
+		npcKillModule.onHitsplatApplied(e);
+	}
+
+	/** Bar hidden at our first hit (it faded), sampled the tick before. */
+	private NPC hiddenBarNpc(int id, String name)
+	{
+		NPC npc = mockNpc(id, 1, name);
+		lenient().when(npc.getHealthRatio()).thenReturn(-1);
+		lenient().when(npc.getHealthScale()).thenReturn(-1);
+		lenient().when(client.getNpcs()).thenReturn(java.util.Collections.singletonList(npc));
+		npcKillModule.onGameTick(new GameTick());
+		return npc;
+	}
+
+	/** Damaged, died, walked back after its bar faded, finished it in seconds: not a speed kill. */
+	@Test
+	void testRestrictedKill_rejectsSoftenedNpcWhoseBarFaded() throws Exception
+	{
+		NuzlockeTask task = speedTask(200, 10);
+		npcKillModule.addActiveTask(task);
+		when(npcManager.getHealth(200)).thenReturn(35);
+
+		NPC giant = hiddenBarNpc(200, "Hill Giant");
+		setTick(101);
+		fireMyHitsplat(giant, 4); // all that was left of it
+		killAndDrain(giant);
+
+		assertEquals(0, task.getCurrentProgress(), "4 of 35 HP is a finish, not a kill from full health");
+	}
+
+	@Test
+	void testRestrictedKill_creditsUntouchedNpcWithNoBar() throws Exception
+	{
+		NuzlockeTask task = speedTask(200, 10);
+		npcKillModule.addActiveTask(task);
+		when(npcManager.getHealth(200)).thenReturn(10);
+
+		NPC mugger = hiddenBarNpc(200, "Mugger");
+		setTick(101);
+		fireMyHitsplat(mugger, 10);
+		killAndDrain(mugger);
+
+		assertEquals(1, task.getCurrentProgress(), "a never-touched NPC shows no bar; full damage proves it");
+	}
+
+	@Test
+	void testRestrictedKill_countsOurPoisonTowardFullHealth() throws Exception
+	{
+		NuzlockeTask task = speedTask(200, 10);
+		npcKillModule.addActiveTask(task);
+		when(npcManager.getHealth(200)).thenReturn(10);
+
+		NPC mugger = hiddenBarNpc(200, "Mugger");
+		setTick(101);
+		fireMyHitsplat(mugger, 7);
+		firePoisonHitsplat(mugger, 3);
+		killAndDrain(mugger);
+
+		assertEquals(1, task.getCurrentProgress(), "our poison is our damage");
+	}
+
+	@Test
+	void testDealtTooLittle()
+	{
+		assertFalse(NPCKillModule.dealtTooLittle(35, 35));
+		assertFalse(NPCKillModule.dealtTooLittle(32, 35), "within the 10% slack");
+		assertTrue(NPCKillModule.dealtTooLittle(4, 35));
+		assertFalse(NPCKillModule.dealtTooLittle(4, null), "unknown max HP fails open");
 	}
 }
