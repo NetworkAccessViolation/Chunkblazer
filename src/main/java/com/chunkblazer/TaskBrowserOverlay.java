@@ -28,6 +28,7 @@ package com.chunkblazer;
 
 import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
+import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Dimension;
@@ -95,6 +96,7 @@ import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.input.MouseWheelListener;
+import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.components.FlatTextField;
 import net.runelite.client.ui.components.IconTextField;
@@ -597,8 +599,13 @@ public class TaskBrowserOverlay extends Overlay
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		if (client.getGameState() != GameState.LOGGED_IN || configManager.getRSProfileKey() == null
-			|| ++ticksLoggedIn < SETTLE_TICKS)
+		if (client.getGameState() != GameState.LOGGED_IN || configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		// Every tick from login, so the side panel fills as soon as the tasks arrive.
+		updateSideList();
+		if (++ticksLoggedIn < SETTLE_TICKS)
 		{
 			return;
 		}
@@ -606,7 +613,6 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			quests.refreshStates(QUEST_CHECKS_PER_TICK);
 		}
-		updateSideList();
 		Set<String> active = new LinkedHashSet<>();
 		for (NuzlockeTask task : pool(false))
 		{
@@ -647,6 +653,7 @@ public class TaskBrowserOverlay extends Overlay
 	// The side panel's task list, styled like the original panel: stats, the selected task,
 	// then Saved, Chunk, Active and Global sections of rounded tier cards. Click a heading
 	// to fold it. It uses the window's task data, so none of that logic is repeated here.
+	private static final int SIDE_MAX = 25;
 	private static final Color FLAME = new Color(255, 140, 0);
 	private final JList<Object> sideList = new JList<Object>()
 	{
@@ -663,8 +670,12 @@ public class TaskBrowserOverlay extends Overlay
 	private volatile int sideHover = -1;
 	private volatile float sideSize = 16f;
 	private final IconTextField sideSearch = new IconTextField();
-	private final JComboBox<String> sideCategory = new JComboBox<>();
+	private final JComboBox<String> sideSkill = new JComboBox<>();
 	private final JComboBox<String> sideTier = new JComboBox<>();
+	private final JComboBox<String> sideSort = new JComboBox<>();
+	// Side panel filters: like the window's, but each box cycles off, on (shown) and hidden.
+	private final Set<Filter> sideOn = ConcurrentHashMap.newKeySet();
+	private final Set<Filter> sideHidden = ConcurrentHashMap.newKeySet();
 	private final JLabel sideStats = new JLabel();
 
 	/** Once a tick: add the list to the side panel, and refresh it while it's on screen. */
@@ -738,9 +749,14 @@ public class TaskBrowserOverlay extends Overlay
 					// IconTextField has no text colour setter, so set it on the field inside.
 					((FlatTextField) c).getTextField().setForeground(Color.WHITE);
 					((FlatTextField) c).getTextField().setCaretColor(Color.WHITE);
+					((FlatTextField) c).getTextField().setFont(FontManager.getRunescapeFont());
 				}
 			}
-			sideSearch.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+			sideSearch.setPreferredSize(new Dimension(sideSearch.getPreferredSize().width, 34));
+			JPanel search = new JPanel(new BorderLayout());
+			search.setOpaque(false);
+			search.setBorder(new EmptyBorder(8, 0, 8, 0));
+			search.add(sideSearch);
 			Runnable research = () ->
 			{
 				sideKey = "";
@@ -758,6 +774,9 @@ public class TaskBrowserOverlay extends Overlay
 			// A- / A+ text size, remembered per account.
 			String size = configManager.getRSProfileConfiguration(CONFIG_GROUP, "sideTextSize");
 			sideSize = size == null ? 16f : Float.parseFloat(size);
+			// Everything A-/A+ resizes besides the list itself.
+			List<JComponent> scaled = new ArrayList<>(Arrays.asList(sideSkill, sideTier, sideSort));
+			Runnable rescale = () -> scaled.forEach(c -> c.setFont(FontManager.getRunescapeSmallFont().deriveFont(sideSize)));
 			JPanel sizes = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 			sizes.setOpaque(false);
 			for (int step : new int[]{-2, 2})
@@ -767,25 +786,61 @@ public class TaskBrowserOverlay extends Overlay
 				{
 					sideSize = Math.max(12, Math.min(24, sideSize + step));
 					configManager.setRSProfileConfiguration(CONFIG_GROUP, "sideTextSize", sideSize);
+					rescale.run();
 					research.run();
 				});
 				sizes.add(button);
 			}
-			// Category (the window's filters) and Tier dropdowns, like the original panel.
-			sideCategory.addItem("All categories");
-			Arrays.stream(Filter.values()).forEach(f -> sideCategory.addItem(f.shortLabel));
-			sideTier.addItem("All tiers");
+			// Skill and Tier dropdowns, then the filter boxes (any ticked type, every ticked
+			// condition, nothing crossed out), two per row. A click cycles off, ✓ on, ✗ hidden.
+			sideSkill.addItem("Skills");
+			Arrays.stream(Skill.values()).filter(k -> k != Skill.OVERALL).forEach(k -> sideSkill.addItem(k.getName()));
+			sideTier.addItem("Tiers");
 			Arrays.stream(TaskCardTier.values()).forEach(t -> sideTier.addItem(t.getDisplayName()));
-			JPanel filters = new JPanel(new GridLayout(1, 2, 4, 0));
+			JPanel filters = new JPanel(new GridLayout(0, 2, 4, 4));
 			filters.setOpaque(false);
-			for (JComboBox<String> box : Arrays.asList(sideCategory, sideTier))
+			filters.add(sideSkill);
+			filters.add(sideTier);
+			// Each sort field twice: its usual direction first, so "Points" high to low leads.
+			for (SortField field : SortField.values())
 			{
-				box.setFont(FontManager.getRunescapeSmallFont());
+				for (boolean asc : new boolean[]{field.ascendingByDefault, !field.ascendingByDefault})
+				{
+					sideSort.addItem("Sort: " + field.label + (asc ? " \u25B2" : " \u25BC"));
+				}
+			}
+			for (JComboBox<String> box : Arrays.asList(sideSkill, sideTier, sideSort))
+			{
+				box.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				box.setForeground(Color.WHITE);
 				box.addActionListener(e -> research.run());
+			}
+			for (Filter f : Filter.values())
+			{
+				JButton box = new JButton(f.shortLabel);
+				scaled.add(box);
+				box.addActionListener(e ->
+				{
+					boolean on = sideOn.remove(f);
+					boolean hidden = sideHidden.remove(f);
+					if (!on && !hidden)
+					{
+						sideOn.add(f);
+					}
+					else if (on)
+					{
+						sideHidden.add(f);
+					}
+					box.setText((sideOn.contains(f) ? "\u2713 " : sideHidden.contains(f) ? "\u2717 " : "") + f.shortLabel);
+					box.setForeground(sideOn.contains(f) ? new Color(120, 220, 120)
+						: sideHidden.contains(f) ? new Color(255, 110, 110) : Color.WHITE);
+					research.run();
+				});
 				filters.add(box);
 			}
+			rescale.run();
 			panel.addTaskList(sideStats);
-			for (JComponent c : Arrays.asList(sizes, sideSearch, filters))
+			for (JComponent c : Arrays.asList(sizes, search, filters, sideSort))
 			{
 				c.setMaximumSize(new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height));
 				panel.addTaskList(c);
@@ -802,20 +857,24 @@ public class TaskBrowserOverlay extends Overlay
 		List<NuzlockeTask> chunk = new ArrayList<>();
 		List<NuzlockeTask> globals = new ArrayList<>();
 		String query = sideSearch.getText().trim().toLowerCase();
-		int category = sideCategory.getSelectedIndex();
+		int skill = sideSkill.getSelectedIndex();
 		int tier = sideTier.getSelectedIndex();
+		Predicate<NuzlockeTask> test = filterTest(sideOn, sideHidden,
+			skill < 1 ? null : Arrays.stream(Skill.values()).filter(k -> k != Skill.OVERALL).toArray(Skill[]::new)[skill - 1],
+			tier < 1 ? null : TaskCardTier.values()[tier - 1]);
 		for (NuzlockeTask task : pool(true))
 		{
 			chunkNames.computeIfAbsent(task.getTaskId(), k -> chunkName(task));
 			if (!archived.contains(task.getTaskId()) && (query.isEmpty() || matchesSearch(task, query))
-				&& (category < 1 || matches(Filter.values()[category - 1], task))
-				&& (tier < 1 || TaskCardTier.fromTask(task) == TaskCardTier.values()[tier - 1]))
+				&& test.test(task))
 			{
 				(plugin.isGlobalTask(task.getTaskId()) ? globals : chunk).add(task);
 			}
 		}
-		chunk.sort(sorter());
-		globals.sort(sorter());
+		SortField field = SortField.values()[sideSort.getSelectedIndex() / 2];
+		Comparator<NuzlockeTask> order = sorter(field, field.ascendingByDefault == (sideSort.getSelectedIndex() % 2 == 0));
+		chunk.sort(order);
+		globals.sort(order);
 		NuzlockeTask tracked = plugin.getSelectedTask();
 		List<Object> items = new ArrayList<>();
 		addSection(items, "Selected Task", tracked == null ? Collections.emptyList() : Collections.singletonList(tracked));
@@ -834,7 +893,7 @@ public class TaskBrowserOverlay extends Overlay
 			+ stat(plugin.getUnlockedRegionIds().size(), "Chunks") + stat(plugin.getCompletedTaskIdSet().size(), "Tasks")
 			+ stat(plugin.getBossTokens(), "Tokens") + "</tr></table></html>";
 		// Only rebuild when something changed, so the panel doesn't jump while scrolling.
-		StringBuilder key = new StringBuilder(stats + query + category + tier + saved);
+		StringBuilder key = new StringBuilder(stats + query + skill + tier + sideSort.getSelectedIndex() + sideOn + sideHidden + saved);
 		items.forEach(o -> key.append(o instanceof NuzlockeTask
 			? ((NuzlockeTask) o).getTaskId() + ((NuzlockeTask) o).getCurrentProgress() : o));
 		if (key.toString().equals(sideKey))
@@ -867,7 +926,7 @@ public class TaskBrowserOverlay extends Overlay
 		return !sideSearch.getText().trim().isEmpty();
 	}
 
-	/** A header with its count, then (unless folded) its tasks, or "Nothing here". */
+	/** A header with its count, then (unless folded) up to SIDE_MAX tasks and a "+N more" line. */
 	private void addSection(List<Object> items, String title, List<NuzlockeTask> tasks)
 	{
 		items.add(title + " (" + tasks.size() + ")");
@@ -875,20 +934,21 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			return;
 		}
-		items.addAll(tasks);
-		if (tasks.isEmpty())
+		items.addAll(tasks.subList(0, Math.min(SIDE_MAX, tasks.size())));
+		if (tasks.size() > SIDE_MAX || tasks.isEmpty())
 		{
-			items.add(0);
+			items.add(tasks.size() - SIDE_MAX);
 		}
 	}
 
-	/** A section heading, a "Nothing here" line, or a rounded tier card like the original panel's. */
+	/** A section heading, a "+N more" line, or a rounded tier card like the original panel's. */
 	private JLabel sideRow(Object item, boolean hover)
 	{
 		Font small = FontManager.getRunescapeSmallFont().deriveFont(sideSize);
 		if (item instanceof Integer)
 		{
-			JLabel more = new JLabel("Nothing here");
+			int extra = (Integer) item;
+			JLabel more = new JLabel(extra > 0 ? "+" + extra + " more in the task window" : "Nothing here");
 			more.setFont(small);
 			more.setForeground(Color.GRAY);
 			more.setBorder(new EmptyBorder(2, 8, 6, 4));
@@ -918,13 +978,13 @@ public class TaskBrowserOverlay extends Overlay
 		int progress = Math.min(task.getCurrentProgress(), target);
 		Color tier = TaskCardTier.fromTask(task).getAccent();
 		String description = task.getDescription() == null ? "" : task.getDescription().trim();
-		// Name (a size up); category and level; chunk; description. Then a progress bar.
+		// Name; category, points and level; chunk; description. Then a progress bar.
 		JLabel card = new JLabel("<html><table cellpadding=0 cellspacing=0 width=165><tr><td>"
-			+ "<font color='#96ff96' size='+1'>"
+			+ "<font color='#96ff96'>"
 			+ (saved(task) ? "&#9733; " : "") + (task.getName() == null ? task.getTaskId() : task.getName())
-			+ "</font><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory())
-			+ (task.getLevelRequirement() > 1 ? "  L" + task.getLevelRequirement() : "")
-			+ "</font><br><font color='#8cc8e6'>" + (global ? "Global" : chunkNames.getOrDefault(task.getTaskId(), ""))
+			+ "</font><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory()) + "  "
+			+ task.getBasePoints() + "pt" + (task.getLevelRequirement() > 1 ? "  L" + task.getLevelRequirement() : "")
+			+ "</font><br><font color='#8cc8e6'>" + (global ? "Global" : "Chunk: " + chunkNames.getOrDefault(task.getTaskId(), ""))
 			+ "</font>" + (description.isEmpty() ? "" : "<br><font color='#b9b9b9'>" + description + "</font>")
 			+ "</td></tr></table></html>")
 		{
@@ -1241,11 +1301,11 @@ public class TaskBrowserOverlay extends Overlay
 		return c != null && skill.name().equalsIgnoreCase(c.getRequiredSkill());
 	}
 
-	private Comparator<NuzlockeTask> sorter()
+	private Comparator<NuzlockeTask> sorter(SortField by, boolean asc)
 	{
 		Comparator<NuzlockeTask> byName = Comparator.comparing(t -> t.getName() == null ? "" : t.getName());
 		Comparator<NuzlockeTask> main;
-		switch (sortField)
+		switch (by)
 		{
 			case PROGRESS:
 				main = Comparator.comparingDouble(TaskBrowserOverlay::fraction);
@@ -1263,7 +1323,7 @@ public class TaskBrowserOverlay extends Overlay
 				main = Comparator.comparingInt(NuzlockeTask::getBasePoints);
 				break;
 		}
-		return (ascending ? main : main.reversed()).thenComparing(byName);
+		return (asc ? main : main.reversed()).thenComparing(byName);
 	}
 
 	/** The list for the current tab, search, chunk and filters; rebuilt at most once a second. */
@@ -1311,7 +1371,7 @@ public class TaskBrowserOverlay extends Overlay
 				list.add(task);
 			}
 		}
-		list.sort(sorter());
+		list.sort(sorter(sortField, ascending));
 		rows = group(list);
 		return rows;
 	}
