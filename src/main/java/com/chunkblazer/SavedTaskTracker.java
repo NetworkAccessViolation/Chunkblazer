@@ -37,13 +37,13 @@ import java.awt.RenderingHints;
 import java.awt.Shape;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
+import javax.inject.Provider;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -63,10 +63,8 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * World of Warcraft-style tracker for saved (starred) tasks. Sits as a small bar at
  * the bottom of the game view (left of the inventory by default; Alt + drag to move).
  * Clicking the bar opens the list, which grows upwards (scroll it with the mouse
- * wheel when there are more than fit). Each task shows its chunk's name; the order
- * is nearest first, by how
- * many chunks away their chunk is, then tasks with no place (quests, level-ups) by
- * how far along they are. Clicking a task tracks it in the task box (or stops
+ * wheel when there are more than fit). Each task shows its chunk's name, in the order
+ * you saved them. Clicking a task tracks it in the task box (or stops
  * tracking it, if it's the tracked one); Shift + click removes it from the saved
  * list. Archived tasks are left out, like the Saved
  * tab. Registered by TaskBrowserOverlay.
@@ -76,7 +74,6 @@ public class SavedTaskTracker extends Overlay
 {
 	private static final String CONFIG_GROUP = "chunkblazer";
 	private static final String SAVED_KEY = "savedTasks";
-	private static final String SURFACE_KEY = "lastSurfaceRegion";
 
 	private static final int WIDTH = 210;
 	private static final int BAR = 22;
@@ -94,17 +91,15 @@ public class SavedTaskTracker extends Overlay
 	private static final Color TRACKED_FILL = new Color(255, 140, 0, 45);
 	private static final Color NO_LEVEL = new Color(255, 90, 90);
 
-	/** One saved task, with how far away it is (-1 when it has no place) and its chunk's name. */
+	/** One saved task and its chunk's name. */
 	private static final class Item
 	{
 		final NuzlockeTask task;
-		final int distance;
 		final String chunk;
 
-		Item(NuzlockeTask task, int distance, String chunk)
+		Item(NuzlockeTask task, String chunk)
 		{
 			this.task = task;
-			this.distance = distance;
 			this.chunk = chunk;
 		}
 	}
@@ -116,6 +111,8 @@ public class SavedTaskTracker extends Overlay
 	private final OverlayManager overlayManager;
 	private final MouseManager mouseManager;
 	private final TaskArchive archive;
+	// The task window, for opening a quest's requirements pane (a Provider: the window also uses this tracker).
+	private final Provider<TaskBrowserOverlay> browser;
 
 	private volatile boolean expanded;
 	private volatile Runnable hoveredAction;
@@ -125,12 +122,6 @@ public class SavedTaskTracker extends Overlay
 	private volatile int scroll;
 	private List<Item> items = new ArrayList<>();
 	private long itemsBuiltAt;
-	private int itemsBuiltRegion = -1;
-	// The last overworld region the player stood in. Underground areas and instances
-	// sit far away on the region grid, so distances are measured from here instead.
-	// Saved per account, so logging back in inside a cave still knows where it is.
-	private int lastSurfaceRegion = -1;
-	private String surfaceForAccount;
 
 	private final MouseAdapter mouse = new MouseAdapter()
 	{
@@ -169,9 +160,11 @@ public class SavedTaskTracker extends Overlay
 
 	@Inject
 	public SavedTaskTracker(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
-		ConfigManager configManager, OverlayManager overlayManager, MouseManager mouseManager, TaskArchive archive)
+		ConfigManager configManager, OverlayManager overlayManager, MouseManager mouseManager, TaskArchive archive,
+		Provider<TaskBrowserOverlay> browser)
 	{
 		super(plugin);
+		this.browser = browser;
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
@@ -204,7 +197,7 @@ public class SavedTaskTracker extends Overlay
 	private Set<String> savedIds()
 	{
 		String raw = configManager.getRSProfileConfiguration(CONFIG_GROUP, SAVED_KEY);
-		Set<String> ids = new HashSet<>();
+		Set<String> ids = new LinkedHashSet<>();
 		if (raw != null)
 		{
 			for (String id : raw.split(","))
@@ -246,37 +239,12 @@ public class SavedTaskTracker extends Overlay
 	private List<Item> currentItems()
 	{
 		long now = System.currentTimeMillis();
-		int current = plugin.getCurrentRegionId();
-		loadSurfaceRegion();
-		if (current > 0 && isSurface(current) && current != lastSurfaceRegion)
-		{
-			lastSurfaceRegion = current;
-			if (configManager.getRSProfileKey() != null)
-			{
-				configManager.setRSProfileConfiguration(CONFIG_GROUP, SURFACE_KEY, current);
-			}
-		}
-		// Underground: measure from the last place on the surface, so a cave under a
-		// chunk doesn't read as miles away. Teleporting onto the surface updates it
-		// straight away. With no surface place known at all, show no distances
-		// rather than wrong ones.
-		int here;
-		if (current > 0 && isSurface(current))
-		{
-			here = current;
-		}
-		else
-		{
-			here = lastSurfaceRegion;
-		}
-		if (now - itemsBuiltAt < REFRESH_MS && here == itemsBuiltRegion)
+		if (now - itemsBuiltAt < REFRESH_MS)
 		{
 			return items;
 		}
 		itemsBuiltAt = now;
-		itemsBuiltRegion = here;
 
-		Set<String> saved = savedIds();
 		Set<String> archived = archive.ids();
 		Set<String> completed = plugin.getCompletedTaskIdSet();
 		Map<String, NuzlockeTask> candidates = new HashMap<>();
@@ -295,32 +263,16 @@ public class SavedTaskTracker extends Overlay
 			}
 		}
 
+		// In the order they were saved.
 		List<Item> list = new ArrayList<>();
-		for (NuzlockeTask task : candidates.values())
+		for (String id : savedIds())
 		{
-			String id = task.getTaskId();
-			if (!saved.contains(id) || archived.contains(id))
+			NuzlockeTask task = candidates.get(id);
+			if (task != null && !archived.contains(id))
 			{
-				continue;
+				list.add(new Item(task, chunkName(task)));
 			}
-			int distance = -1;
-			if (!plugin.isGlobalTask(id) && here > 0 && isSurface(here))
-			{
-				int region = plugin.findRegionForTask(id);
-				if (region > 0)
-				{
-					distance = chunksBetween(here, region);
-				}
-			}
-			list.add(new Item(task, distance, chunkName(task)));
 		}
-
-		// Nearest first; tasks with no place after, furthest along first.
-		list.sort(Comparator
-			.comparing((Item i) -> i.distance < 0)
-			.thenComparingInt(i -> i.distance < 0 ? 0 : i.distance)
-			.thenComparing(Comparator.comparingDouble((Item i) -> fraction(i.task)).reversed())
-			.thenComparing(i -> i.task.getName() == null ? "" : i.task.getName()));
 		items = list;
 		return items;
 	}
@@ -334,55 +286,6 @@ public class SavedTaskTracker extends Overlay
 		}
 		String name = plugin.getTaskRegionName(task);
 		return name == null ? "" : name.replaceAll("\\s*\\(\\d+\\)$", "").trim();
-	}
-
-	/** Read this account's saved surface region, once per account (switching accounts re-reads it). */
-	private void loadSurfaceRegion()
-	{
-		String account = configManager.getRSProfileKey();
-		if (account == null || account.equals(surfaceForAccount))
-		{
-			return;
-		}
-		surfaceForAccount = account;
-		lastSurfaceRegion = -1;
-		String stored = configManager.getRSProfileConfiguration(CONFIG_GROUP, SURFACE_KEY);
-		if (stored != null)
-		{
-			try
-			{
-				lastSurfaceRegion = Integer.parseInt(stored.trim());
-			}
-			catch (NumberFormatException ignored)
-			{
-				// Bad value: wait until the player is next on the surface.
-			}
-		}
-	}
-
-	// The overworld occupies region rows 39 to 64; dungeons and other off-map areas are
-	// stored outside that band (the same rule the plugin uses for free dungeon regions).
-	private static final int SURFACE_MIN_REGION_Y = 39;
-	private static final int SURFACE_MAX_REGION_Y = 64;
-
-	private static boolean isSurface(int regionId)
-	{
-		int regionY = regionId & 0xFF;
-		return regionY >= SURFACE_MIN_REGION_Y && regionY <= SURFACE_MAX_REGION_Y;
-	}
-
-	/** Chunks between two regions on the region grid (diagonal steps count as one). */
-	private static int chunksBetween(int regionA, int regionB)
-	{
-		int dx = Math.abs((regionA >> 8) - (regionB >> 8));
-		int dy = Math.abs((regionA & 0xFF) - (regionB & 0xFF));
-		return Math.max(dx, dy);
-	}
-
-	private static double fraction(NuzlockeTask task)
-	{
-		int target = Math.max(1, task.getTargetQuantity());
-		return Math.min(1.0, task.getCurrentProgress() / (double) target);
 	}
 
 	// --- Drawing ------------------------------------------------------------
@@ -456,7 +359,11 @@ public class SavedTaskTracker extends Overlay
 					hoveredId = item.task.getTaskId();
 					hovered = () ->
 					{
-						if (isTracked)
+						if (QuestRequirements.isQuestTask(item.task))
+						{
+							browser.get().openQuestPane(item.task);
+						}
+						else if (isTracked)
 						{
 							plugin.clearSelectedTask();
 						}
@@ -563,7 +470,7 @@ public class SavedTaskTracker extends Overlay
 			graphics.setColor(SUBTEXT);
 			graphics.drawString(progress, rightEdge - fm.stringWidth(progress), row.y + 25);
 		}
-		graphics.setColor(item.distance == 0 ? new Color(120, 220, 120) : SUBTEXT);
+		graphics.setColor(SUBTEXT);
 		graphics.drawString(fit(fm, where, rightEdge - progressWidth - textX), textX, row.y + 25);
 	}
 

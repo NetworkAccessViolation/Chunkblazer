@@ -80,7 +80,10 @@ import net.runelite.api.events.FocusChanged;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarClientID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
@@ -126,7 +129,6 @@ public class TaskBrowserOverlay extends Overlay
 	private static final long HINT_MS = 6000;
 	private static final long HINT_FADE_MS = 1500;
 	private static final long PULSE_MS = 1200;
-	private static final long FLASH_MS = 1800;
 
 	private static final int MAX_WIDTH = 460;
 	private static final int MAX_HEIGHT = 400;
@@ -297,9 +299,8 @@ public class TaskBrowserOverlay extends Overlay
 	private volatile Rectangle menuBox;
 	private volatile int scroll;
 	// A quest link was clicked: scroll to and briefly outline this task.
-	private volatile String scrollToTask;
-	private volatile String flashTask;
-	private volatile long flashAt;
+	// The quest whose requirements are shown over the side panel (null when closed).
+	private volatile NuzlockeTask questPane;
 
 	// New-task alert: unseen active tasks, the snapshot the New tab shows, the Points orb.
 	private final Set<String> newIds = ConcurrentHashMap.newKeySet();
@@ -337,7 +338,7 @@ public class TaskBrowserOverlay extends Overlay
 		@Override
 		public MouseEvent mousePressed(MouseEvent event)
 		{
-			if (!open || !mouseInWindow)
+			if (!open && questPane == null || !mouseInWindow)
 			{
 				return event;
 			}
@@ -385,7 +386,7 @@ public class TaskBrowserOverlay extends Overlay
 
 	private final MouseWheelListener wheel = event ->
 	{
-		if (open && mouseInWindow && menu == Menu.NONE)
+		if ((open || questPane != null) && mouseInWindow && menu == Menu.NONE)
 		{
 			scroll += event.getWheelRotation() * ROW;
 			event.consume();
@@ -393,7 +394,7 @@ public class TaskBrowserOverlay extends Overlay
 		return event;
 	};
 
-	// Esc closes the window. Search typing goes through a chatbox
+	// Esc closes the window; any key closes the quest pane. Search typing goes through a chatbox
 	// input (startSearch), so key-remapping plugins don't eat the letters.
 	private final KeyListener keys = new KeyListener()
 	{
@@ -409,6 +410,8 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				tasksKeyHeld = true;
 			}
+			// Any key (a tab hotkey, Esc...) closes the quest pane, so it never blocks a prayer switch.
+			questPane = null;
 			if (open && !searchFocused && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 			{
 				close();
@@ -496,6 +499,7 @@ public class TaskBrowserOverlay extends Overlay
 			return;
 		}
 		open = true;
+		questPane = null;
 		pinnedChunk = null;
 		menu = Menu.NONE;
 		stopSearch();
@@ -598,7 +602,7 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			return;
 		}
-		if (open)
+		if (open || questPane != null)
 		{
 			quests.refreshStates(QUEST_CHECKS_PER_TICK);
 		}
@@ -705,6 +709,11 @@ public class TaskBrowserOverlay extends Overlay
 					else if (item instanceof NuzlockeTask && SwingUtilities.isRightMouseButton(e))
 					{
 						toggleSaved(((NuzlockeTask) item).getTaskId());
+					}
+					else if (item instanceof NuzlockeTask && QuestRequirements.isQuestTask((NuzlockeTask) item))
+					{
+						// Quests aren't tracked: their requirements open over the side panel instead.
+						openQuestPane((NuzlockeTask) item);
 					}
 					else if (item instanceof NuzlockeTask)
 					{
@@ -1439,6 +1448,11 @@ public class TaskBrowserOverlay extends Overlay
 	public Dimension render(Graphics2D graphics)
 	{
 		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		if (!open && questPane != null && loggedIn)
+		{
+			drawQuestPane(graphics);
+			return null;
+		}
 		if (!open || !loggedIn)
 		{
 			hoveredAction = null;
@@ -1596,33 +1610,12 @@ public class TaskBrowserOverlay extends Overlay
 		int detailWidth = list.width - 54;
 		List<List<QuestRequirements.Line>> details = new ArrayList<>();
 		int contentHeight = 0;
-		int targetOffset = -1;
 		for (Entry entry : entries)
 		{
-			List<QuestRequirements.Line> wrapped = new ArrayList<>();
-			if (entry.task != null && expanded.contains(entry.task.getTaskId()))
-			{
-				for (QuestRequirements.Line line : detailLines(entry.task))
-				{
-					boolean first = true;
-					for (String part : wrap(sm, line.text, detailWidth - lineIndent(line)))
-					{
-						wrapped.add(line.withText(part, first));
-						first = false;
-					}
-				}
-			}
-			if (entry.task != null && entry.task.getTaskId().equals(scrollToTask))
-			{
-				targetOffset = contentHeight;
-			}
+			List<QuestRequirements.Line> wrapped = entry.task != null && expanded.contains(entry.task.getTaskId())
+				? wrapDetail(sm, entry.task, detailWidth) : new ArrayList<>();
 			details.add(wrapped);
 			contentHeight += ROW + detailHeight(wrapped);
-		}
-		if (scrollToTask != null)
-		{
-			scroll = targetOffset < 0 ? scroll : Math.max(0, targetOffset - 6);
-			scrollToTask = null;
 		}
 		scroll = Math.max(0, Math.min(scroll, Math.max(0, contentHeight - list.height)));
 
@@ -2146,16 +2139,8 @@ public class TaskBrowserOverlay extends Overlay
 			fill(graphics, new Rectangle(row.x, row.y, 3, row.height), TITLE);
 			graphics.drawRect(row.x, row.y, row.width - 1, row.height - 1);
 		}
-		long sinceFlash = System.currentTimeMillis() - flashAt;
-		if (taskId.equals(flashTask) && sinceFlash < FLASH_MS)
-		{
-			// Just jumped to from a quest link: an outline that fades out.
-			graphics.setColor(new Color(255, 152, 31, (int) (255 * (1 - sinceFlash / (double) FLASH_MS))));
-			graphics.drawRect(row.x + 1, row.y + 1, row.width - 3, row.height - 3);
-			graphics.drawRect(row.x + 2, row.y + 2, row.width - 5, row.height - 5);
-		}
 
-		// Expand arrow, star and archive book; added before the row so they win the click.
+		// Expand arrow (a quest's opens its pane), star and archive book; added first so they win the click.
 		int iconY = row.y + (ROW - 18) / 2;
 		Rectangle arrowArea = new Rectangle(row.x + 2, iconY, 14, 18);
 		Rectangle star = new Rectangle(row.x + 18, iconY, 18, 18);
@@ -2167,7 +2152,11 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				hits.add(new Hit(arrowArea.intersection(list), () ->
 				{
-					if (!expanded.remove(taskId))
+					if (QuestRequirements.isQuestTask(task))
+					{
+						openQuestPane(task);
+					}
+					else if (!expanded.remove(taskId))
 					{
 						expanded.add(taskId);
 					}
@@ -2175,23 +2164,19 @@ public class TaskBrowserOverlay extends Overlay
 			}
 			hits.add(new Hit(star.intersection(list), () -> toggleSaved(taskId)));
 			hits.add(new Hit(book.intersection(list), () -> toggleArchived(task)));
-			// Detail lines: a section header opens/closes, a chunk shows on the map, a quest jumps to it.
-			FontMetrics detailFm = graphics.getFontMetrics(small);
-			for (int i = 0; i < detail.size(); i++)
-			{
-				QuestRequirements.Line line = detail.get(i);
-				if (line.clickable())
-				{
-					Runnable action = line.region > 0 ? () -> showChunkOnMap(line.region, line.text.trim())
-						: line.quest != null ? () -> showQuest(line.quest, line.text.replace(" (checking)", ""))
-						: () -> quests.toggleSection(line.toggle);
-					hits.add(new Hit(detailLineArea(detailFm, detail, row, i).intersection(list), action));
-				}
-			}
-			// Clicking the tracked task stops tracking it; any other row tracks that task.
+		}
+		int textX = book.x + book.width + 6;
+		drawDetail(graphics, detail, textX, row.y + ROW - 1, list, mx, my, small);
+		if (inList)
+		{
+			// A quest opens in the pane; clicking the tracked task stops tracking it; any other row tracks it.
 			hits.add(new Hit(row.intersection(list), () ->
 			{
-				if (isTracked)
+				if (QuestRequirements.isQuestTask(task))
+				{
+					openQuestPane(task);
+				}
+				else if (isTracked)
 				{
 					plugin.clearSelectedTask();
 				}
@@ -2213,7 +2198,6 @@ public class TaskBrowserOverlay extends Overlay
 		TaskArchive.drawBook(graphics, book.x + 2, book.y + 3, 10, 12,
 			isArchived || (inList && book.contains(mx, my)) ? BOOK_ON : STAR_OFF, isArchived);
 
-		int textX = book.x + book.width + 6;
 		int rightEdge = row.x + row.width - 8;
 		boolean canDo = canDo(task);
 		String name = (task.getName() == null ? taskId : task.getName()) + (canDo ? "" : " " + levelNote(task));
@@ -2239,19 +2223,35 @@ public class TaskBrowserOverlay extends Overlay
 		}
 		graphics.setColor(SUBTEXT);
 		graphics.drawString(fit(sm, info, progressStart - 10 - textX), textX, row.y + 30);
+	}
 
-		// Expanded details underneath.
+	/**
+	 * Detail lines from (x, y). Clickable ones get a hit: a section header opens/closes, a
+	 * chunk shows on the map, a quest opens in the pane.
+	 */
+	private void drawDetail(Graphics2D graphics, List<QuestRequirements.Line> detail, int x, int y, Rectangle clip,
+		int mx, int my, Font small)
+	{
+		graphics.setFont(small);
+		FontMetrics sm = graphics.getFontMetrics();
+		boolean in = clip.contains(mx, my);
 		for (int i = 0; i < detail.size(); i++)
 		{
 			QuestRequirements.Line line = detail.get(i);
-			Rectangle area = detailLineArea(sm, detail, row, i);
+			Rectangle area = detailLineArea(sm, detail, x, y, i);
+			if (line.clickable() && in)
+			{
+				hits.add(new Hit(area.intersection(clip), line.region > 0 ? () -> showChunkOnMap(line.region, line.text.trim())
+					: line.quest != null ? () -> showQuest(line.quest, line.text.replace(" (checking)", ""))
+					: () -> quests.toggleSection(line.toggle)));
+			}
 			int lineY = area.y + 1 + sm.getAscent() - 2;
-			boolean hover = line.clickable() && inList && area.contains(mx, my);
+			boolean hover = line.clickable() && in && area.contains(mx, my);
 			if (line.header)
 			{
-				arrow(graphics, textX + 3, lineY - sm.getAscent() / 2, line.open ? DOWN : RIGHT, hover ? Color.WHITE : SUBTEXT);
+				arrow(graphics, x + 3, lineY - sm.getAscent() / 2, line.open ? DOWN : RIGHT, hover ? Color.WHITE : SUBTEXT);
 			}
-			int lineX = textX + lineIndent(line);
+			int lineX = x + lineIndent(line);
 			graphics.setColor(line.color);
 			graphics.drawString(line.text, lineX, lineY);
 			if (hover)
@@ -2261,16 +2261,33 @@ public class TaskBrowserOverlay extends Overlay
 		}
 	}
 
-	/** Where detail line {@code index} is: from the task name's left edge to the end of its text. */
-	private static Rectangle detailLineArea(FontMetrics fm, List<QuestRequirements.Line> detail, Rectangle row, int index)
+	/** A task's detail lines, wrapped to {@code width}. */
+	private List<QuestRequirements.Line> wrapDetail(FontMetrics sm, NuzlockeTask task, int width)
 	{
-		int y = row.y + ROW - 1;
+		List<QuestRequirements.Line> wrapped = new ArrayList<>();
+		for (QuestRequirements.Line line : detailLines(task))
+		{
+			boolean first = true;
+			for (String part : wrap(sm, line.text, width - lineIndent(line)))
+			{
+				wrapped.add(line.withText(part, first));
+				first = false;
+			}
+		}
+		return wrapped;
+	}
+
+	/** Where detail line {@code index} is: from x to the end of its text. */
+	private static Rectangle detailLineArea(FontMetrics fm, List<QuestRequirements.Line> detail, int x, int top, int index)
+	{
+		int y = top;
+
 		for (int i = 0; i <= index; i++)
 		{
 			y += detail.get(i).gap + (i < index ? DETAIL_LINE : 0);
 		}
 		QuestRequirements.Line line = detail.get(index);
-		return new Rectangle(row.x + 58, y, lineIndent(line) + fm.stringWidth(line.text), DETAIL_LINE);
+		return new Rectangle(x, y, lineIndent(line) + fm.stringWidth(line.text), DETAIL_LINE);
 	}
 
 	private static int lineIndent(QuestRequirements.Line line)
@@ -2283,10 +2300,7 @@ public class TaskBrowserOverlay extends Overlay
 		return lines.isEmpty() ? 0 : 4 + lines.stream().mapToInt(l -> DETAIL_LINE + l.gap).sum();
 	}
 
-	/**
-	 * A prerequisite quest was clicked: show it (Quests filter, requirements open), scroll
-	 * to it and outline it; or say in chat that it isn't a task right now.
-	 */
+	/** A prerequisite quest was clicked: open it in the pane, or say in chat that it isn't a task right now. */
 	private void showQuest(String questName, String display)
 	{
 		NuzlockeTask found = pool(true).stream()
@@ -2298,20 +2312,76 @@ public class TaskBrowserOverlay extends Overlay
 			chat(display + " isn't in your task list (it's done, or not a ChunkBlazer quest).");
 			return;
 		}
-		String id = found.getTaskId();
-		finishNew();
-		tab = archive.ids().contains(id) ? Tab.ARCHIVED : Tab.ACTIVE;
-		clearFilters();
-		filterOn = Collections.unmodifiableSet(EnumSet.of(Filter.QUESTS));
-		search = "";
-		pinnedChunk = null;
-		currentChunkOnly = false;
-		menu = Menu.NONE;
-		expanded.add(id);
-		refresh();
-		scrollToTask = id;
-		flashTask = id;
-		flashAt = System.currentTimeMillis();
+		openQuestPane(found);
+	}
+
+	/**
+	 * Show a quest's requirements over the side panel (inventory, prayer...), not over its
+	 * tab buttons, and close the window so the map can be seen. It has its own close
+	 * button, and switching tab or pressing any key closes it too.
+	 */
+	void openQuestPane(NuzlockeTask task)
+	{
+		close();
+		questPane = task;
+		scroll = 0;
+	}
+
+	private void drawQuestPane(Graphics2D graphics)
+	{
+		NuzlockeTask task = questPane;
+		Rectangle pane = sidePanel();
+		net.runelite.api.Point point = client.getMouseCanvasPosition();
+		int mx = point == null ? -1 : point.getX();
+		int my = point == null ? -1 : point.getY();
+		hits.clear();
+		menuHits.clear();
+		menuBox = null;
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		fill(graphics, pane, BACKGROUND);
+		graphics.setColor(BORDER);
+		graphics.drawRect(pane.x, pane.y, pane.width - 1, pane.height - 1);
+		Rectangle close = new Rectangle(pane.x + pane.width - 20, pane.y + 6, 14, 14);
+		hits.add(new Hit(close, () -> questPane = null));
+		cross(graphics, close.x + 7, close.y + 7, 5, close.contains(mx, my) ? NO_LEVEL : SUBTEXT);
+		graphics.setFont(FontManager.getRunescapeBoldFont());
+		graphics.setColor(TITLE);
+		graphics.drawString(fit(graphics.getFontMetrics(), task.getName(), pane.width - 32), pane.x + 6, pane.y + 18);
+
+		Font small = FontManager.getRunescapeSmallFont();
+		List<QuestRequirements.Line> lines = wrapDetail(graphics.getFontMetrics(small), task, pane.width - 12);
+		Rectangle body = new Rectangle(pane.x + 1, pane.y + 24, pane.width - 2, pane.height - 25);
+		scroll = Math.max(0, Math.min(scroll, detailHeight(lines) - body.height));
+		Shape oldClip = graphics.getClip();
+		graphics.clip(body);
+		drawDetail(graphics, lines, pane.x + 6, body.y - scroll, body, mx, my, small);
+		graphics.setClip(oldClip);
+		finishHover(pane, mx, my);
+	}
+
+	/** The side panel's area in whichever layout is on; a spot by the right edge if it's closed. */
+	private Rectangle sidePanel()
+	{
+		for (int id : new int[]{InterfaceID.Toplevel.SIDE_PANELS, InterfaceID.ToplevelOsrsStretch.SIDE_PANELS,
+			InterfaceID.ToplevelPreEoc.SIDE_PANELS, InterfaceID.ToplevelOsm.SIDE_PANELS})
+		{
+			Widget panel = client.getWidget(id);
+			if (panel != null && !panel.isHidden())
+			{
+				return panel.getBounds();
+			}
+		}
+		return new Rectangle(client.getCanvasWidth() - 214, client.getCanvasHeight() - 340, 204, 275);
+	}
+
+	/** Switching side tab (prayer, inventory...) closes the quest pane. */
+	@Subscribe
+	public void onVarClientIntChanged(VarClientIntChanged event)
+	{
+		if (event.getIndex() == VarClientID.TOPLEVEL_PANEL)
+		{
+			questPane = null;
+		}
 	}
 
 	/** Jump the world map to a chunk and outline it; if the map is closed, say to open it. */

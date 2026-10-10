@@ -52,6 +52,8 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
+import net.runelite.api.Item;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.KeyCode;
 import net.runelite.api.Menu;
 import net.runelite.api.MenuAction;
@@ -60,6 +62,7 @@ import net.runelite.api.NPC;
 import net.runelite.api.NPCComposition;
 import net.runelite.api.ObjectComposition;
 import net.runelite.api.Scene;
+import net.runelite.api.Skill;
 import net.runelite.api.Tile;
 import net.runelite.api.TileObject;
 import net.runelite.api.events.DecorativeObjectDespawned;
@@ -72,6 +75,7 @@ import net.runelite.api.events.GroundObjectDespawned;
 import net.runelite.api.events.GroundObjectSpawned;
 import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WallObjectDespawned;
 import net.runelite.api.events.WallObjectSpawned;
 import net.runelite.client.config.ConfigManager;
@@ -84,6 +88,7 @@ import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.util.Text;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.InventoryID;
 
 /**
  * Outlines every NPC and object in the scene that an active (unfinished) task
@@ -265,6 +270,13 @@ public class TaskTargetHighlighter extends Overlay
 	// The task auto-tracking last put in the task box. If the tracked task is anything
 	// else, the player chose it, and auto-tracking leaves it alone.
 	private volatile String autoTrackedId;
+	// Skilling auto-track waits for proof: the tasks the last click could be for, the
+	// inventory then, and the tick a skill's XP went up (see onStatChanged).
+	private List<NuzlockeTask> pending = Collections.emptyList();
+	private Map<Integer, Integer> pendingItems = Collections.emptyMap();
+	private int pendingTick;
+	private Skill gainedSkill;
+	private final Map<Skill, Integer> lastXp = new HashMap<>();
 
 	// What the active tasks want. Rebuilt every game tick (cheap: ~100 tasks), so
 	// newly unlocked or completed tasks show up within a tick.
@@ -364,6 +376,10 @@ public class TaskTargetHighlighter extends Overlay
 			return;
 		}
 		rebuildIndex();
+		if (gainedSkill != null)
+		{
+			trackWhatWasMade();
+		}
 	}
 
 	/** The outlines have their own checkbox; the Tasks menu belongs to the Yellow paint style. */
@@ -987,9 +1003,12 @@ public class TaskTargetHighlighter extends Overlay
 	// --- Auto-tracking -------------------------------------------------------
 
 	/**
-	 * Using an NPC or object that has tasks tracks one of them. Our own Tasks submenu
-	 * entries are RUNELITE-type, so picking a task from it (a manual choice) never
-	 * lands here.
+	 * Attacking or talking to an NPC that has tasks tracks one straight away. Anything
+	 * else (a range, a fishing spot, a rock...) only remembers the click: the task is
+	 * tracked once that skill's XP goes up for something the task names, so a cooking
+	 * task is tracked when you cook its fish, not when you click a range (burns don't
+	 * count). Our own Tasks submenu entries are RUNELITE-type, so picking a task from
+	 * it (a manual choice) never lands here.
 	 */
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
@@ -1008,6 +1027,12 @@ public class TaskTargetHighlighter extends Overlay
 				return;
 			}
 			tasks = tasksForNpc(npc);
+			String option = Text.removeTags(event.getMenuOption()).toLowerCase();
+			if (option.equals("attack") || option.equals("talk-to"))
+			{
+				autoTrack(tasks);
+				return;
+			}
 		}
 		else if (isObjectAction(action))
 		{
@@ -1017,7 +1042,84 @@ public class TaskTargetHighlighter extends Overlay
 		{
 			return;
 		}
-		autoTrack(tasks);
+		pending = tasks;
+		pendingItems = inventory();
+		pendingTick = client.getTickCount();
+	}
+
+	/** Remembers which skill's XP went up; the tick handler checks it once the inventory has caught up. */
+	@Subscribe
+	public void onStatChanged(StatChanged event)
+	{
+		Integer before = lastXp.put(event.getSkill(), event.getXp());
+		if (before != null && event.getXp() > before && !pending.isEmpty())
+		{
+			gainedSkill = event.getSkill();
+		}
+	}
+
+	/**
+	 * XP went up within ~30 ticks of a skilling click: track a pending task of that skill
+	 * whose item is one that just appeared or was used up ("raw " ignored), or any of
+	 * them if the task names no item (pickpocketing, agility...).
+	 */
+	private void trackWhatWasMade()
+	{
+		Skill skill = gainedSkill;
+		gainedSkill = null;
+		if (client.getTickCount() - pendingTick > 30)
+		{
+			pending = Collections.emptyList();
+			return;
+		}
+		Set<String> changed = new HashSet<>();
+		Map<Integer, Integer> now = inventory();
+		for (int id : union(now.keySet(), pendingItems.keySet()))
+		{
+			if (!now.getOrDefault(id, 0).equals(pendingItems.getOrDefault(id, 0)))
+			{
+				changed.add(client.getItemDefinition(id).getName().toLowerCase().replaceFirst("^raw ", ""));
+			}
+		}
+		pendingItems = now;
+		List<NuzlockeTask> made = new ArrayList<>();
+		for (NuzlockeTask task : pending)
+		{
+			Skill taskSkill = TaskTargetExtras.categorySkill(task.getCategory());
+			String item = itemName(task).replaceFirst("^raw ", "");
+			String name = task.getName() == null ? "" : task.getName().toLowerCase();
+			if ((taskSkill == null || taskSkill == skill)
+				&& (item.isEmpty() || changed.stream().anyMatch(c -> c.equals(item) || name.contains(c))))
+			{
+				made.add(task);
+			}
+		}
+		autoTrack(made);
+	}
+
+	/** Item id to count in the inventory. */
+	private Map<Integer, Integer> inventory()
+	{
+		Map<Integer, Integer> counts = new HashMap<>();
+		ItemContainer inv = client.getItemContainer(InventoryID.INV);
+		if (inv != null)
+		{
+			for (Item item : inv.getItems())
+			{
+				if (item.getId() > 0)
+				{
+					counts.merge(item.getId(), item.getQuantity(), Integer::sum);
+				}
+			}
+		}
+		return counts;
+	}
+
+	private static Set<Integer> union(Set<Integer> a, Set<Integer> b)
+	{
+		Set<Integer> all = new HashSet<>(a);
+		all.addAll(b);
+		return all;
 	}
 
 	private static boolean isNpcAction(MenuAction action)

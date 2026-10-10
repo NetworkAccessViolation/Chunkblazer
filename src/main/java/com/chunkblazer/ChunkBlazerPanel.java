@@ -146,7 +146,7 @@ public class ChunkBlazerPanel extends PluginPanel
 			BorderFactory.createLineBorder(FLAME),
 			new EmptyBorder(5, 6, 5, 6)));
 		overlayHint.add(new WrappingTextLabel("Click a task to track it, right-click to star it, "
-			+ "click a heading to fold it.", FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 16));
+			+ "click a quest for its requirements, click a heading to fold it.", FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 16));
 		overlayHint.setVisible(false);
 		mainPanel.add(overlayHint);
 		mainPanel.add(Box.createVerticalStrut(8));
