@@ -40,10 +40,6 @@ import net.runelite.client.config.Keybind;
  * Only the names, descriptions, sections and positions are about presentation. Every
  * keyName is unchanged, so players' saved choices carry across any reshuffle here.
  */
-// The task window's cogwheel controls the task tracker style, auto-tracking, the saved
-// tasks tracker, the outline mode, chunk borders, walls and the chunk name banner. Those
-// items are hidden here (their keys, and players' saved choices, are unchanged); their
-// colours stay visible below, where RuneLite's colour picker works.
 @ConfigGroup("chunkblazer")
 public interface ChunkBlazerConfig extends Config
 {
@@ -318,11 +314,10 @@ public interface ChunkBlazerConfig extends Config
 
 	@ConfigItem(
 		keyName = "taskTrackerStyle",
-		name = "Task Tracker",
-		description = "How the task you select is shown in game. Off hides it",
+		name = "Task Box",
+		description = "How the task you track is shown in game. Off hides it",
 		section = taskSection,
-		position = 1,
-		hidden = true
+		position = 1
 	)
 	default TaskTrackerStyle taskTrackerStyle()
 	{
@@ -330,26 +325,12 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "taskRightClickMenu",
-		name = "Right-Click Tasks Menu",
-		description = "Add a Tasks submenu when right-clicking NPCs and objects your tasks need "
-			+ "(needs the Yellow paint by Vani task tracker)",
-		section = taskSection,
-		position = 2
-	)
-	default boolean taskRightClickMenu()
-	{
-		return true;
-	}
-
-	@ConfigItem(
 		keyName = "autoTrackTasks",
 		name = "Auto-Track Tasks",
-		description = "When you use an NPC or object a task needs (attack, talk, chop, mine...), track its "
-			+ "lowest-points task. A task you tracked yourself for that target is kept.",
+		description = "Using an NPC or object a task needs (attack, talk, chop, mine...) tracks that task. "
+			+ "A task you picked yourself is kept",
 		section = taskSection,
-		position = 6,
-		hidden = true
+		position = 2
 	)
 	default boolean autoTrackTasks()
 	{
@@ -359,11 +340,9 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showSavedTaskTracker",
 		name = "Saved Tasks Tracker",
-		description = "A bar at the bottom of the screen that opens a list of your saved tasks, nearest first "
-			+ "(Alt + drag to move it)",
+		description = "A bar by the inventory that opens your saved tasks, nearest first (Alt + drag to move it)",
 		section = taskSection,
-		position = 7,
-		hidden = true
+		position = 3
 	)
 	default boolean showSavedTaskTracker()
 	{
@@ -371,11 +350,23 @@ public interface ChunkBlazerConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "taskRightClickMenu",
+		name = "Right-Click Tasks Menu",
+		description = "Adds a Tasks submenu when right-clicking NPCs and objects your tasks need",
+		section = taskSection,
+		position = 4
+	)
+	default boolean taskRightClickMenu()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "highlightTaskTargets",
 		name = "Outline Task Targets",
-		description = "Outline NPCs and objects that one of your active tasks needs",
+		description = "Older on/off outline setting, kept so Outlines starts where players left it",
 		section = taskSection,
-		position = 3,
+		position = 5,
 		hidden = true
 	)
 	default boolean highlightTaskTargets()
@@ -383,32 +374,12 @@ public interface ChunkBlazerConfig extends Config
 		return true;
 	}
 
-	/**
-	 * Which NPCs and objects get a task outline. Set from the task window's cogwheel.
-	 * Until it's chosen there, follows the older on/off "Outline Task Targets" setting,
-	 * so upgrading doesn't change anyone's outlines.
-	 */
-	@ConfigItem(
-		keyName = "highlightEquipItems",
-		name = "Highlight Task Items",
-		description = "Outline items with tasks (gear for equip tasks, tools like a knife or tinderbox) in "
-			+ "your inventory, bank and shops (set from the task window's cogwheel)",
-		section = taskSection,
-		position = 3,
-		hidden = true
-	)
-	default boolean highlightEquipItems()
-	{
-		return true;
-	}
-
 	@ConfigItem(
 		keyName = "taskOutlineMode",
-		name = "Outline Mode",
-		description = "Which task targets get an outline (set from the task window's cogwheel)",
+		name = "Outlines",
+		description = "Which task NPCs and objects get an outline: all, saved tasks, ones you can do now, or none",
 		section = taskSection,
-		position = 3,
-		hidden = true
+		position = 5
 	)
 	default OutlineMode taskOutlineMode()
 	{
@@ -420,7 +391,7 @@ public interface ChunkBlazerConfig extends Config
 		name = "Outline Colour",
 		description = "Outline colour for task NPCs and objects you can do now",
 		section = taskSection,
-		position = 4
+		position = 6
 	)
 	default java.awt.Color taskHighlightColor()
 	{
@@ -432,11 +403,24 @@ public interface ChunkBlazerConfig extends Config
 		name = "Outline Colour (Level Too Low)",
 		description = "Outline colour when you don't have the level for any of that target's tasks",
 		section = taskSection,
-		position = 5
+		position = 7
 	)
 	default java.awt.Color taskHighlightUnavailableColor()
 	{
 		return new java.awt.Color(255, 60, 60);
+	}
+
+	@ConfigItem(
+		keyName = "highlightEquipItems",
+		name = "Highlight Task Items",
+		description = "Outlines items your tasks need (gear to equip, tools like a knife or tinderbox) "
+			+ "in your inventory, bank and shops",
+		section = taskSection,
+		position = 8
+	)
+	default boolean highlightEquipItems()
+	{
+		return true;
 	}
 
 	// ── World Map ────────────────────────────────────────────────────────
@@ -625,8 +609,7 @@ public interface ChunkBlazerConfig extends Config
 		name = "Chunk Borders",
 		description = "Draw chunk borders on the ground in the game world",
 		section = inGameSection,
-		position = 0,
-		hidden = true
+		position = 0
 	)
 	default boolean showSceneChunks()
 	{
@@ -638,8 +621,7 @@ public interface ChunkBlazerConfig extends Config
 		name = "Locked Chunk Walls",
 		description = "Draw a see-through wall along the border between unlocked and locked chunks",
 		section = inGameSection,
-		position = 1,
-		hidden = true
+		position = 1
 	)
 	default boolean showChunkWalls()
 	{
@@ -664,8 +646,7 @@ public interface ChunkBlazerConfig extends Config
 		name = "Chunk Name Banner",
 		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
 		section = inGameSection,
-		position = 3,
-		hidden = true
+		position = 3
 	)
 	default boolean showChunkNamePopups()
 	{
