@@ -5409,10 +5409,10 @@ public class ChunkBlazerPlugin extends Plugin
 	// The task the player is tracking (task window, right-click Tasks menu). In memory only.
 	private volatile NuzlockeTask selectedTask;
 
-	/** Track a task: from the task window or the in-game "Tasks" right-click submenu. */
+	/** Track a task: from the task window or the in-game "Tasks" right-click submenu. Quests aren't tracked. */
 	public void selectTaskFromGame(NuzlockeTask task)
 	{
-		if (task != null)
+		if (task != null && !QuestRequirements.isQuestTask(task))
 		{
 			selectedTask = task;
 		}
