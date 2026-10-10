@@ -48,6 +48,7 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.KeyCode;
+import net.runelite.api.MenuEntry;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
@@ -501,7 +502,11 @@ public class SavedTaskTracker extends Overlay
 		graphics.drawString("Saved tasks (" + list.size() + ")", bar.x + PAD, bar.y + (BAR + fm.getAscent()) / 2 - 2);
 		drawChevron(graphics, bar.x + bar.width - 12, bar.y + BAR / 2, expanded, barHover ? Color.WHITE : SUBTEXT);
 
-		hoveredAction = hovered;
+		// Under a game interface (bank, shop...)? Leave its clicks and scrolling alone.
+		MenuEntry[] menu = client.getMenuEntries();
+		boolean underUi = menu.length > 0 && menu[menu.length - 1].getWidget() != null;
+		mouseOverList &= !underUi;
+		hoveredAction = underUi ? null : hovered;
 		hoveredTaskId = hoveredId;
 		return new Dimension(WIDTH, height);
 	}
