@@ -643,7 +643,6 @@ public class TaskBrowserOverlay extends Overlay
 	// The side panel's task list, styled like the original panel: stats, the selected task,
 	// then Saved, Chunk, Active and Global sections of rounded tier cards. Click a heading
 	// to fold it. It uses the window's task data, so none of that logic is repeated here.
-	private static final int SIDE_MAX = 25;
 	private static final Color FLAME = new Color(255, 140, 0);
 	private final JList<Object> sideList = new JList<Object>()
 	{
@@ -859,7 +858,7 @@ public class TaskBrowserOverlay extends Overlay
 		return !sideSearch.getText().trim().isEmpty();
 	}
 
-	/** A header with its count, then (unless folded) up to SIDE_MAX tasks and a "+N more" line. */
+	/** A header with its count, then (unless folded) its tasks, or "Nothing here". */
 	private void addSection(List<Object> items, String title, List<NuzlockeTask> tasks)
 	{
 		items.add(title + " (" + tasks.size() + ")");
@@ -867,21 +866,20 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			return;
 		}
-		items.addAll(tasks.subList(0, Math.min(SIDE_MAX, tasks.size())));
-		if (tasks.size() > SIDE_MAX || tasks.isEmpty())
+		items.addAll(tasks);
+		if (tasks.isEmpty())
 		{
-			items.add(tasks.size() - SIDE_MAX);
+			items.add(0);
 		}
 	}
 
-	/** A section heading, a "+N more" line, or a rounded tier card like the original panel's. */
+	/** A section heading, a "Nothing here" line, or a rounded tier card like the original panel's. */
 	private JLabel sideRow(Object item, boolean hover)
 	{
 		Font small = FontManager.getRunescapeSmallFont().deriveFont(sideSize);
 		if (item instanceof Integer)
 		{
-			int extra = (Integer) item;
-			JLabel more = new JLabel(extra > 0 ? "+" + extra + " more in the task window" : "Nothing here");
+			JLabel more = new JLabel("Nothing here");
 			more.setFont(small);
 			more.setForeground(Color.GRAY);
 			more.setBorder(new EmptyBorder(2, 8, 6, 4));
@@ -911,13 +909,13 @@ public class TaskBrowserOverlay extends Overlay
 		int progress = Math.min(task.getCurrentProgress(), target);
 		Color tier = TaskCardTier.fromTask(task).getAccent();
 		String description = task.getDescription() == null ? "" : task.getDescription().trim();
-		// Name; category, points and level; chunk; description. Then a progress bar.
+		// Name (a size up); category and level; chunk; description. Then a progress bar.
 		JLabel card = new JLabel("<html><table cellpadding=0 cellspacing=0 width=165><tr><td>"
-			+ "<font color='#96ff96'>"
+			+ "<font color='#96ff96' size='+1'>"
 			+ (saved(task) ? "&#9733; " : "") + (task.getName() == null ? task.getTaskId() : task.getName())
-			+ "</font><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory()) + "  "
-			+ task.getBasePoints() + "pt" + (task.getLevelRequirement() > 1 ? "  L" + task.getLevelRequirement() : "")
-			+ "</font><br><font color='#8cc8e6'>" + (global ? "Global" : "Chunk: " + chunkNames.getOrDefault(task.getTaskId(), ""))
+			+ "</font><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory())
+			+ (task.getLevelRequirement() > 1 ? "  L" + task.getLevelRequirement() : "")
+			+ "</font><br><font color='#8cc8e6'>" + (global ? "Global" : chunkNames.getOrDefault(task.getTaskId(), ""))
 			+ "</font>" + (description.isEmpty() ? "" : "<br><font color='#b9b9b9'>" + description + "</font>")
 			+ "</td></tr></table></html>")
 		{
