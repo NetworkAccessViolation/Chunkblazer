@@ -86,6 +86,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.VarClientIntChanged;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.widgets.Widget;
@@ -315,6 +316,8 @@ public class TaskBrowserOverlay extends Overlay
 	private final Deque<NuzlockeTask> questBack = new ConcurrentLinkedDeque<>();
 	// The saved-list row under the mouse, for right-click to unsave.
 	private volatile String paneRowId;
+	// Where the side panel was when the box was last drawn, to notice it moving.
+	private Rectangle paneSide;
 
 	// New-task alert: unseen active tasks, the snapshot the New tab shows, the Points orb.
 	private final Set<String> newIds = ConcurrentHashMap.newKeySet();
@@ -1721,12 +1724,23 @@ public class TaskBrowserOverlay extends Overlay
 	public Dimension render(Graphics2D graphics)
 	{
 		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		if (questPane == null)
+		{
+			paneSide = null;
+		}
 		if (!open && questPane != null && loggedIn)
 		{
-			if (!config.movableTaskBox())
+			// Anything else that moves the side panel out from under it closes it too.
+			Rectangle side = sidePanel();
+			if (paneSide != null && !paneSide.equals(side))
 			{
-				drawQuestPane(graphics, sidePanel(), 0, 0);
+				questPane = null;
 			}
+			else if (!config.movableTaskBox())
+			{
+				drawQuestPane(graphics, side, 0, 0);
+			}
+			paneSide = side;
 			return null;
 		}
 		if (!open || !loggedIn)
@@ -2604,6 +2618,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		// Opened fresh (window, side panel, bubble): no Back trail from whatever was open before.
 		questBack.clear();
+		paneSide = null;
 		showInPane(task);
 	}
 
@@ -2852,7 +2867,30 @@ public class TaskBrowserOverlay extends Overlay
 				return panel.getBounds();
 			}
 		}
+		// A bank, shop, Grand Exchange or trade hides the side panels and shows its own
+		// inventory in their place: sit over that instead.
+		for (int group : new int[]{15, 301, 467, 336})
+		{
+			Widget side = client.getWidget(group, 0);
+			if (side != null && !side.isHidden() && side.getWidth() > 0)
+			{
+				return side.getBounds();
+			}
+		}
 		return new Rectangle(client.getCanvasWidth() - 214, client.getCanvasHeight() - 340, 204, 275);
+	}
+
+	// Interfaces that take over the screen and inventory: bank, deposit box, shop, Grand
+	// Exchange and its collection box, seed vault and trade. Opening one closes the box.
+	private static final Set<Integer> TAKEOVER = Set.of(12, 192, 300, 465, 402, 631, 335);
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (TAKEOVER.contains(event.getGroupId()))
+		{
+			questPane = null;
+		}
 	}
 
 	/** Switching side tab (prayer, inventory...) closes the quest pane. */
