@@ -345,16 +345,12 @@ public class TaskCardOverlay extends Overlay
 	/** True while there is anything to draw or click. */
 	public boolean isActive()
 	{
-		return plugin.isModeReady() && config.showTaskCards() && !cards.isEmpty();
+		return config.showTaskCards() && !cards.isEmpty();
 	}
 
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isModeReady())
-		{
-			return null;
-		}
 		if (!config.showTaskCards())
 		{
 			// Disabled mid-session: don't strand pending tasks behind an overlay that

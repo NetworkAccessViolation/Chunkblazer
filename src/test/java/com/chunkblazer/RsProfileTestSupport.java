@@ -70,10 +70,9 @@ final class RsProfileTestSupport
 
 	/**
 	 * Log the plugin in as a player who has locked Casual, so the paths gated on a
-	 * picked mode (rolling, unlocking, loading tasks) run. {@code state} is the map
-	 * {@link #install} returned.
+	 * picked mode run.
 	 */
-	static void lockMode(ChunkBlazerPlugin plugin, Map<String, String> state) throws Exception
+	static void lockMode(ChunkBlazerPlugin plugin, ConfigManager cm) throws Exception
 	{
 		Player player = mock(Player.class);
 		lenient().when(player.getName()).thenReturn("Tester");
@@ -85,7 +84,8 @@ final class RsProfileTestSupport
 
 		Method hash = ChunkBlazerPlugin.class.getDeclaredMethod("hashRsn", String.class);
 		hash.setAccessible(true);
-		state.put("accountModeHash", hash.invoke(plugin, "Tester") + ":CASUAL");
+		lenient().when(cm.getRSProfileConfiguration(GROUP, "accountModeHash"))
+			.thenReturn(hash.invoke(plugin, "Tester") + ":CASUAL");
 	}
 
 	/**

@@ -122,7 +122,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isModeReady() || config.taskTrackerStyle() != TaskTrackerStyle.VANI || client.getGameState() != GameState.LOGGED_IN)
+		if (config.taskTrackerStyle() != TaskTrackerStyle.VANI || client.getGameState() != GameState.LOGGED_IN)
 		{
 			hideButtons();
 			return null;

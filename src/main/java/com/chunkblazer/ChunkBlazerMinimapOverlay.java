@@ -102,7 +102,7 @@ public class ChunkBlazerMinimapOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isModeReady() || !config.showMinimapChunks())
+		if (!config.showMinimapChunks())
 		{
 			return null;
 		}

@@ -293,10 +293,9 @@ public class SavedTaskTracker extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isModeReady() || !config.showSavedTaskTracker() || client.getGameState() != GameState.LOGGED_IN)
+		if (!config.showSavedTaskTracker() || client.getGameState() != GameState.LOGGED_IN)
 		{
 			hoveredAction = null;
-			mouseOverList = false;
 			return null;
 		}
 

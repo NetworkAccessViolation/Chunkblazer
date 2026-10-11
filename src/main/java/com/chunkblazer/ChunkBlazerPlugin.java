@@ -434,37 +434,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		clientToolbar.addNavigation(navButton);
 
-		// Register world map overlay
-		overlayManager.add(worldMapOverlay);
-
-		// Region Locker-style world-map unlock: track the hold-to-unlock key.
-		keyManager.registerKeyListener(inputListener);
-
-		// Register minimap overlay for chunk visualization and click-to-unlock
-		overlayManager.add(minimapOverlay);
-
-		// Register scene overlay that draws chunk borders + locked-chunk wash on the gameplay screen
-		overlayManager.add(sceneOverlay);
-
-		// Legacy task completion popup overlay disabled - using animation overlay instead
-
-		// Register animated task completion overlay
-		overlayManager.add(taskCompletionAnimationOverlay);
-
-		// Task reveal cards. The mouse listener has to be registered alongside the
-		// overlay: it is what turns a click on a card into a flip (and swallows that
-		// click so it doesn't also walk the player into the middle of the screen).
-		overlayManager.add(taskCardOverlay);
-		mouseManager.registerMouseListener(taskCardInput);
-
-		overlayManager.add(selectedTaskOverlay);
-		overlayManager.add(taskTargetHighlighter);
-		eventBus.register(taskTargetHighlighter);
-		mouseManager.registerMouseListener(selectedTaskOverlayInput);
-
-		overlayManager.add(taskOverlay);
-
-		clientThread.invoke(orbWidget::startUp);
+		// The in-game UI starts once the account has a mode; see setModeReady.
 		// Load or assign a task if player is logged in
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
@@ -495,8 +465,72 @@ public class ChunkBlazerPlugin extends Plugin
 			syncFuture = null;
 		}
 		clientToolbar.removeNavigation(navButton);
+		setModeReady(false);
+		taskModuleManager.shutDown();
+		if (soundManager != null)
+		{
+			soundManager.shutdown();
+		}
+		if (assetStore != null)
+		{
+			assetStore.shutdown();
+		}
+		if (catalogStore != null)
+		{
+			catalogStore.shutdown();
+		}
+		activeTask = null;
+	}
+
+	/**
+	 * Start or stop everything the player sees and clicks in-game as one unit: overlays,
+	 * minimap orbs, the task window and their input listeners. It only runs while the
+	 * account has a mode, so until one is picked the side panel's mode picker is all
+	 * there is. Anything new that draws or takes input in-game belongs in here.
+	 */
+	private void setModeReady(boolean ready)
+	{
+		if (ready == modeReady)
+		{
+			return;
+		}
+		modeReady = ready;
+		if (ready)
+		{
+			overlayManager.add(worldMapOverlay);
+
+			// Region Locker-style world-map unlock: track the hold-to-unlock key.
+			keyManager.registerKeyListener(inputListener);
+			eventBus.register(unlockInputs);
+
+			// Register minimap overlay for chunk visualization and click-to-unlock
+			overlayManager.add(minimapOverlay);
+
+			// Register scene overlay that draws chunk borders + locked-chunk wash on the gameplay screen
+			overlayManager.add(sceneOverlay);
+
+			// Register animated task completion overlay
+			overlayManager.add(taskCompletionAnimationOverlay);
+
+			// Task reveal cards. The mouse listener has to be registered alongside the
+			// overlay: it is what turns a click on a card into a flip (and swallows that
+			// click so it doesn't also walk the player into the middle of the screen).
+			overlayManager.add(taskCardOverlay);
+			mouseManager.registerMouseListener(taskCardInput);
+
+			overlayManager.add(selectedTaskOverlay);
+			overlayManager.add(taskTargetHighlighter);
+			eventBus.register(taskTargetHighlighter);
+			mouseManager.registerMouseListener(selectedTaskOverlayInput);
+
+			overlayManager.add(taskOverlay);
+
+			clientThread.invoke(orbWidget::startUp);
+			return;
+		}
 		overlayManager.remove(worldMapOverlay);
 		keyManager.unregisterKeyListener(inputListener);
+		eventBus.unregister(unlockInputs);
 		worldMapUnlockKeyPressed = false;
 		overlayManager.remove(minimapOverlay);
 		overlayManager.remove(sceneOverlay);
@@ -513,20 +547,6 @@ public class ChunkBlazerPlugin extends Plugin
 		// Drop cards WITHOUT revealing: the pending set is durable, so they are still
 		// waiting on the next startup. Revealing here would flip them for free.
 		taskCardOverlay.clear();
-		taskModuleManager.shutDown();
-		if (soundManager != null)
-		{
-			soundManager.shutdown();
-		}
-		if (assetStore != null)
-		{
-			assetStore.shutdown();
-		}
-		if (catalogStore != null)
-		{
-			catalogStore.shutdown();
-		}
-		activeTask = null;
 	}
 
 	@Provides
@@ -598,10 +618,7 @@ public class ChunkBlazerPlugin extends Plugin
 	// that window we trust this cached verdict instead. Reset on real logout.
 	private volatile boolean modeLockConfirmed;
 
-	// Whether this account has picked a mode, refreshed every game tick. Until it has,
-	// the plugin shows nothing but the mode picker: no tasks, no chunk unlocks and no
-	// overlays. Overlays read this cached flag rather than isModeLocked(), which hashes
-	// the RSN and reads config on every call.
+	// Whether the in-game UI is running for an account with a mode; see setModeReady.
 	private volatile boolean modeReady;
 
 	@Subscribe
@@ -702,7 +719,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// Re-determine mode-lock from scratch next login: the cached verdict is
 			// per-account, and a different account may log in next.
 			modeLockConfirmed = false;
-			modeReady = false;
+			setModeReady(false);
 			// And clear any pending verification — the nonce is tied to the
 			// pre-logout session. Also drop any in-flight Nuzlocke lock.
 			pendingVerificationNonce = null;
@@ -796,8 +813,8 @@ public class ChunkBlazerPlugin extends Plugin
 
 		// One-time move of any legacy profile-global progress into this account's RSProfile,
 		// BEFORE the bootstrap, so ensureStartingChunkUnlocked sees the migrated unlocks.
+		// loadActiveTasks runs that bootstrap, once the account has a mode.
 		migrateLegacyGlobalStateToRSProfile();
-		ensureStartingChunkUnlocked();
 		loadActiveTasks();
 		if (panel != null)
 		{
@@ -841,12 +858,12 @@ public class ChunkBlazerPlugin extends Plugin
 		flushPendingCompletions();
 
 		// Pick up a mode being locked (panel, server-confirmed Competitive, adopted at
-		// login) or cleared, and load or clear the tasks to match. A pending bootstrap
-		// below reloads the tasks anyway.
+		// login) or cleared: start or stop the in-game UI and load or clear the tasks.
+		// A pending bootstrap below reloads the tasks anyway.
 		boolean ready = isModeLocked();
 		if (ready != modeReady)
 		{
-			modeReady = ready;
+			setModeReady(ready);
 			if (!pendingProfileBootstrap)
 			{
 				loadActiveTasks();
@@ -893,6 +910,12 @@ public class ChunkBlazerPlugin extends Plugin
 			addPluginChatMessage(SELECT_MODE_MESSAGE);
 		}
 
+		// Walking into chunks (free unlocks, unlock popups) waits for a mode too.
+		if (!modeReady)
+		{
+			return;
+		}
+
 		WorldPoint wp = player.getWorldLocation();
 		int currentRegionId = wp.getRegionID();
 
@@ -911,8 +934,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// neighbour-based auto-unlock/popup paths below don't cover them.
 			// unlockRegionFree is 0-cost; it rolls tasks for charter ports but skips
 			// rolling for free-list chunks (they have none).
-			// Neither happens before a mode is picked.
-			if (modeReady && (isCharterRegion(currentRegionId) || isFreeUnlockableRegion(currentRegionId))
+			if ((isCharterRegion(currentRegionId) || isFreeUnlockableRegion(currentRegionId))
 				&& !isRegionUnlocked(currentRegionId))
 			{
 				unlockRegionFree(currentRegionId);
@@ -921,7 +943,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			// Deliberate-unlock only: entering an unlockable neighbour offers a
 			// prompt; nothing auto-unlocks (the old free-exploration mode is gone).
-			else if (modeReady && config.showUnlockPopup())
+			else if (config.showUnlockPopup())
 			{
 				// Show unlock popup if entering an unlockable neighbor region
 				showUnlockPopupIfNeeded(currentRegionId);
@@ -931,11 +953,10 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 	}
 
-	@Subscribe
-	public void onMenuEntryAdded(MenuEntryAdded event)
+	private void addMinimapUnlockEntry(MenuEntryAdded event)
 	{
 		// Add unlock option to minimap when hovering over unlockable region
-		if (!modeReady || !config.showMinimapChunks())
+		if (!config.showMinimapChunks())
 		{
 			return;
 		}
@@ -981,10 +1002,9 @@ public class ChunkBlazerPlugin extends Plugin
 	 * keybind+click. The hovered region comes from the world-map overlay, which
 	 * already hit-tests the cursor against each drawn chunk.
 	 */
-	@Subscribe
-	public void onMenuOptionClicked(MenuOptionClicked event)
+	private void unlockFromWorldMap(MenuOptionClicked event)
 	{
-		if (!worldMapUnlockKeyPressed || !modeReady)
+		if (!worldMapUnlockKeyPressed)
 		{
 			return;
 		}
@@ -1003,8 +1023,7 @@ public class ChunkBlazerPlugin extends Plugin
 		showChatboxUnlockPopup(regionId);
 	}
 
-	@Subscribe
-	public void onFocusChanged(FocusChanged event)
+	private void releaseUnlockKey(FocusChanged event)
 	{
 		if (!event.isFocused())
 		{
@@ -1013,12 +1032,35 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * The minimap and world-map unlock inputs. Registered with the rest of the game UI
+	 * (see setModeReady), so they only exist once the account has picked a mode.
+	 */
+	private class UnlockInputs
+	{
+		@Subscribe
+		public void onMenuEntryAdded(MenuEntryAdded event)
+		{
+			addMinimapUnlockEntry(event);
+		}
+
+		@Subscribe
+		public void onMenuOptionClicked(MenuOptionClicked event)
+		{
+			unlockFromWorldMap(event);
+		}
+
+		@Subscribe
+		public void onFocusChanged(FocusChanged event)
+		{
+			releaseUnlockKey(event);
+		}
+	}
+
+	private final UnlockInputs unlockInputs = new UnlockInputs();
+
 	private void showChatboxUnlockPopup(int regionId)
 	{
-		if (!isModeLocked())
-		{
-			return;
-		}
 		// Null-safe: charter ports and free-list chunks are unlockable but live in
 		// freeUnlockableNames, not chunksByRegionId, so a direct .get().getName()
 		// would NPE on them. getRegionName() handles every case.
@@ -1106,12 +1148,6 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	public void unlockRegionFree(int regionId)
 	{
-		// No chunk is unlocked before a mode is picked. Casual's own free unlock of the
-		// current chunk runs after the lock is written, so it passes.
-		if (!isModeLocked())
-		{
-			return;
-		}
 		// Snapshot before mutating so we know whether this is the first-time
 		// unlock (only the first unlock should fire the jingle).
 		boolean wasAlreadyUnlocked = getUnlockedRegionIds().contains(String.valueOf(regionId));
@@ -1166,12 +1202,6 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	public void ensureStartingChunkUnlocked()
 	{
-		// Nothing is stored for an account that hasn't picked a mode. loadActiveTasks
-		// runs this again once one is picked.
-		if (!isModeLocked())
-		{
-			return;
-		}
 		Set<String> currentlyUnlocked = getUnlockedRegionIds();
 		StringBuilder newUnlocked = new StringBuilder();
 		boolean needsUpdate = false;
@@ -2304,15 +2334,6 @@ public class ChunkBlazerPlugin extends Plugin
 	public boolean isLoggedIn()
 	{
 		return client.getGameState() == GameState.LOGGED_IN;
-	}
-
-	/**
-	 * Cheap, per-tick view of {@link #isModeLocked()} for code that runs every frame.
-	 * Overlays, orbs and their inputs show nothing until it is true.
-	 */
-	public boolean isModeReady()
-	{
-		return modeReady;
 	}
 
 	public boolean isModeLocked()
@@ -4621,8 +4642,9 @@ public class ChunkBlazerPlugin extends Plugin
 		// previous account's tasks cannot linger in the panel across a logout or
 		// an account switch.
 		//
-		// Likewise until the account has picked a mode: no tasks are rolled, granted or
-		// tracked before then. The tick that sees the mode locked calls this again.
+		// The same goes for an account that hasn't picked a mode: no starting chunk,
+		// rolls, grants or tracking until it has. The tick that sees the mode locked
+		// calls this again.
 		if (!isAccountStateAvailable() || !isModeLocked())
 		{
 			activeTasks.clear();
@@ -4990,11 +5012,6 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	private Set<String> rollTasksForRegion(int regionId, boolean rollAll, boolean parkBehindCards)
 	{
-		// Nothing is rolled before a mode is picked; loadActiveTasks rolls any gap once it is.
-		if (!isModeLocked())
-		{
-			return new HashSet<>();
-		}
 		NuzlockeChunk chunk = chunksByRegionId.get(regionId);
 		if (chunk == null)
 		{
@@ -6467,7 +6484,7 @@ public class ChunkBlazerPlugin extends Plugin
 	 */
 	public void unlockBossRegion(int regionId)
 	{
-		if (!countedWorld || !isModeLocked() || isRegionUnlocked(regionId))
+		if (!countedWorld || isRegionUnlocked(regionId))
 		{
 			return;
 		}
@@ -7002,10 +7019,6 @@ public class ChunkBlazerPlugin extends Plugin
 
 	public void unlockRegion(int regionId)
 	{
-		if (!isModeLocked())
-		{
-			return;
-		}
 		if (!countedWorld)
 		{
 			addPluginChatMessage("Chunks can't be unlocked on this world. Hop to a normal world first.");

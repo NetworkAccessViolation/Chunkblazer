@@ -144,7 +144,7 @@ public class ChunkWallOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!plugin.isModeReady() || !config.showChunkWalls() || client.isInInstancedRegion())
+		if (!config.showChunkWalls() || client.isInInstancedRegion())
 		{
 			// Start fresh when walls come back, so nothing unlocked meanwhile replays.
 			lastSeen.clear();

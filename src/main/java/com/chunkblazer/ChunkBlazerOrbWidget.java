@@ -60,8 +60,6 @@ public class ChunkBlazerOrbWidget
 	private Widget pointsOrb = null;
 	private Widget pointsText = null;
 	private Widget wikiWidget;
-	// Whether the orbs were last built for an account with a mode picked; they're only shown then.
-	private boolean builtForMode;
 
 	@Inject
 	private ChunkBlazerOrbWidget(Client client, ClientThread clientThread, EventBus eventBus, ChunkBlazerPlugin plugin,
@@ -105,8 +103,7 @@ public class ChunkBlazerOrbWidget
 	private void addOrbWidgets()
 	{
 		cleanup();
-		builtForMode = plugin.isModeReady();
-		if (!builtForMode || !config.showMinimapOrbs())
+		if (!config.showMinimapOrbs())
 		{
 			return;
 		}
@@ -274,11 +271,6 @@ public class ChunkBlazerOrbWidget
 
 	private void updateOrbs()
 	{
-		// Picking (or losing) a mode adds (or removes) the orbs.
-		if (builtForMode != plugin.isModeReady())
-		{
-			addOrbWidgets();
-		}
 		// Tell the task window where its button is, so it can point new tasks out.
 		taskBrowser.setTaskButtonBounds(pointsOrb != null && !pointsOrb.isHidden() ? pointsOrb.getBounds() : null);
 
