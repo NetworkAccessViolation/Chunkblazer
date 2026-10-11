@@ -2027,7 +2027,7 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.setColor(TITLE);
 			graphics.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 8, 8);
 			graphics.setColor(Color.WHITE);
-			graphics.drawString(text, boxX + 6, boxY + (boxHeight + fm.getAscent()) / 2 - 2);
+			graphics.drawString(text, boxX + 6, boxY + (boxHeight + fm.getAscent()) / 2 - 1);
 		}
 		graphics.setComposite(previousComposite);
 		graphics.setStroke(previousStroke);
@@ -2135,7 +2135,7 @@ public class TaskBrowserOverlay extends Overlay
 		fill(graphics, area, active || area.contains(mx, my) ? TAB_ON : TAB_OFF);
 		graphics.setColor(active ? Color.WHITE : SUBTEXT);
 		FontMetrics fm = graphics.getFontMetrics();
-		graphics.drawString(fit(fm, label, area.width - 18), area.x + 6, area.y + (area.height + fm.getAscent()) / 2 - 2);
+		graphics.drawString(fit(fm, label, area.width - 18), area.x + 6, area.y + (area.height + fm.getAscent()) / 2 - 1);
 	}
 
 	// --- Dropdowns -------------------------------------------------------------
@@ -2256,7 +2256,7 @@ public class TaskBrowserOverlay extends Overlay
 		FontMetrics fm = graphics.getFontMetrics();
 		String shown = value == null ? "Any" : value;
 		graphics.setColor(value != null ? TITLE : SUBTEXT);
-		graphics.drawString(shown, row.x + row.width - 20 - fm.stringWidth(shown), row.y + (MENU_ROW + fm.getAscent()) / 2 - 2);
+		graphics.drawString(shown, row.x + row.width - 20 - fm.stringWidth(shown), row.y + (MENU_ROW + fm.getAscent()) / 2 - 1);
 		arrow(graphics, row.x + row.width - 10, row.y + MENU_ROW / 2, RIGHT, SUBTEXT);
 	}
 
@@ -2315,7 +2315,7 @@ public class TaskBrowserOverlay extends Overlay
 			int points = tier.ordinal() + 1;
 			graphics.setColor(tier == filterTier ? Color.WHITE : SUBTEXT);
 			graphics.drawString(tier.getDisplayName() + " (" + points + (points == 1 ? " pt)" : " pts)"),
-				row.x + 22, row.y + (MENU_ROW + graphics.getFontMetrics().getAscent()) / 2 - 2);
+				row.x + 22, row.y + (MENU_ROW + graphics.getFontMetrics().getAscent()) / 2 - 1);
 		}
 	}
 
@@ -2336,7 +2336,7 @@ public class TaskBrowserOverlay extends Overlay
 		fill(graphics, row, hover ? ROW_HOVER : null);
 		FontMetrics fm = graphics.getFontMetrics();
 		graphics.setColor(labelColor != null ? labelColor : on || hover ? Color.WHITE : SUBTEXT);
-		graphics.drawString(label, row.x + 6, row.y + (row.height + fm.getAscent()) / 2 - 2);
+		graphics.drawString(label, row.x + 6, row.y + (row.height + fm.getAscent()) / 2 - 1);
 		if (box)
 		{
 			checkbox(graphics, row.x + row.width - 18, row.y + (row.height - 10) / 2, on, hover);
@@ -2523,7 +2523,7 @@ public class TaskBrowserOverlay extends Overlay
 					: line.quest != null ? () -> showQuest(line.quest, line.text.replace(" (checking)", ""))
 					: () -> quests.toggleSection(line.toggle)));
 			}
-			int lineY = area.y + 1 + sm.getAscent() - 2;
+			int lineY = area.y + 1 + sm.getAscent();
 			boolean hover = line.clickable() && in && area.contains(mx, my);
 			// Section headings sit on a faint band; anything clickable lights up under the mouse.
 			if (line.header || hover)
@@ -2533,7 +2533,7 @@ public class TaskBrowserOverlay extends Overlay
 			}
 			if (line.header)
 			{
-				arrow(graphics, x + 3, lineY - sm.getAscent() / 2, line.open ? DOWN : RIGHT, hover ? Color.WHITE : SUBTEXT);
+				arrow(graphics, x + 3, lineY - 1 - sm.getAscent() / 2, line.open ? DOWN : RIGHT, hover ? Color.WHITE : SUBTEXT);
 			}
 			int lineX = x + lineIndent(line);
 			graphics.setColor(line.color);
@@ -2704,7 +2704,7 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.drawLine(pane.x + 6, body.y + body.height, pane.x + pane.width - 8, body.y + body.height);
 			graphics.setFont(small);
 			graphics.setColor(SUBTEXT);
-			graphics.drawString("Right-click or Shift + click to remove", pane.x + 8, body.y + body.height + 12);
+			graphics.drawString("Right-click to remove", pane.x + 8, body.y + body.height + 12);
 		}
 		Shape oldClip = graphics.getClip();
 		graphics.clip(body);
@@ -2750,7 +2750,7 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			List<String> lines = wrap(fm, task.getName(), width);
 			names.add(lines.size() > 2 ? Arrays.asList(lines.get(0), fit(fm, lines.get(1) + " " + lines.get(2), width)) : lines);
-			total += 22 + 12 * names.get(names.size() - 1).size();
+			total += 24 + 12 * names.get(names.size() - 1).size();
 		}
 		scroll = Math.max(0, Math.min(scroll, total - body.height));
 		NuzlockeTask tracked = plugin.getSelectedTask();
@@ -2762,7 +2762,7 @@ public class TaskBrowserOverlay extends Overlay
 			List<String> name = names.get(i);
 			// Each task is a small rounded card: its tier colour down the left, like the side
 			// panel's, and a thin progress bar along the bottom for counted tasks.
-			Rectangle row = new Rectangle(body.x + 4, y, body.width - 14, 18 + 12 * name.size());
+			Rectangle row = new Rectangle(body.x + 4, y, body.width - 14, 20 + 12 * name.size());
 			y += row.height + 4;
 			boolean hover = row.contains(mx, my) && body.contains(mx, my);
 			boolean isTracked = tracked != null && task.getTaskId().equals(tracked.getTaskId());
@@ -2814,9 +2814,9 @@ public class TaskBrowserOverlay extends Overlay
 			for (int l = 0; l < name.size(); l++)
 			{
 				graphics.drawString(hover && shift && l == 0 ? fit(fm, "Remove " + name.get(0), width) : name.get(l),
-					row.x + 8, row.y + 12 + 12 * l);
+					row.x + 8, row.y + 14 + 12 * l);
 			}
-			int lineY = row.y + 13 + 12 * name.size();
+			int lineY = row.y + 15 + 12 * name.size();
 			String why = ready ? "" : levelNote(task) + " ";
 			graphics.setColor(NO_LEVEL);
 			graphics.drawString(why, row.x + 8, lineY);
@@ -2837,7 +2837,7 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.drawRoundRect(r.x, r.y, r.width, r.height, 8, 8);
 		FontMetrics fm = graphics.getFontMetrics();
 		graphics.setColor(hover ? Color.WHITE : SUBTEXT);
-		graphics.drawString(text, r.x + (r.width - fm.stringWidth(text)) / 2 + 1, r.y + 11);
+		graphics.drawString(text, r.x + (r.width - fm.stringWidth(text)) / 2 + 1, r.y + 13);
 	}
 
 	/** The side panel's area in whichever layout is on; a spot by the right edge if it's closed. */
@@ -2974,7 +2974,7 @@ public class TaskBrowserOverlay extends Overlay
 	private static void drawCentered(Graphics2D graphics, String text, Rectangle area)
 	{
 		FontMetrics fm = graphics.getFontMetrics();
-		graphics.drawString(text, area.x + (area.width - fm.stringWidth(text)) / 2, area.y + (area.height + fm.getAscent()) / 2 - 2);
+		graphics.drawString(text, area.x + (area.width - fm.stringWidth(text)) / 2, area.y + (area.height + fm.getAscent()) / 2 - 1);
 	}
 
 	/** Shorten text with "..." so it fits the width. */
