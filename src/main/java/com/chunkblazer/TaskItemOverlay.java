@@ -189,7 +189,7 @@ public class TaskItemOverlay extends WidgetItemOverlay
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
-		if (!config.highlightEquipItems())
+		if (!plugin.isModeReady() || !config.highlightEquipItems())
 		{
 			return;
 		}

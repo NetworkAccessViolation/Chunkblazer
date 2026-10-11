@@ -62,6 +62,7 @@ class SyncChoiceRollTest
 		set(plugin, "config", config);
 		set(plugin, "configManager", configManager);
 		state = RsProfileTestSupport.install(configManager, config);
+		RsProfileTestSupport.lockMode(plugin, state);
 		lenient().when(config.showTaskCards()).thenReturn(true);
 
 		List<NuzlockeTask> tasks = new ArrayList<>();
@@ -95,6 +96,20 @@ class SyncChoiceRollTest
 
 		assertTrue(state.get("regionRolledTasks").startsWith("12850:"));
 		assertFalse(state.get("unrevealedTasks").isEmpty());
+	}
+
+	/** Offline but no mode yet: nothing is dealt or stored, not even the starting chunk. */
+	@Test
+	void offlineWithoutModeStoresNothing()
+	{
+		RsProfileTestSupport.playOffline(configManager);
+		state.remove("accountModeHash");
+
+		plugin.ensureStartingChunkUnlocked();
+
+		assertNull(state.get("regionRolledTasks"));
+		assertNull(state.get("unrevealedTasks"));
+		assertNull(state.get("unlockedChunks"));
 	}
 
 	@Test

@@ -555,7 +555,7 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			close();
 		}
-		if (!tasksKeyHeld || client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) == null)
+		if (!tasksKeyHeld || !plugin.isModeReady() || client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) == null)
 		{
 			return;
 		}
@@ -1507,6 +1507,18 @@ public class TaskBrowserOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		// Nothing shows until the account has picked a mode.
+		if (!plugin.isModeReady())
+		{
+			if (open)
+			{
+				close();
+			}
+			questPane = null;
+			hoveredAction = null;
+			mouseInWindow = false;
+			return null;
+		}
 		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
 		if (!open && questPane != null && loggedIn)
 		{

@@ -390,7 +390,7 @@ public class TaskTargetHighlighter extends Overlay
 
 	private boolean isMenuEnabled()
 	{
-		return config.taskTrackerStyle() == TaskTrackerStyle.VANI && config.taskRightClickMenu();
+		return plugin.isModeReady() && config.taskTrackerStyle() == TaskTrackerStyle.VANI && config.taskRightClickMenu();
 	}
 
 	private void rebuildIndex()
@@ -884,6 +884,10 @@ public class TaskTargetHighlighter extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (!plugin.isModeReady())
+		{
+			return null;
+		}
 		showHoveredTasks();
 		OutlineMode mode = config.taskOutlineMode();
 		if (mode == OutlineMode.OFF)
@@ -1013,7 +1017,7 @@ public class TaskTargetHighlighter extends Overlay
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		if (!config.autoTrackTasks())
+		if (!plugin.isModeReady() || !config.autoTrackTasks())
 		{
 			return;
 		}

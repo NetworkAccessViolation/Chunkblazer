@@ -59,6 +59,7 @@ class StartingChunkPersistenceTest
 		setField(plugin, "config", config);
 		setField(plugin, "configManager", configManager);
 		writes = RsProfileTestSupport.install(configManager, config);
+		RsProfileTestSupport.lockMode(plugin, writes);
 	}
 
 	private static void setField(Object target, String name, Object value) throws Exception

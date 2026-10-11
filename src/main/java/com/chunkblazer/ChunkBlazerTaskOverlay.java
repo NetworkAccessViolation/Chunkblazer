@@ -59,7 +59,7 @@ public class ChunkBlazerTaskOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (config.taskTrackerStyle() != TaskTrackerStyle.NET || client.getGameState() != GameState.LOGGED_IN)
+		if (!plugin.isModeReady() || config.taskTrackerStyle() != TaskTrackerStyle.NET || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return null;
 		}

@@ -71,6 +71,10 @@ public class ChunkBlazerSceneOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (!plugin.isModeReady())
+		{
+			return null;
+		}
 		// Walls along the unlocked/locked boundary have their own on/off setting, so
 		// they're drawn whether or not the chunk border lines are.
 		walls.render(graphics);

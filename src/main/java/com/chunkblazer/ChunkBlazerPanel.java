@@ -823,6 +823,8 @@ public class ChunkBlazerPanel extends PluginPanel
 		boolean isLocked = plugin.isModeLocked();
 		modeSelectionPanel.setVisible(!isLocked);
 		overlayHint.setVisible(isLocked);
+		// Until a mode is picked the panel is only the mode picker, so no chunk either.
+		regionLabel.setVisible(isLocked);
 
 		if (isLocked)
 		{
@@ -834,7 +836,7 @@ public class ChunkBlazerPanel extends PluginPanel
 		}
 		else
 		{
-			modeLabel.setText(" | Not Set");
+			modeLabel.setText("Mode: Not Set");
 			modeLabel.setForeground(Color.YELLOW);
 		}
 

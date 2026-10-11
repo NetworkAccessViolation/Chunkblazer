@@ -175,6 +175,28 @@ class AccountStateAvailabilityTest
 		assertNull(getField(plugin, "activeTask"));
 	}
 
+	/**
+	 * A known account that hasn't picked a mode gets nothing either: the same early
+	 * return, so no starting chunk, rolls, grants or registrations happen before the
+	 * mode picker has been answered.
+	 */
+	@Test
+	void loadActiveTasksBailsWithoutMode() throws Exception
+	{
+		when(configManager.getRSProfileKey()).thenReturn(PROFILE_KEY);
+
+		List<NuzlockeTask> active = activeTasks();
+		active.add(new NuzlockeTask());
+
+		loadActiveTasks();
+
+		verify(configManager, never()).getConfiguration("chunkblazer", "charterSeedStripped");
+		verify(configManager, never()).setRSProfileConfiguration(eq("chunkblazer"), anyString(), any());
+		verify(taskModuleManager).clearTask();
+		verify(taskModuleManager, never()).registerActiveTask(any());
+		assertTrue(activeTasks().isEmpty());
+	}
+
 	// --- reflection helpers ------------------------------------------------
 
 	private boolean available() throws Exception

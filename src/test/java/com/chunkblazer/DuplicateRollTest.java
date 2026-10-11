@@ -64,6 +64,7 @@ class DuplicateRollTest
 		set(plugin, "config", config);
 		set(plugin, "configManager", configManager);
 		state = RsProfileTestSupport.install(configManager, config);
+		RsProfileTestSupport.lockMode(plugin, state);
 		chunks().put(CHUNK_A, chunk("mine_coal"));
 		chunks().put(CHUNK_B, chunk("mine_coal", "mine_iron", "mine_tin", "mine_clay", "mine_copper", "mine_silver"));
 	}
@@ -85,6 +86,14 @@ class DuplicateRollTest
 	{
 		chunks().put(CHUNK_B, chunk("mine_coal"));
 		state.put("regionRolledTasks", CHUNK_A + ":mine_coal");
+		assertTrue(roll(CHUNK_B).isEmpty());
+	}
+
+	/** Nothing is rolled for an account that hasn't picked a mode. */
+	@Test
+	void noModeRollsNothing() throws Exception
+	{
+		state.remove("accountModeHash");
 		assertTrue(roll(CHUNK_B).isEmpty());
 	}
 

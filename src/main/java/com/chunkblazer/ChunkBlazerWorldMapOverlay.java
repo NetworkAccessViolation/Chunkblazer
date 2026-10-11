@@ -132,6 +132,11 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		if (!plugin.isModeReady())
+		{
+			hoveredRegionId = -1;
+			return null;
+		}
 		// The focus outline goes on top of the chunk tints.
 		Dimension size = renderChunks(graphics);
 		renderFocus(graphics);

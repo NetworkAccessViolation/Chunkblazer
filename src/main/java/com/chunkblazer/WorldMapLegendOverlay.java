@@ -57,12 +57,14 @@ public class WorldMapLegendOverlay extends Overlay
 	};
 
 	private final Client client;
+	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
 
 	@Inject
-	public WorldMapLegendOverlay(Client client, ChunkBlazerConfig config)
+	public WorldMapLegendOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config)
 	{
 		this.client = client;
+		this.plugin = plugin;
 		this.config = config;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ALWAYS_ON_TOP);
@@ -72,7 +74,7 @@ public class WorldMapLegendOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!config.showWorldMapChunks() || !config.showChunkLegend())
+		if (!plugin.isModeReady() || !config.showWorldMapChunks() || !config.showChunkLegend())
 		{
 			return null;
 		}
