@@ -300,7 +300,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		// The whole name, however long: the strip grows to fit it.
 		String name = task.getName() == null ? "" : task.getName();
 		int width = 15 + fm.stringWidth(name) + (count.isEmpty() ? 0 : 8 + fm.stringWidth(count));
-		int height = 17;
+		int height = 18;
 		graphics.setColor(new Color(20, 18, 15, 175));
 		graphics.fillRoundRect(0, 0, width, height, 9, 9);
 		graphics.setColor(tier);
@@ -311,9 +311,9 @@ public class SelectedTaskOverlay extends OverlayPanel
 		}
 		boolean ready = TaskTargetExtras.missingRequirement(client, task) == null && plugin.meetsLevelRequirement(task);
 		graphics.setColor(ready ? Color.WHITE : MISSING_LEVEL);
-		graphics.drawString(name, 9, 12);
+		graphics.drawString(name, 9, 14);
 		graphics.setColor(REQUIREMENT_TEXT);
-		graphics.drawString(count, width - 6 - fm.stringWidth(count), 12);
+		graphics.drawString(count, width - 6 - fm.stringWidth(count), 14);
 		return new Dimension(width, height);
 	}
 
