@@ -858,12 +858,12 @@ public class ChunkBlazerPlugin extends Plugin
 		flushPendingCompletions();
 
 		// Pick up a mode being locked (panel, server-confirmed Competitive, adopted at
-		// login) or cleared: start or stop the in-game UI and load or clear the tasks.
-		// A pending bootstrap below reloads the tasks anyway.
-		boolean ready = isModeLocked();
-		if (ready != modeReady)
+		// login): start the in-game UI and load the tasks. A pending bootstrap below
+		// reloads the tasks anyway. An account's mode only goes from unset to set, so
+		// once it's set this stops checking until logout, when another account may follow.
+		if (!modeReady && isModeLocked())
 		{
-			setModeReady(ready);
+			setModeReady(true);
 			if (!pendingProfileBootstrap)
 			{
 				loadActiveTasks();
