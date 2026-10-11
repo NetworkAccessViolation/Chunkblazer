@@ -39,6 +39,7 @@ import javax.inject.Provider;
 import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.MenuEntry;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.ui.FontManager;
@@ -122,7 +123,11 @@ public class SavedTaskTracker extends Overlay
 		int top = d / 6;
 		Rectangle bounds = getBounds();
 		net.runelite.api.Point m = client.getMouseCanvasPosition();
-		hovered = m != null && bounds != null && new Rectangle(bounds.x, bounds.y + top, d, d).contains(m.getX(), m.getY());
+		// Under an interface (inventory, bank...) the click belongs to that, not the bubble: over the
+		// scene the menu has "Walk here" + "Cancel", over an interface it's a widget entry or just "Cancel".
+		MenuEntry[] entries = client.getMenuEntries();
+		boolean covered = client.isMenuOpen() || entries.length < 2 || entries[entries.length - 1].getWidget() != null;
+		hovered = !covered && m != null && bounds != null && new Rectangle(bounds.x, bounds.y + top, d, d).contains(m.getX(), m.getY());
 
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setColor(FILL);
