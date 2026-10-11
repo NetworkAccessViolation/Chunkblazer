@@ -390,7 +390,8 @@ public class TaskTargetHighlighter extends Overlay
 
 	private boolean isMenuEnabled()
 	{
-		return config.taskTrackerStyle() == TaskTrackerStyle.VANI && config.taskRightClickMenu();
+		TaskTrackerStyle style = config.taskTrackerStyle();
+		return (style == TaskTrackerStyle.VANI || style == TaskTrackerStyle.COMPACT) && config.taskRightClickMenu();
 	}
 
 	private void rebuildIndex()

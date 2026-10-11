@@ -39,7 +39,9 @@ public enum TaskTrackerStyle
 	/** ChunkBlazerTaskOverlay: a detailed info box with a progress bar. */
 	NET("Simple overlay by Net"),
 	/** SelectedTaskOverlay box, plus a Tasks right-click menu on task targets. */
-	VANI("Yellow paint by Vani");
+	VANI("Detailed by Vani"),
+	/** The same, as one small line: name, progress and a thin bar. */
+	COMPACT("Compact by Vani");
 
 	private final String name;
 

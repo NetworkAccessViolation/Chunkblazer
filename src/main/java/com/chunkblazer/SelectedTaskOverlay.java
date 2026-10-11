@@ -29,9 +29,11 @@ package com.chunkblazer;
 import com.chunkblazer.modules.NPCKillModule;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.BasicStroke;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +42,7 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.LineComponent;
@@ -63,7 +66,6 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
 {
-	private static final Color FLAME = new Color(255, 140, 0);
 	private static final Color BAR_BACKGROUND = new Color(60, 60, 60, 200);
 	private static final Color REQUIREMENT_TEXT = new Color(200, 200, 200);
 	private static final Color MISSING_LEVEL = new Color(255, 90, 90);
@@ -93,6 +95,13 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private int lastTick = -1;
 	private long lastTickAt;
 
+	// Compact layout: how far it has opened into the full box (0 shut, 1 open), when that
+	// was last moved on, and the two sizes it moves between.
+	private float expand;
+	private long expandAt;
+	private Dimension compactSize = new Dimension(120, 17);
+	private Dimension fullSize = new Dimension(190, 60);
+
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
@@ -114,6 +123,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		panelComponent.setPreferredSize(new Dimension(190, 0));
 		// A few pixels between rows, so wrapped text never touches the progress bar.
 		panelComponent.setGap(new Point(0, 3));
+		panelComponent.setBackgroundColor(new Color(30, 26, 22, 215));
 
 		addMenuEntry(MenuAction.RUNELITE_OVERLAY, "Deselect", "ChunkBlazer task",
 				e -> plugin.clearSelectedTask());
@@ -122,7 +132,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (config.taskTrackerStyle() != TaskTrackerStyle.VANI || client.getGameState() != GameState.LOGGED_IN)
+		TaskTrackerStyle style = config.taskTrackerStyle();
+		if (style != TaskTrackerStyle.VANI && style != TaskTrackerStyle.COMPACT || client.getGameState() != GameState.LOGGED_IN)
 		{
 			hideButtons();
 			return null;
@@ -135,21 +146,45 @@ public class SelectedTaskOverlay extends OverlayPanel
 			return null;
 		}
 
+		Color tier = TaskCardTier.fromTask(task).getAccent();
+		// Compact: one small line, out of the way. Hovering it opens the full box (what to do,
+		// requirements, missing levels); timed tasks keep the full box for their countdown.
+		net.runelite.api.Point at = client.getMouseCanvasPosition();
+		Rectangle shown = getBounds();
+		boolean hovered = at != null && shown != null && shown.contains(at.getX(), at.getY());
+		// Opens quickly under the mouse (0.12s), closes slower once it leaves (0.4s).
+		long now = System.currentTimeMillis();
+		long step = Math.min(100, now - expandAt);
+		expandAt = now;
+		expand = hovered ? Math.min(1, expand + step / 120f) : Math.max(0, expand - step / 400f);
+		boolean compact = style == TaskTrackerStyle.COMPACT && timeLimitTicks(task) == 0;
+		if (compact && expand == 0)
+		{
+			hideButtons();
+			compactSize = drawCompact(graphics, task, tier);
+			return compactSize;
+		}
+		// Part way open: show the full box cut to a size between the two.
+		float e = expand * (2 - expand);
+		int w = Math.round(compactSize.width + (fullSize.width - compactSize.width) * e);
+		int h = Math.round(compactSize.height + (fullSize.height - compactSize.height) * e);
+		java.awt.Shape oldClip = graphics.getClip();
+		if (compact && expand < 1)
+		{
+			graphics.clip(new Rectangle(0, 0, w, h));
+		}
+
+		// The heading is the task's category and level, in its tier colour (which is its points).
 		panelComponent.getChildren().add(TitleComponent.builder()
-				.text("ChunkBlazer Task")
-				.color(FLAME)
+				.text(NuzlockeTask.displayCategory(task.getCategory())
+					+ (task.getLevelRequirement() > 1 ? "  Lvl " + task.getLevelRequirement() : ""))
+				.color(tier)
 				.build());
 
 		// LineComponent wraps long text onto extra lines automatically.
 		panelComponent.getChildren().add(LineComponent.builder()
 				.left(task.getName())
 				.leftColor(Color.WHITE)
-				.build());
-
-		String info = NuzlockeTask.displayCategory(task.getCategory()) + " | " + task.getBasePoints() + " pts";
-		panelComponent.getChildren().add(LineComponent.builder()
-				.left(info)
-				.leftColor(new Color(255, 200, 100))
 				.build());
 
 		// What the task actually asks for, when the name alone doesn't say.
@@ -203,7 +238,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 			bar.setMinimum(0);
 			bar.setMaximum(target);
 			bar.setValue(Math.min(progress, target));
-			bar.setForegroundColor(FLAME);
+			bar.setForegroundColor(tier);
 			bar.setBackgroundColor(BAR_BACKGROUND);
 			bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
 			panelComponent.getChildren().add(bar);
@@ -212,6 +247,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		Dimension size = super.render(graphics);
 		if (size == null)
 		{
+			graphics.setClip(oldClip);
 			hideButtons();
 			return null;
 		}
@@ -239,7 +275,46 @@ public class SelectedTaskOverlay extends OverlayPanel
 		closeButton = box;
 		archiveButton = book;
 		shownTaskId = task.getTaskId();
+		fullSize = size;
+		if (compact && expand < 1)
+		{
+			graphics.setClip(oldClip);
+			return new Dimension(w, h);
+		}
 		return size;
+	}
+
+	/**
+	 * Compact layout: a small rounded strip with the tier colour at the left, the name
+	 * (red if you can't do it yet), its count on the right and a thin bar along the
+	 * bottom. Right-click it to deselect, as with the full box.
+	 */
+	private Dimension drawCompact(Graphics2D graphics, NuzlockeTask task, Color tier)
+	{
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+		int target = Math.max(1, task.getTargetQuantity());
+		int done = Math.min(task.getCurrentProgress(), target);
+		String count = target > 1 ? done + "/" + target : "";
+		// The whole name, however long: the strip grows to fit it.
+		String name = task.getName() == null ? "" : task.getName();
+		int width = 15 + fm.stringWidth(name) + (count.isEmpty() ? 0 : 8 + fm.stringWidth(count));
+		int height = 17;
+		graphics.setColor(new Color(20, 18, 15, 175));
+		graphics.fillRoundRect(0, 0, width, height, 9, 9);
+		graphics.setColor(tier);
+		graphics.fillRoundRect(3, 4, 3, height - 8, 3, 3);
+		if (target > 1)
+		{
+			graphics.fillRect(9, height - 3, (width - 15) * done / target, 2);
+		}
+		boolean ready = TaskTargetExtras.missingRequirement(client, task) == null && plugin.meetsLevelRequirement(task);
+		graphics.setColor(ready ? Color.WHITE : MISSING_LEVEL);
+		graphics.drawString(name, 9, 12);
+		graphics.setColor(REQUIREMENT_TEXT);
+		graphics.drawString(count, width - 6 - fm.stringWidth(count), 12);
+		return new Dimension(width, height);
 	}
 
 	/**
