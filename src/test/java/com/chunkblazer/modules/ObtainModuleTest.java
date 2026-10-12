@@ -5,6 +5,8 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
@@ -293,6 +295,140 @@ class ObtainModuleTest extends AbstractTaskModuleTest
 		when(inventoryContainer.getItems()).thenReturn(tickTwo);
 		obtainModule.onStatChanged(new StatChanged(Skill.COOKING, 60, 1, 1));
 		assertEquals(2, task.getCurrentProgress());
+	}
+
+	@Mock
+	private ItemContainer bagContainer;
+
+	/**
+	 * A bag's first contents in a session arrive whole: one pickpocket into a seed box
+	 * already holding 40 seeds must not read as 41 made. They're the baseline; the bag's
+	 * next change on an XP drop is real production.
+	 */
+	@Test
+	void bagFirstContentsAreBaselineThenChangesCredit()
+	{
+		lenient().when(client.getItemContainer(anyInt())).thenReturn(null);
+		NuzlockeTask task = skillingTask("FLETCHING", Skill.FLETCHING, ARROW_SHAFT, 500);
+		when(client.getItemContainer(InventoryID.SEED_BOX)).thenReturn(bagContainer);
+
+		Item i1 = item(ARROW_SHAFT, 40);
+		when(bagContainer.getItems()).thenReturn(new Item[]{i1});
+		obtainModule.onStatChanged(new StatChanged(Skill.FLETCHING, 5, 1, 1));
+		obtainModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.SEED_BOX, bagContainer));
+		assertEquals(0, task.getCurrentProgress(), "the bag's existing contents aren't production");
+		obtainModule.onGameTick(new GameTick());
+
+		Item i2 = item(ARROW_SHAFT, 55);
+		when(bagContainer.getItems()).thenReturn(new Item[]{i2});
+		obtainModule.onStatChanged(new StatChanged(Skill.FLETCHING, 10, 1, 1));
+		assertEquals(15, task.getCurrentProgress(), "made straight into the bag");
+	}
+
+	/** Moving made items from the pack into a bag nets to zero, so nothing is credited. */
+	@Test
+	void movingIntoABagIsNotProduction()
+	{
+		lenient().when(client.getItemContainer(anyInt())).thenReturn(null);
+		NuzlockeTask task = skillingTask("FLETCHING", Skill.FLETCHING, ARROW_SHAFT, 500);
+		when(client.getItemContainer(InventoryID.SEED_BOX)).thenReturn(bagContainer);
+		when(bagContainer.getItems()).thenReturn(new Item[0]);
+		obtainModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.SEED_BOX, bagContainer));
+		Item i3 = item(ARROW_SHAFT, 15);
+		when(inventoryContainer.getItems()).thenReturn(new Item[]{i3});
+		obtainModule.onStatChanged(new StatChanged(Skill.FLETCHING, 5, 1, 1));
+		obtainModule.onGameTick(new GameTick());
+		assertEquals(15, task.getCurrentProgress());
+
+		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
+		Item i4 = item(ARROW_SHAFT, 15);
+		when(bagContainer.getItems()).thenReturn(new Item[]{i4});
+		obtainModule.onStatChanged(new StatChanged(Skill.FLETCHING, 10, 1, 1));
+		obtainModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.SEED_BOX, bagContainer));
+		assertEquals(15, task.getCurrentProgress());
+	}
+
+	/** An obtain task counts an item kept in a looting bag. */
+	@Test
+	void obtainCountsAnItemInALootingBag()
+	{
+		lenient().when(client.getItemContainer(anyInt())).thenReturn(null);
+		NuzlockeTask task = new NuzlockeTask();
+		task.setTaskId("test_obtain_bag");
+		task.setCompletionType("OBTAIN");
+		RequiredItem required = new RequiredItem();
+		required.setItemIds(Arrays.asList(COOKED_FOOD));
+		required.setRolledQuantity(1);
+		task.setRequiredItems(Collections.singletonList(required));
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
+		when(inventoryContainer.getItems()).thenReturn(new Item[0]);
+		obtainModule.addActiveTask(task);
+
+		when(client.getItemContainer(InventoryID.LOOTING_BAG)).thenReturn(bagContainer);
+		Item i5 = item(COOKED_FOOD, 1);
+		when(bagContainer.getItems()).thenReturn(new Item[]{i5});
+		obtainModule.onItemContainerChanged(new ItemContainerChanged(InventoryID.LOOTING_BAG, bagContainer));
+
+		assertTrue(task.isCompleted());
+	}
+
+	private static final int RAW_TROUT = 335;
+
+	private void chat(String message)
+	{
+		ChatMessage m = new ChatMessage();
+		m.setType(ChatMessageType.SPAM);
+		m.setMessage(message);
+		obtainModule.onChatMessage(m);
+	}
+
+	private NuzlockeTask troutTask()
+	{
+		lenient().when(client.isClientThread()).thenReturn(true);
+		net.runelite.api.ItemComposition comp = mock(net.runelite.api.ItemComposition.class);
+		lenient().when(comp.getName()).thenReturn("Raw trout");
+		lenient().when(itemManager.getItemComposition(RAW_TROUT)).thenReturn(comp);
+		return skillingTask("FISHING", Skill.FISHING, RAW_TROUT, 10);
+	}
+
+	/** A trout caught into a fish barrel never reaches the pack; the catch message counts it. */
+	@Test
+	void catchMessageCreditsAFishThatWentIntoABarrel()
+	{
+		NuzlockeTask task = troutTask();
+		obtainModule.onStatChanged(new StatChanged(Skill.FISHING, 50, 1, 1));
+		chat("You catch a trout.");
+		obtainModule.onGameTick(new GameTick());
+		assertEquals(1, task.getCurrentProgress());
+
+		obtainModule.onStatChanged(new StatChanged(Skill.FISHING, 100, 1, 1));
+		chat("You catch a trout.");
+		chat("Rada's blessing enabled you to catch an extra fish.");
+		obtainModule.onGameTick(new GameTick());
+		assertEquals(3, task.getCurrentProgress());
+	}
+
+	/** A fish that reached the pack is counted once, not again for its message. */
+	@Test
+	void catchIntoThePackIsNotCountedTwice()
+	{
+		NuzlockeTask task = troutTask();
+		Item trout = item(RAW_TROUT, 1);
+		when(inventoryContainer.getItems()).thenReturn(new Item[]{trout});
+		obtainModule.onStatChanged(new StatChanged(Skill.FISHING, 50, 1, 1));
+		chat("You catch a trout.");
+		obtainModule.onGameTick(new GameTick());
+		assertEquals(1, task.getCurrentProgress());
+	}
+
+	/** No Fishing XP, no credit: the message alone proves nothing. */
+	@Test
+	void catchMessageWithoutXpDoesNotCredit()
+	{
+		NuzlockeTask task = troutTask();
+		chat("You catch a trout.");
+		obtainModule.onGameTick(new GameTick());
+		assertEquals(0, task.getCurrentProgress());
 	}
 
 	// Any cooked food behaves the same; this is a lobster.

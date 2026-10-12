@@ -648,8 +648,7 @@ public class ChunkBlazerPlugin extends Plugin
 					// Nothing done here may count: drop the loaded tasks so no module credits them.
 					activeTasks.clear();
 					taskModuleManager.clearTask();
-					addPluginChatMessage("ChunkBlazer is paused on this world. Deadman, Leagues and other "
-						+ "special worlds don't count. Hop to a normal world to keep blazing.");
+					addPluginChatMessage("ChunkBlazer is paused on special worlds like Deadman and Leagues. Hop to a normal world to keep blazing.");
 				}
 				panel.updatePanel();
 			});
@@ -912,8 +911,7 @@ public class ChunkBlazerPlugin extends Plugin
 		if (!syncChoiceNoticeShown && !config.apiEnabled() && !canRollMissing())
 		{
 			syncChoiceNoticeShown = true;
-			addPluginChatMessage("Open the ChunkBlazer panel and choose Enable Sync or Play offline "
-				+ "to get your starting tasks.");
+			addPluginChatMessage("Choose Enable Sync or Play offline in the ChunkBlazer panel to get your starting tasks.");
 		}
 		// Then the mode, once per login, until one is locked. canRollMissing also means a
 		// server lock (new device) has already been adopted, so this can't misfire.
@@ -1070,8 +1068,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// next sync records the mode on the server.
 		setAccountState("accountModeHash", hashRsn(rsn) + ":" + GameMode.CASUAL.name());
 		setAccountState("gameMode", GameMode.CASUAL);
-		addPluginChatMessage("ChunkBlazer now needs a game mode before it runs. This account already has "
-			+ "progress, so it's been set to Casual and carries on as before.");
+		addPluginChatMessage("ChunkBlazer now needs a game mode. This account has progress, so it's been set to Casual.");
 	}
 
 	private static final Set<String> COMBAT_SKILLS = new HashSet<>(Arrays.asList(
@@ -2476,7 +2473,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			// Without the server we can't authoritatively verify eligibility.
 			// Fail closed rather than locking an unchecked account into Nuzlocke.
-			addPluginChatMessage("Competitive mode needs a connection to the ChunkBlazer server to verify your RuneScape account. Please enable Server Sync and try again.");
+			addPluginChatMessage("Competitive needs Server Sync to verify your account. Enable it and try again.");
 			return;
 		}
 
@@ -2511,8 +2508,7 @@ public class ChunkBlazerPlugin extends Plugin
 						// from a bad reading — which is exactly the position we
 						// were in on 2026-07-21 with the account "ChunkBlazer".
 						String reason = resp != null ? resp.getReason() : null;
-						addPluginChatMessage("Sorry, your account does not meet the Competitive requirements, "
-							+ "please create a new account or play Casual Mode."
+						addPluginChatMessage("Your account doesn't meet the Competitive requirements. Play Casual or start a new account."
 							+ (reason == null || reason.isEmpty() ? "" : " (" + reason + ")"));
 
 						// Log what we actually SENT as well. If the reason looks
@@ -2590,8 +2586,7 @@ public class ChunkBlazerPlugin extends Plugin
 				}
 				String nonce = start.getNonce();
 				pendingVerificationNonce = nonce;
-				addPluginChatMessage("Your account meets the Competitive requirements! Type " + nonce
-					+ " in public chat and hit Enter to lock in Competitive.");
+				addPluginChatMessage("You qualify for Competitive! Type " + nonce + " in public chat and press Enter to lock it in.");
 				panel.showVerificationPrompt(nonce);
 			});
 	}
@@ -2660,8 +2655,7 @@ public class ChunkBlazerPlugin extends Plugin
 						// Never leave a local Competitive lock the server won't honor.
 						if (mode == GameMode.NUZLOCKE)
 						{
-							addPluginChatMessage("Competitive was declined by the server because your account isn't eligible. "
-								+ "Pick Casual in the ChunkBlazer side panel to start playing.");
+							addPluginChatMessage("Competitive was declined: your account isn't eligible. Pick Casual in the side panel to play.");
 						}
 						log.warn("Server lock-mode response: status={} message={}",
 							response.getStatus(), response.getMessage());
@@ -2671,7 +2665,7 @@ public class ChunkBlazerPlugin extends Plugin
 		else if (mode == GameMode.NUZLOCKE)
 		{
 			// No server to confirm eligibility — cannot safely lock Competitive.
-			addPluginChatMessage("Competitive mode needs a connection to the ChunkBlazer server to verify your RuneScape account. Please enable Server Sync and try again.");
+			addPluginChatMessage("Competitive needs Server Sync to verify your account. Enable it and try again.");
 			return;
 		}
 
@@ -2927,8 +2921,7 @@ public class ChunkBlazerPlugin extends Plugin
 				if (outcome == ApiOutcome.REGISTRATION_CLOSED && !rsn.equals(registrationClosedRsn))
 				{
 					registrationClosedRsn = rsn;
-					addPluginChatMessage("New ChunkBlazer sign-ups are closed right now, so this account "
-						+ "isn't syncing. You can keep playing, and your progress is saved locally.");
+					addPluginChatMessage("ChunkBlazer sign-ups are closed, so this account isn't syncing. Your progress is saved locally.");
 				}
 				// Only mark complete on a real OK / created response. Offline
 				// or error responses leave the flag false so we retry next
@@ -2945,8 +2938,7 @@ public class ChunkBlazerPlugin extends Plugin
 							// wipe a working key.
 							restoreStoredApiKey();
 							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
-							addPluginChatMessage("That sync key belongs to a different account, so it "
-								+ "was ignored and your saved key kept.");
+							addPluginChatMessage("That sync key is another account's, so it was ignored. Your saved key is unchanged.");
 						}
 						else
 						{
@@ -2980,8 +2972,7 @@ public class ChunkBlazerPlugin extends Plugin
 							// working account.
 							restoreStoredApiKey();
 							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
-							addPluginChatMessage("That sync key wasn't recognised for this account, so it "
-								+ "was ignored and your saved key kept.");
+							addPluginChatMessage("That sync key wasn't recognised, so it was ignored. Your saved key is unchanged.");
 						}
 					}
 					else
@@ -3058,7 +3049,7 @@ public class ChunkBlazerPlugin extends Plugin
 			// it and wipe it, so it cannot override a good key or be retried every login.
 			log.warn("[CHUNKBLAZER] ignored a recovery key that is not a valid account-key format");
 			configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
-			addPluginChatMessage("That sync key doesn't look valid, so it was ignored. Your saved key is unchanged.");
+			addPluginChatMessage("That sync key isn't valid, so it was ignored. Your saved key is unchanged.");
 		}
 		if (stored != null && !stored.isEmpty())
 		{
@@ -4344,7 +4335,7 @@ public class ChunkBlazerPlugin extends Plugin
 								setAccountState("accountModeHash", "");
 								setAccountState("gameMode", GameMode.CASUAL);
 								modeLockConfirmed = false;
-								addPluginChatMessage("Your account isn't eligible for Competitive, so its Competitive lock was removed.");
+								addPluginChatMessage("Your account isn't eligible for Competitive, so its lock was removed.");
 							}
 						});
 				}
@@ -4463,8 +4454,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		if (serverBackoff.recordFailure(outcome, retryAfterMs, System.currentTimeMillis()))
 		{
-			addPluginChatMessage("Can't reach the ChunkBlazer server right now. Your progress is saved "
-				+ "locally and will sync once it's back.");
+			addPluginChatMessage("Can't reach the ChunkBlazer server. Your progress is saved and will sync when it's back.");
 		}
 	}
 
@@ -4558,9 +4548,8 @@ public class ChunkBlazerPlugin extends Plugin
 						syncRejectedKey = sentKey;
 						log.warn("[CHUNKBLAZER] server rejected this account's sync key; sync paused "
 							+ "until a different key is supplied");
-						addPluginChatMessage("The server didn't accept this account's sync key, so syncing "
-							+ "is paused. Your progress is still saved locally. Paste this account's key "
-							+ "into Sync recovery key in the ChunkBlazer settings to resume.");
+						addPluginChatMessage("The server rejected this account's sync key, so syncing is paused. Progress is saved locally. "
+							+ "Relog, or paste your key into Sync recovery key in the ChunkBlazer settings.");
 					}
 					// Only retire the reset declaration once the server has actually
 					// accepted it. Clearing it on send would strand a reset behind one
@@ -5815,10 +5804,6 @@ public class ChunkBlazerPlugin extends Plugin
 	}
 
 
-	private void completeTask(NuzlockeTask task)
-	{
-		completeTasks(Collections.singletonList(task));
-	}
 
 	/**
 	 * Complete one or many tasks, doing the expensive settle-up work ONCE.
@@ -5913,19 +5898,6 @@ public class ChunkBlazerPlugin extends Plugin
 		setAccountState("completedTasks", sb.toString());
 	}
 
-	private void markTaskCompleted(String taskId)
-	{
-		String completed = acStr("completedTasks", "");
-		if (completed == null || completed.isEmpty())
-		{
-			completed = taskId;
-		}
-		else
-		{
-			completed = completed + "," + taskId;
-		}
-		setAccountState("completedTasks", completed);
-	}
 
 	/**
 	 * Public view of the persisted completed-task id set, for the panel. Global

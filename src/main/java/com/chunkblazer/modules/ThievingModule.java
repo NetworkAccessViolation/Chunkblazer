@@ -35,10 +35,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Item;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Skill;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.events.StatChanged;
 import net.runelite.client.eventbus.Subscribe;
 import com.chunkblazer.NuzlockeTask;
@@ -197,6 +201,7 @@ public class ThievingModule extends AbstractTaskModule
 		watchedNpcIds.clear();
 		watchedObjectIds.clear();
 		previousThievingXp = -1;
+		drops.clear();
 	}
 
 	@Override
@@ -233,6 +238,15 @@ public class ThievingModule extends AbstractTaskModule
 			lastInteractionNpcId = watchedNpcIds.contains(npcId) ? npcId : -1;
 			lastInteractionTick = client.getTickCount();
 			lastInteractionObjectId = -1;
+			drops.clear();
+			boxKnown = client.getItemContainer(InventoryID.SEED_BOX) != null;
+			for (NuzlockeTask task : activeTasks)
+			{
+				if (needsDrop(task))
+				{
+					drops.put(task, new int[]{held(task), 0});
+				}
+			}
 			return;
 		}
 		if (npcAction || objectAction || action == MenuAction.WALK)
@@ -305,7 +319,15 @@ public class ThievingModule extends AbstractTaskModule
 					Set<Integer> taskNpcs = taskTargetNpcs.get(task.getTaskId());
 					if (taskNpcs != null && taskNpcs.contains(lastInteractionNpcId))
 					{
-						creditTaskProgress(task, 1);
+						int[] drop = drops.get(task);
+						if (drop != null)
+						{
+							drop[1] = currentTick + 3;
+						}
+						else if (!needsDrop(task))
+						{
+							creditTaskProgress(task, 1);
+						}
 					}
 				}
 			}
@@ -364,6 +386,61 @@ public class ThievingModule extends AbstractTaskModule
 			taskRequiredObjectIds.remove(task.getTaskId());
 			activeTasks.remove(task);
 			rebuildWatched();
+		}
+	}
+
+	// Pickpocket tasks that need a specific item (a Master Farmer's ranarr seed) credit only
+	// once it lands, in the pack or an open seed box, a few ticks after the XP. Without
+	// this, any Master Farmer pickpocket counted, whatever seed it gave.
+	// task -> {item count at the click, tick the wait ends (0 = not waiting)}
+	private final Map<NuzlockeTask, int[]> drops = new ConcurrentHashMap<>();
+	// The seed box only counts if its contents were known at the click; its first update
+	// carries the whole box, which would read as a fresh seed.
+	private boolean boxKnown;
+
+	private static boolean needsDrop(NuzlockeTask task)
+	{
+		return task.getConstraints() != null && task.getConstraints().hasDroppedItemConstraint();
+	}
+
+	private int held(NuzlockeTask task)
+	{
+		int n = 0;
+		for (int c : new int[]{InventoryID.INV, boxKnown ? InventoryID.SEED_BOX : -1})
+		{
+			ItemContainer inv = client.getItemContainer(c);
+			for (Item item : inv == null ? new Item[0] : inv.getItems())
+			{
+				if (task.getConstraints().getDroppedItemIds().contains(item.getId()))
+				{
+					n += item.getQuantity();
+				}
+			}
+		}
+		return n;
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		for (Map.Entry<NuzlockeTask, int[]> e : drops.entrySet())
+		{
+			int[] drop = e.getValue();
+			if (drop[1] == 0)
+			{
+				continue;
+			}
+			int now = held(e.getKey());
+			if (now > drop[0])
+			{
+				drop[0] = now;
+				drop[1] = 0;
+				creditTaskProgress(e.getKey(), 1);
+			}
+			else if (client.getTickCount() > drop[1])
+			{
+				drop[1] = 0;
+			}
 		}
 	}
 

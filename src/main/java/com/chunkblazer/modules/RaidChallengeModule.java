@@ -520,7 +520,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (dmg > 0 && ch != null && Boolean.TRUE.equals(ch.getNoDamage()) && !s.violated)
 				{
 					s.violated = true;
-					announceFailure(task, "You took damage. This challenge must be done without taking a hit.");
+					announceFailure(task, "You took damage. No hits allowed.");
 				}
 			}
 			return;
@@ -870,7 +870,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 						if (!s.violated)
 						{
 							announceFailure(task, tooSlow
-								? "You did not defeat it fast enough. Kill it within "
+								? "Too slow. Kill it within "
 									+ ch.getMaxDefeatTicks() + " ticks."
 								: gateFailReason(ch, pit));
 						}
@@ -906,7 +906,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 					if (it != null && ch.getForbiddenItemIds().contains(it.getId()))
 					{
 						s.violated = true; // took a raid-supplied item
-						announceFailure(task, "You picked up an item that isn't allowed for this challenge.");
+						announceFailure(task, "You picked up a forbidden item.");
 						break;
 					}
 				}
@@ -1048,17 +1048,17 @@ public class RaidChallengeModule extends AbstractTaskModule
 		if (Boolean.TRUE.equals(ch.getNoRun()) && client.getVarpValue(runVarp(ch)) != 0)
 		{
 			why = "run enabled (varp " + runVarp(ch) + ")";
-			reason = "Run was on. This challenge must be done with run disabled.";
+			reason = "Run was on. Keep run off.";
 		}
 		else if (ch.getWeaponIds() != null && !ch.getWeaponIds().contains(equippedId(3)))
 		{
 			why = "weapon " + equippedId(3) + " not one of " + ch.getWeaponIds();
-			reason = "You weren't using a required weapon for this challenge.";
+			reason = "You weren't using a required weapon.";
 		}
 		else if (ch.getForbiddenWeaponIds() != null && ch.getForbiddenWeaponIds().contains(equippedId(3)))
 		{
 			why = "forbidden weapon " + equippedId(3) + " equipped";
-			reason = "You used a forbidden weapon for this challenge.";
+			reason = "You used a forbidden weapon.";
 		}
 		else if (ch.getEmptySlots() != null)
 		{
@@ -1080,7 +1080,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (counts.getOrDefault(reqId, 0) <= 0)
 				{
 					why = "required inventory item " + reqId + " missing";
-					reason = "You must keep the required item in your inventory for this challenge.";
+					reason = "Keep the required item in your inventory.";
 					break;
 				}
 			}
@@ -1102,7 +1102,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (!anyHeld)
 				{
 					why = "no item from required inventory group " + group;
-					reason = "You must keep a required item in your inventory for this challenge.";
+					reason = "Keep the required items in your inventory.";
 					break;
 				}
 			}
@@ -1131,7 +1131,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		if (why == null && Boolean.TRUE.equals(ch.getEmptyInventory()) && !inventoryCounts().isEmpty())
 		{
 			why = "inventory not empty";
-			reason = "Your inventory must be completely empty for this challenge.";
+			reason = "Your inventory must be empty.";
 		}
 		if (why == null && ch.getRequiredEquippedGroups() != null)
 		{
@@ -1149,7 +1149,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (!worn)
 				{
 					why = "required equipped group " + group + " not satisfied";
-					reason = "You must be wearing the full required set for this challenge.";
+					reason = "Wear the full required set.";
 					break;
 				}
 			}
@@ -1162,7 +1162,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if ((prayers & (1 << bit)) != 0)
 				{
 					why = "forbidden prayer bit " + bit + " active";
-					reason = "You used a prayer that isn't allowed for this challenge.";
+					reason = "You used a forbidden prayer.";
 					break;
 				}
 			}
@@ -1174,7 +1174,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (!isEquipped(reqId))
 				{
 					why = "required equipped item " + reqId + " not worn";
-					reason = "You must be wearing the required gear for this challenge.";
+					reason = "Wear the required gear.";
 					break;
 				}
 			}
@@ -1194,7 +1194,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			if (arenaGateOpen(ch, s) && outsideArenaBox(ch))
 			{
 				why = "outside arena box";
-				reason = "You left the area this challenge must be done in.";
+				reason = "You left the challenge area.";
 			}
 		}
 		// Gear-value budget: fail the instant the window opens if you walk in over
@@ -1203,31 +1203,31 @@ public class RaidChallengeModule extends AbstractTaskModule
 		if (why == null && ch.getMaxGearValue() != null && equippedGearValue() >= ch.getMaxGearValue())
 		{
 			why = "gear value " + equippedGearValue() + " >= max " + ch.getMaxGearValue();
-			reason = "Your equipped gear is worth too much. Must be under "
+			reason = "Your gear is worth too much. Must be under "
 				+ formatGp(ch.getMaxGearValue()) + " (you have " + formatGp(equippedGearValue()) + ").";
 		}
 		if (why == null && ch.getMinGearValue() != null && equippedGearValue() < ch.getMinGearValue())
 		{
 			why = "gear value " + equippedGearValue() + " < min " + ch.getMinGearValue();
-			reason = "Your equipped gear isn't worth enough. Need at least "
+			reason = "Your gear isn't worth enough. Need at least "
 				+ formatGp(ch.getMinGearValue()) + " (you have " + formatGp(equippedGearValue()) + ").";
 		}
 		if (why == null && ch.getMinPrayerBonus() != null && equippedPrayerBonus() < ch.getMinPrayerBonus())
 		{
 			why = "prayer bonus " + equippedPrayerBonus() + " < min " + ch.getMinPrayerBonus();
-			reason = "Your equipped Prayer bonus is too low. Need at least +"
+			reason = "Prayer bonus too low. Need at least +"
 				+ ch.getMinPrayerBonus() + " (you have +" + equippedPrayerBonus() + ").";
 		}
 		if (why == null && ch.getMinCrushDefence() != null && equippedCrushDefence() < ch.getMinCrushDefence())
 		{
 			why = "crush defence " + equippedCrushDefence() + " < min " + ch.getMinCrushDefence();
-			reason = "Your equipped Crush defence is too low. Need at least "
+			reason = "Crush defence too low. Need at least "
 				+ ch.getMinCrushDefence() + " (you have " + equippedCrushDefence() + ").";
 		}
 		if (why == null && ch.getMinRangedDefence() != null && equippedRangedDefence() < ch.getMinRangedDefence())
 		{
 			why = "ranged defence " + equippedRangedDefence() + " < min " + ch.getMinRangedDefence();
-			reason = "Your equipped Ranged defence is too low. Need at least "
+			reason = "Ranged defence too low. Need at least "
 				+ ch.getMinRangedDefence() + " (you have " + equippedRangedDefence() + ").";
 		}
 		if (why == null && ch.getMaxPlayerHitpoints() != null)
@@ -1248,12 +1248,12 @@ public class RaidChallengeModule extends AbstractTaskModule
 				if (Boolean.TRUE.equals(ch.getNoPrayerLoss()) && prayer < s.lastPrayerPoints)
 				{
 					why = "prayer dropped " + s.lastPrayerPoints + " -> " + prayer;
-					reason = "You lost a Prayer point. This challenge must be done without losing any.";
+					reason = "You lost Prayer points. None may be lost.";
 				}
 				else if (Boolean.TRUE.equals(ch.getNoPrayerRestore()) && prayer > s.lastPrayerPoints)
 				{
 					why = "prayer restored " + s.lastPrayerPoints + " -> " + prayer;
-					reason = "You restored Prayer points. This challenge must be done without restoring any.";
+					reason = "You restored Prayer points. None may be restored.";
 				}
 			}
 			s.lastPrayerPoints = prayer;
@@ -1612,7 +1612,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		}
 		else
 		{
-			announceFailure(task, "The finishing blow wasn't a Vengeance rebound. Vengeance must land the kill.");
+			announceFailure(task, "Vengeance must land the killing blow.");
 			resetAttempt(s);
 		}
 	}
@@ -2102,7 +2102,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 		}
 		if (Boolean.TRUE.equals(ch.getSolo()) && teamSize(ch) != 1)
 		{
-			return "This challenge must be done solo (team size was " + teamSize(ch) + ").";
+			return "This must be done solo (team size was " + teamSize(ch) + ").";
 		}
 		if (!pointInTimeOk)
 		{
@@ -2117,7 +2117,7 @@ public class RaidChallengeModule extends AbstractTaskModule
 			}
 			if (ch.getMaxGearValue() != null && equippedGearValue() >= ch.getMaxGearValue())
 			{
-				return "Your equipped gear was worth too much for this challenge.";
+				return "Your gear was worth too much.";
 			}
 		}
 		return "The run didn't meet this challenge's requirements.";

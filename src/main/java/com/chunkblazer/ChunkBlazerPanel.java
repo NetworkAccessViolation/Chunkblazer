@@ -266,19 +266,6 @@ public class ChunkBlazerPanel extends PluginPanel
 		return panel;
 	}
 
-	/**
-	 * Create a standard action button: bold RuneScape font, white text on the
-	 * given background, no focus ring. Caller wires the listener and adds it.
-	 */
-	private JButton actionButton(String text, Color bg)
-	{
-		JButton button = new JButton(text);
-		button.setFont(FontManager.getRunescapeBoldFont());
-		button.setBackground(bg);
-		button.setForeground(Color.WHITE);
-		button.setFocusPainted(false);
-		return button;
-	}
 
 	/**
 	 * Build the "Verify Your Account" banner. The big code label is filled in

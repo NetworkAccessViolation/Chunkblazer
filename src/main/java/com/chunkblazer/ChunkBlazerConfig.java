@@ -52,7 +52,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "unlockedChunks",
 		name = "Unlocked Regions",
-		description = "Internal: the player's unlocked region IDs (managed by the plugin, not hand-editable)",
+		description = "Internal: unlocked region IDs",
 		position = 0,
 		hidden = true
 	)
@@ -100,8 +100,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "pointsSpent",
 		name = "Points Spent",
-		description = "Running total of points spent unlocking chunks. Points EARNED is derived "
-			+ "from the completed task list; the spendable balance is earned minus this.",
+		description = "Internal: points spent on chunks",
 		position = 4,
 		hidden = true
 	)
@@ -113,8 +112,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "progressionBaseline",
 		name = "Progression Baseline",
-		description = "Per-skill levels captured when this account was first seen. "
-			+ "Progression tasks only pay for levels gained after this point.",
+		description = "Internal: skill levels when first seen",
 		position = 4,
 		hidden = true
 	)
@@ -138,7 +136,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "regionRolledTasks",
 		name = "Region Rolled Tasks",
-		description = "Stores the 4-5 tasks rolled per region (format: regionId:task1,task2|regionId2:task3,task4)",
+		description = "Internal: rolled tasks per region",
 		position = 5,
 		hidden = true
 	)
@@ -150,8 +148,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "unrevealedTasks",
 		name = "Unrevealed Tasks",
-		description = "Rolled tasks still waiting behind a face-down card (comma-separated task IDs). "
-			+ "These are NOT active and are not tracked until the card is flipped.",
+		description = "Internal: tasks behind unflipped cards",
 		position = 6,
 		hidden = true
 	)
@@ -223,7 +220,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "taskProgressData",
 		name = "Task Progress Data",
-		description = "Stores progress for all active tasks (format: taskId:progress,taskId2:progress2)",
+		description = "Internal: active task progress",
 		position = 8,
 		hidden = true
 	)
@@ -266,8 +263,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "serverSyncEnabled",
 		name = "Enable Server Sync",
-		description = "Save your progress to chunkblazer.com for cross-device saves and leaderboards. "
-			+ "Nothing is sent until you enable it.",
+		description = "Save progress to chunkblazer.com for cross-device saves and leaderboards. Nothing is sent until you enable it.",
 		warning = SERVER_SYNC_WARNING,
 		section = syncSection,
 		position = 0
@@ -280,8 +276,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "apiKey",
 		name = "Sync recovery key",
-		description = "Paste a saved key here to restore sync on a new device. Your key is stored per "
-			+ "account and is cleared from this box once applied. Keep it private.",
+		description = "Paste your sync key to restore sync on a new device. Cleared once applied. Keep it private.",
 		section = syncSection,
 		position = 1,
 		secret = true
@@ -327,8 +322,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "autoTrackTasks",
 		name = "Auto-Track Tasks",
-		description = "Using an NPC or object a task needs (attack, talk, chop, mine...) tracks that task. "
-			+ "A task you picked yourself is kept",
+		description = "Using an NPC or object a task needs tracks that task. A task you picked yourself is kept",
 		section = taskSection,
 		position = 2
 	)
@@ -340,7 +334,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showSavedTaskTracker",
 		name = "Saved Tasks Bubble",
-		description = "A bubble that opens your saved tasks over the inventory (Alt + drag to move it)",
+		description = "A bubble that opens your saved tasks (Alt + drag to move)",
 		section = taskSection,
 		position = 3
 	)
@@ -352,8 +346,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "movableTaskBox",
 		name = "Movable Quest/Saved Box",
-		description = "Off: quest requirements and saved tasks cover the inventory. "
-			+ "On: they open in a box you can Alt + drag anywhere",
+		description = "Open quest requirements and saved tasks in a box you can Alt + drag, instead of over the inventory",
 		section = taskSection,
 		position = 3
 	)
@@ -390,7 +383,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "taskOutlineMode",
 		name = "Outlines",
-		description = "Which task NPCs and objects get an outline: all, saved tasks, ones you can do now, or none",
+		description = "Which task NPCs and objects get outlined: all, saved, doable now, or none",
 		section = taskSection,
 		position = 5
 	)
@@ -426,8 +419,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "highlightEquipItems",
 		name = "Highlight Task Items",
-		description = "Outlines items your tasks need (gear to equip, tools like a knife or tinderbox) "
-			+ "in your inventory, bank and shops",
+		description = "Outline items your tasks need (gear, tools) in your inventory, bank and shops",
 		section = taskSection,
 		position = 8
 	)
@@ -464,7 +456,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showChunkCostLabels",
 		name = "Chunk Costs",
-		description = "Write what each unlockable chunk costs (FREE, points or a Boss Token) inside it",
+		description = "Show each unlockable chunk's cost (FREE, points or a Boss Token) inside it",
 		section = worldMapSection,
 		position = 1
 	)
@@ -488,7 +480,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showChunkGridLines",
 		name = "Lines Between Unlocked Chunks",
-		description = "Draw chunk outlines between your unlocked chunks too. Off shows your unlocked area as one connected piece.",
+		description = "Outline each unlocked chunk. Off shows your unlocked area as one piece.",
 		section = worldMapSection,
 		position = 3
 	)
@@ -501,7 +493,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "worldMapLockedColor",
 		name = "Locked Chunk Colour",
-		description = "Tint over chunks you can't unlock yet (lower the alpha to see more of the map)",
+		description = "Tint over chunks you can't unlock yet",
 		section = worldMapSection,
 		position = 4
 	)
@@ -565,8 +557,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "worldMapTasksKey",
 		name = "View Chunk Tasks Key",
-		description = "Hold this key (Ctrl by default) and click an unlocked chunk on the world map to open the "
-			+ "task window on that chunk's tasks",
+		description = "Hold this key (Ctrl by default) and click an unlocked chunk on the world map to see its tasks",
 		section = worldMapSection,
 		position = 9
 	)
@@ -587,7 +578,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showMinimapChunks",
 		name = "Chunk Borders & Tints",
-		description = "Show chunk borders and tints on the minimap. Click a neighbouring chunk to unlock it.",
+		description = "Chunk borders and tints on the minimap. Click a neighbouring chunk to unlock it.",
 		section = minimapSection,
 		position = 0
 	)
@@ -657,7 +648,7 @@ public interface ChunkBlazerConfig extends Config
 	@ConfigItem(
 		keyName = "showChunkNamePopups",
 		name = "Chunk Name Banner",
-		description = "Show the chunk's name in a small banner at the top of the screen when you walk into a new chunk",
+		description = "Show a chunk's name at the top of the screen when you enter it",
 		section = inGameSection,
 		position = 3
 	)

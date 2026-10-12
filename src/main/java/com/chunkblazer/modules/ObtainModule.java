@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -42,11 +44,15 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Skill;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.util.Text;
 import net.runelite.client.game.ItemManager;
 import com.chunkblazer.NuzlockeTask;
 import com.chunkblazer.RequiredItem;
@@ -441,10 +447,34 @@ public class ObtainModule extends AbstractTaskModule
 	 */
 	private int getItemCount(int itemId)
 	{
-		return countIn(InventoryID.INV, itemId)
-			+ countIn(InventoryID.BANK, itemId)
-			+ countIn(InventoryID.WORN, itemId);
+		return countAll(OWNED, itemId, false);
 	}
+
+	// Bags that catch items before the inventory sees them: a Master Farmer's seeds go
+	// straight into an open seed box, so an inventory-only count never moved. Counted
+	// with the inventory for production; a move between bag and pack nets to zero.
+	private static final Set<Integer> CARRIED = Set.of(InventoryID.INV, InventoryID.SEED_BOX, InventoryID.LOOTING_BAG,
+		InventoryID.TACKLE_BOX, InventoryID.FORESTRY_KIT, InventoryID.HUNTSMANS_KIT);
+
+	// Everything that counts as owning an item: carried, worn, banked, the seed vault.
+	private static final Set<Integer> OWNED = Set.of(InventoryID.INV, InventoryID.SEED_BOX, InventoryID.LOOTING_BAG,
+		InventoryID.TACKLE_BOX, InventoryID.FORESTRY_KIT, InventoryID.HUNTSMANS_KIT,
+		InventoryID.WORN, InventoryID.BANK, InventoryID.SEED_VAULT);
+
+	/** seenOnly skips bags whose contents haven't arrived this session (see seenBags). */
+	private int countAll(Set<Integer> containerIds, int itemId, boolean seenOnly)
+	{
+		int total = 0;
+		for (int id : containerIds)
+		{
+			if (!seenOnly || id == InventoryID.INV || seenBags.contains(id))
+			{
+				total += countIn(id, itemId);
+			}
+		}
+		return total;
+	}
+
 
 	private int countIn(int containerId, int itemId)
 	{
@@ -611,7 +641,7 @@ public class ObtainModule extends AbstractTaskModule
 			for (Integer variantId : slot.variantIds)
 			{
 				int prev = snapshot.getOrDefault(variantId, 0);
-				int curr = countIn(InventoryID.INV, variantId);
+				int curr = countAll(CARRIED, variantId, true);
 				nextSnapshot.put(variantId, curr);
 				prevSum += prev;
 				currSum += curr;
@@ -661,15 +691,20 @@ public class ObtainModule extends AbstractTaskModule
 		{
 			return;
 		}
+		creditedThisTick.merge(task.getTaskId(), totalDelta, Integer::sum);
+		addProgress(task, totalDelta, totalRequired, details.toString());
+	}
 
+	private void addProgress(NuzlockeTask task, int amount, int totalRequired, String details)
+	{
 		int previousProgress = task.getCurrentProgress();
-		int newProgress = Math.min(totalRequired, previousProgress + totalDelta);
+		int newProgress = Math.min(totalRequired, previousProgress + amount);
 		if (newProgress <= previousProgress)
 		{
 			return;
 		}
 		task.setCurrentProgress(newProgress);
-		sendTaskProgress(task, details.toString(), newProgress, totalRequired);
+		sendTaskProgress(task, details, newProgress, totalRequired);
 		if (completionCallback != null)
 		{
 			completionCallback.onProgressUpdated(task, newProgress);
@@ -697,8 +732,8 @@ public class ObtainModule extends AbstractTaskModule
 	}
 
 	/**
-	 * Snapshot the current INVENTORY-only count of every watched item for a
-	 * task. Used as the baseline against which onStatChanged credits a delta.
+	 * Snapshot the current carried count (inventory plus carried bags) of every
+	 * watched item for a task. Used as the baseline against which onStatChanged credits a delta.
 	 * Must run on the client thread — countIn() asserts it.
 	 */
 	private Map<Integer, Integer> snapshotInventoryCounts(List<Slot> slots)
@@ -708,15 +743,96 @@ public class ObtainModule extends AbstractTaskModule
 		{
 			for (Integer variantId : slot.variantIds)
 			{
-				snap.put(variantId, countIn(InventoryID.INV, variantId));
+				snap.put(variantId, countAll(CARRIED, variantId, true));
 			}
 		}
 		return snap;
 	}
 
+	// Gathering messages, which the game still sends when the item goes into a fish barrel,
+	// log basket, gem or coal bag instead of the pack (the wording Hub plugins that track
+	// those bags count from). Group 1 is the item as the game names it.
+	private static final Pattern GAIN = Pattern.compile(
+		"you (?:catch (?:an?|some) (?:raw )?|get some |manage to mine some |just (?:found|mined) an? )([a-z' -]+?)[.!].*");
+	private static final Pattern EXTRA = Pattern.compile(".*(enabled you to (catch|chop) an extra|provides you with an additional).*");
+	private final Map<String, Integer> gainedThisTick = new HashMap<>();
+	private final Map<String, Integer> creditedThisTick = new HashMap<>();
+	private String lastGain;
+
+	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (event.getType() != ChatMessageType.SPAM && event.getType() != ChatMessageType.GAMEMESSAGE)
+		{
+			return;
+		}
+		String msg = Text.removeTags(event.getMessage()).toLowerCase();
+		Matcher m = GAIN.matcher(msg);
+		String name = m.matches() ? m.group(1) : EXTRA.matcher(msg).matches() ? lastGain : null;
+		if (name != null)
+		{
+			lastGain = name;
+			gainedThisTick.merge(name, 1, Integer::sum);
+		}
+	}
+
+	/**
+	 * A gathering task whose skill gained XP this tick gets whatever its messages show
+	 * beyond what the pack already credited, so an item caught into a bag still counts
+	 * and one that reached the pack isn't counted twice.
+	 */
+	private void creditGains()
+	{
+		for (NuzlockeTask task : new HashSet<>(activeTasks))
+		{
+			Skill skill = skillForCompletionType(task.getCompletionType());
+			List<Slot> slots = taskSlots.get(task.getTaskId());
+			if (skill == null || slots == null || !skillsXpGainedThisTick.contains(skill))
+			{
+				continue;
+			}
+			int got = 0;
+			int required = 0;
+			for (Slot slot : slots)
+			{
+				required += slot.requiredQuantity;
+				int slotGot = 0;
+				for (Integer id : slot.variantIds)
+				{
+					slotGot = Math.max(slotGot,
+						gainedThisTick.getOrDefault(getItemName(id).toLowerCase().replaceAll("^(raw|uncut) | ore$", ""), 0));
+				}
+				got += Math.min(slotGot, slot.requiredQuantity);
+			}
+			int extra = got - creditedThisTick.getOrDefault(task.getTaskId(), 0);
+			if (extra > 0)
+			{
+				addProgress(task, extra, required, null);
+			}
+		}
+	}
+
+	private void rollSnapshots()
+	{
+		for (NuzlockeTask task : new HashSet<>(activeTasks))
+		{
+			List<Slot> slots = taskSlots.get(task.getTaskId());
+			if (slots != null && skillForCompletionType(task.getCompletionType()) != null)
+			{
+				inventoryHeldSnapshot.put(task.getTaskId(), snapshotInventoryCounts(slots));
+			}
+		}
+	}
+
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		if (!gainedThisTick.isEmpty())
+		{
+			creditGains();
+		}
+		gainedThisTick.clear();
+		creditedThisTick.clear();
 
 		// End-of-tick reconciliation for skilling tasks. GameTick fires after this
 		// tick's StatChanged / ItemContainerChanged, so all production crediting for
@@ -724,25 +840,23 @@ public class ObtainModule extends AbstractTaskModule
 		// forward to "now" — this moves the baseline past any non-skilling inventory
 		// change (banking, GE, pickups) that didn't gain XP, so it can't be
 		// miscredited next tick. Then clear the per-tick XP-gain markers.
-		if (!activeTasks.isEmpty())
-		{
-			for (NuzlockeTask task : new HashSet<>(activeTasks))
-			{
-				if (skillForCompletionType(task.getCompletionType()) == null)
-				{
-					continue; // OBTAIN (no-skill) tasks don't use the snapshot.
-				}
-				List<Slot> slots = taskSlots.get(task.getTaskId());
-				if (slots != null)
-				{
-					inventoryHeldSnapshot.put(task.getTaskId(), snapshotInventoryCounts(slots));
-				}
-			}
-		}
+		rollSnapshots();
 		skillsXpGainedThisTick.clear();
 		cookedThisTick.clear();
 
 
+	}
+
+	// Carried bags whose contents this session has already seen; see onItemContainerChanged.
+	private final Set<Integer> seenBags = ConcurrentHashMap.newKeySet();
+
+	@Subscribe
+	public void onGameStateChanged(GameStateChanged event)
+	{
+		if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
+		{
+			seenBags.clear();
+		}
 	}
 
 	@Subscribe
@@ -754,11 +868,7 @@ public class ObtainModule extends AbstractTaskModule
 		}
 
 		int containerId = event.getContainerId();
-		boolean isRelevant = containerId == InventoryID.INV
-			|| containerId == InventoryID.BANK
-			|| containerId == InventoryID.WORN;
-
-		if (!isRelevant)
+		if (!OWNED.contains(containerId))
 		{
 			return;
 		}
@@ -781,8 +891,15 @@ public class ObtainModule extends AbstractTaskModule
 		// tick, leave the snapshot alone: either onStatChanged will credit it when
 		// the XP arrives later this same tick, or it was a non-skilling change
 		// (banking/GE/pickup) that the end-of-tick slide in onGameTick rolls past.
-		if (containerId == InventoryID.INV)
+		if (CARRIED.contains(containerId))
 		{
+			// A bag's first contents this session arrive whole. They're the baseline, not
+			// production, or one pickpocket into a full seed box would credit every seed in it.
+			if (containerId != InventoryID.INV && seenBags.add(containerId))
+			{
+				rollSnapshots();
+				return;
+			}
 			for (NuzlockeTask task : new HashSet<>(activeTasks))
 			{
 				Skill taskSkill = skillForCompletionType(task.getCompletionType());

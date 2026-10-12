@@ -1,10 +1,15 @@
 package com.chunkblazer.modules;
 
+import net.runelite.api.Item;
+import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuAction;
 import net.runelite.api.NPC;
 import net.runelite.api.Skill;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.gameval.InventoryID;
+import com.chunkblazer.TaskConstraints;
 import net.runelite.client.chat.ChatMessageManager;
 import com.chunkblazer.NuzlockeTask;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +24,7 @@ import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -315,6 +321,105 @@ class ThievingModuleTest extends AbstractTaskModuleTest
 		thievingModule.onMenuOptionClicked(mockObjectClick(WINE_STALL_ID, MenuAction.GAME_OBJECT_SECOND_OPTION));
 		when(client.getTickCount()).thenReturn(102);
 		thievingModule.onStatChanged(mockThievingXp(1016));
+		verify(completionCallback, never()).onProgressUpdated(eq(task), anyInt());
+	}
+
+	private static final int MASTER_FARMER = 5730;
+	private static final int RANARR_SEED = 5295;
+	private static final int POTATO_SEED = 5318;
+
+	@Mock
+	private ItemContainer pack;
+
+	@Mock
+	private ItemContainer seedBox;
+
+	/** "Pickpocket a Master Farmer for a ranarr seed": a Thieving task that needs one item. */
+	private NuzlockeTask ranarrTask()
+	{
+		NuzlockeTask task = createTaskWithNpc("Pickpocket a Master Farmer for a Ranarr seed",
+			"pickpocket_master_farmer_ranarr_seed", "THIEVING", 1, Collections.singletonList(MASTER_FARMER));
+		TaskConstraints c = new TaskConstraints();
+		c.setDroppedItemIds(Collections.singletonList(RANARR_SEED));
+		task.setConstraints(c);
+		lenient().when(client.getSkillExperience(Skill.THIEVING)).thenReturn(1000);
+		lenient().when(client.getItemContainer(anyInt())).thenReturn(null);
+		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(pack);
+		lenient().when(pack.getItems()).thenReturn(new Item[0]);
+		thievingModule.addActiveTask(task);
+		return task;
+	}
+
+	private Item[] items(int id, int qty)
+	{
+		Item item = mock(Item.class);
+		lenient().when(item.getId()).thenReturn(id);
+		lenient().when(item.getQuantity()).thenReturn(qty);
+		return new Item[]{item};
+	}
+
+	/** Pickpocket, XP, then the seed lands: tick 100 click, 101 XP, 102 seed. */
+	private int thievingXp = 1000;
+
+	private void pickpocket(Runnable seedLands)
+	{
+		when(client.getTickCount()).thenReturn(100);
+		thievingModule.onMenuOptionClicked(npcClick(MASTER_FARMER, "Pickpocket"));
+		when(client.getTickCount()).thenReturn(101);
+		thievingXp += 43;
+		thievingModule.onStatChanged(mockThievingXp(thievingXp));
+		lenient().when(client.getTickCount()).thenReturn(102);
+		seedLands.run();
+		thievingModule.onGameTick(new GameTick());
+	}
+
+	@Test
+	void masterFarmerCreditsOnlyForTheRequiredSeed()
+	{
+		NuzlockeTask task = ranarrTask();
+		Item[] potato = items(POTATO_SEED, 1);
+		pickpocket(() ->
+		{
+			when(pack.getItems()).thenReturn(potato);
+		});
+		when(client.getTickCount()).thenReturn(110);
+		thievingModule.onGameTick(new GameTick());
+		verify(completionCallback, never()).onProgressUpdated(eq(task), anyInt());
+
+		Item[] ranarr = items(RANARR_SEED, 1);
+		pickpocket(() ->
+		{
+			when(pack.getItems()).thenReturn(ranarr);
+		});
+		verify(completionCallback).onProgressUpdated(eq(task), eq(1));
+	}
+
+	@Test
+	void masterFarmerSeedIntoAnOpenSeedBoxCredits()
+	{
+		NuzlockeTask task = ranarrTask();
+		when(client.getItemContainer(InventoryID.SEED_BOX)).thenReturn(seedBox);
+		Item[] before = items(RANARR_SEED, 3);
+		Item[] after = items(RANARR_SEED, 4);
+		when(seedBox.getItems()).thenReturn(before);
+		pickpocket(() ->
+		{
+			when(seedBox.getItems()).thenReturn(after);
+		});
+		verify(completionCallback).onProgressUpdated(eq(task), eq(1));
+	}
+
+	/** A seed box first seen after the click arrives whole; its ranarrs aren't a new seed. */
+	@Test
+	void seedBoxUnknownAtTheClickIsNotCounted()
+	{
+		NuzlockeTask task = ranarrTask();
+		Item[] box = items(RANARR_SEED, 5);
+		pickpocket(() ->
+		{
+			lenient().when(client.getItemContainer(InventoryID.SEED_BOX)).thenReturn(seedBox);
+			lenient().when(seedBox.getItems()).thenReturn(box);
+		});
 		verify(completionCallback, never()).onProgressUpdated(eq(task), anyInt());
 	}
 }
