@@ -512,6 +512,11 @@ public class FiremakingModule extends AbstractTaskModule
 			return;
 		}
 
+		if (!hasLevelFor(task))
+		{
+			return;
+		}
+
 		int progressIncrement = 0;
 
 		for (Map.Entry<Integer, Integer> consumed : consumedLogs.entrySet())
@@ -558,6 +563,17 @@ public class FiremakingModule extends AbstractTaskModule
 				rebuildWatchedItems();
 			}
 		}
+	}
+
+	/**
+	 * The task's Firemaking level, boosts included (the game accepts boosts for
+	 * lighting logs). A log dropped just before another one is lit leaves the
+	 * inventory inside the same match window, so it was credited alongside the
+	 * real burn — a willow dropped at level 26 counted as a willow burn.
+	 */
+	private boolean hasLevelFor(NuzlockeTask task)
+	{
+		return client.getBoostedSkillLevel(Skill.FIREMAKING) >= task.getLevelRequirement();
 	}
 
 	private void checkTaskProgress(NuzlockeTask task)

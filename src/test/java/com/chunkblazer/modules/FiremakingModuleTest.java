@@ -159,9 +159,12 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 
 	private static final int LOGS = 1511;
 	private static final int OAK_LOGS = 1521;
+	private static final int YEW_LOGS = 1515;
+	private static final int WILLOW_LOGS = 1519;
 
 	private int currentTick;
 	private int firemakingXp;
+	private int firemakingLevel = 99;
 
 	/**
 	 * Build mock inventory items. Always assign the result to a local BEFORE
@@ -206,6 +209,7 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 
 		lenient().when(client.getTickCount()).thenAnswer(inv -> currentTick);
 		lenient().when(client.getSkillExperience(Skill.FIREMAKING)).thenReturn(firemakingXp);
+		lenient().when(client.getBoostedSkillLevel(Skill.FIREMAKING)).thenAnswer(inv -> firemakingLevel);
 		lenient().when(inventoryContainer.getItems()).thenReturn(startingInventory);
 		lenient().when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
 
@@ -308,6 +312,56 @@ class FiremakingModuleTest extends AbstractTaskModuleTest
 		gainFiremakingXp(60);
 
 		assertEquals(0, task.getCurrentProgress(), "burning oak must not advance a normal-logs task");
+	}
+
+	/**
+	 * The drop trick, as recorded in game at Firemaking 26: drop a willow, drop a
+	 * normal log a tick later, light the normal log. Both drops were inside the
+	 * match window when the XP landed, so the willow sitting on the ground was
+	 * credited as a burn the player isn't levelled to make.
+	 */
+	@Test
+	void droppedUnderLevelledLogIsNotCreditedByAnotherLogsBurn()
+	{
+		firemakingLevel = 26;
+		NuzlockeTask logsTask = createTaskWithItems(
+			"Burn Logs", "burn_logs", "FIREMAKING", 10, Arrays.asList(LOGS));
+		logsTask.setLevel(1);
+		NuzlockeTask willowTask = createTaskWithItems(
+			"Burn Willow Logs", "burn_willow_logs", "FIREMAKING", 10, Arrays.asList(WILLOW_LOGS));
+		willowTask.setLevel(30);
+
+		Item[] startingInventory = items(LOGS, 1, WILLOW_LOGS, 1);
+		when(client.getTickCount()).thenAnswer(inv -> currentTick);
+		when(client.getSkillExperience(Skill.FIREMAKING)).thenReturn(firemakingXp);
+		when(client.getBoostedSkillLevel(Skill.FIREMAKING)).thenAnswer(inv -> firemakingLevel);
+		when(inventoryContainer.getItems()).thenReturn(startingInventory);
+		when(client.getItemContainer(InventoryID.INV)).thenReturn(inventoryContainer);
+		firemakingModule.addActiveTask(logsTask);
+		firemakingModule.addActiveTask(willowTask);
+
+		fireInventoryChanged(containerOf(LOGS, 1));
+		currentTick++;
+		fireInventoryChanged(containerOf());
+		currentTick += 4;
+		gainFiremakingXp(40);
+
+		assertEquals(1, logsTask.getCurrentProgress(), "the lit log must still credit");
+		assertEquals(0, willowTask.getCurrentProgress(), "a dropped willow at level 26 must not credit");
+	}
+
+	/** Boosts count, as they do for lighting logs in game. */
+	@Test
+	void boostedLevelMeetsTheRequirement()
+	{
+		firemakingLevel = 60;
+		NuzlockeTask task = startBurnTask(YEW_LOGS, 10, 27);
+		task.setLevel(60);
+
+		inventoryNowHolds(YEW_LOGS, 26);
+		gainFiremakingXp(100);
+
+		assertEquals(1, task.getCurrentProgress());
 	}
 
 	/** Firemaking XP with no log consumed at all credits nothing. */
