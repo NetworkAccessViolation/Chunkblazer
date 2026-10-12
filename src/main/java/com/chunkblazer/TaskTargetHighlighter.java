@@ -78,7 +78,6 @@ import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.StatChanged;
 import net.runelite.api.events.WallObjectDespawned;
 import net.runelite.api.events.WallObjectSpawned;
-import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
@@ -297,19 +296,14 @@ public class TaskTargetHighlighter extends Overlay
 	// by spawn/despawn events and fully rescanned when the wanted set changes.
 	private final Set<TileObject> trackedObjects = new HashSet<>();
 
-	private final ConfigManager configManager;
 	private final TooltipManager tooltipManager;
 
 	// Most tasks listed in the Shift + hover tooltip before it says "and N more".
 	private static final int HOVER_MAX_TASKS = 8;
 
-	// Saved (starred) task ids, re-read only when the stored list changes.
-	private String savedRaw;
-	private Set<String> savedIds = Collections.emptySet();
-
 	@Inject
 	public TaskTargetHighlighter(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
-		ModelOutlineRenderer outlineRenderer, TaskArchive archive, ConfigManager configManager, Gson gson,
+		ModelOutlineRenderer outlineRenderer, TaskArchive archive, Gson gson,
 		TaskItemOverlay itemOverlay, TooltipManager tooltipManager)
 	{
 		Tables tables = loadTables(gson);
@@ -321,7 +315,6 @@ public class TaskTargetHighlighter extends Overlay
 		}
 		this.tooltipManager = tooltipManager;
 		this.itemOverlay = itemOverlay;
-		this.configManager = configManager;
 		this.client = client;
 		this.plugin = plugin;
 		this.config = config;
@@ -382,7 +375,7 @@ public class TaskTargetHighlighter extends Overlay
 		}
 	}
 
-	/** The outlines have their own checkbox; the Tasks menu belongs to the Yellow paint style. */
+	/** The outlines have their own setting; the Tasks menu comes with any task box (not Off). */
 	private boolean isEnabled()
 	{
 		return config.taskOutlineMode() != OutlineMode.OFF || isMenuEnabled() || config.autoTrackTasks();
@@ -390,8 +383,7 @@ public class TaskTargetHighlighter extends Overlay
 
 	private boolean isMenuEnabled()
 	{
-		TaskTrackerStyle style = config.taskTrackerStyle();
-		return (style == TaskTrackerStyle.VANI || style == TaskTrackerStyle.COMPACT) && config.taskRightClickMenu();
+		return config.taskTrackerStyle() != TaskTrackerStyle.OFF && config.taskRightClickMenu();
 	}
 
 	private void rebuildIndex()
@@ -893,7 +885,7 @@ public class TaskTargetHighlighter extends Overlay
 		}
 		Color doable = config.taskHighlightColor();
 		Color unavailable = config.taskHighlightUnavailableColor();
-		Set<String> saved = mode == OutlineMode.SAVED ? savedTaskIds() : Collections.emptySet();
+		Set<String> saved = mode == OutlineMode.SAVED ? archive.savedIds() : Collections.emptySet();
 
 		if (!npcTasks.isEmpty() || !npcRules.isEmpty())
 		{
@@ -903,7 +895,7 @@ public class TaskTargetHighlighter extends Overlay
 				{
 					continue;
 				}
-				Color color = outlineColor(tasksForNpc(npc), mode, saved, doable, unavailable);
+				Color color = mode.color(tasksForNpc(npc), saved, doable, unavailable, this::canDo);
 				if (color != null)
 				{
 					outlineRenderer.drawOutline(npc, OUTLINE_WIDTH, color, OUTLINE_FEATHER);
@@ -918,73 +910,13 @@ public class TaskTargetHighlighter extends Overlay
 			{
 				continue;
 			}
-			Color color = outlineColor(tasksForObject(object.getId()), mode, saved, doable, unavailable);
+			Color color = mode.color(tasksForObject(object.getId()), saved, doable, unavailable, this::canDo);
 			if (color != null)
 			{
 				outlineRenderer.drawOutline(object, OUTLINE_WIDTH, color, OUTLINE_FEATHER);
 			}
 		}
 		return null;
-	}
-
-	/**
-	 * The outline colour for a target with these tasks, or null for no outline:
-	 * All tasks: any task (normal colour if one is doable, the "level too low" colour if not).
-	 * Saved tasks: only saved ones count, coloured the same way.
-	 * Have requirements: only when one of them is doable, in the normal colour.
-	 */
-	private Color outlineColor(List<NuzlockeTask> tasks, OutlineMode mode, Set<String> saved,
-		Color doable, Color unavailable)
-	{
-		if (tasks.isEmpty())
-		{
-			return null;
-		}
-		switch (mode)
-		{
-			case SAVED:
-				List<NuzlockeTask> savedTasks = new ArrayList<>();
-				for (NuzlockeTask task : tasks)
-				{
-					if (saved.contains(task.getTaskId()))
-					{
-						savedTasks.add(task);
-					}
-				}
-				if (savedTasks.isEmpty())
-				{
-					return null;
-				}
-				return anyDoable(savedTasks) ? doable : unavailable;
-			case CAN_DO:
-				return anyDoable(tasks) ? doable : null;
-			default:
-				return anyDoable(tasks) ? doable : unavailable;
-		}
-	}
-
-	/** Saved (starred) task ids for this account, the same list as the task window's Saved tab. */
-	private Set<String> savedTaskIds()
-	{
-		String raw = configManager.getRSProfileConfiguration("chunkblazer", "savedTasks");
-		if (raw == null)
-		{
-			raw = "";
-		}
-		if (!raw.equals(savedRaw))
-		{
-			Set<String> ids = new HashSet<>();
-			for (String id : raw.split(","))
-			{
-				if (!id.trim().isEmpty())
-				{
-					ids.add(id.trim());
-				}
-			}
-			savedIds = ids;
-			savedRaw = raw;
-		}
-		return savedIds;
 	}
 
 	/** The Examine option on an item in the inventory (one per item, like NPCs and objects). */
@@ -1184,7 +1116,7 @@ public class TaskTargetHighlighter extends Overlay
 
 		NuzlockeTask pick = null;
 		Comparator<NuzlockeTask> order = Comparator.comparingInt(NuzlockeTask::getBasePoints)
-			.thenComparing(Comparator.comparingDouble(TaskTargetHighlighter::fraction).reversed())
+			.thenComparing(Comparator.comparingDouble(TaskTargetExtras::progress).reversed())
 			.thenComparing(t -> t.getName() == null ? "" : t.getName());
 		for (NuzlockeTask task : tasks)
 		{
@@ -1198,12 +1130,6 @@ public class TaskTargetHighlighter extends Overlay
 			autoTrackedId = pick.getTaskId();
 			plugin.selectTaskFromGame(pick);
 		}
-	}
-
-	private static double fraction(NuzlockeTask task)
-	{
-		int target = Math.max(1, task.getTargetQuantity());
-		return Math.min(1.0, task.getCurrentProgress() / (double) target);
 	}
 
 	// --- Right-click "Tasks" submenu ----------------------------------------
@@ -1267,20 +1193,17 @@ public class TaskTargetHighlighter extends Overlay
 		}
 	}
 
-
 	/** The task's own level check, plus any real requirements it's missing (see TaskTargetExtras). */
 	private boolean canDo(NuzlockeTask task)
 	{
-		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null;
+		return TaskTargetExtras.canDo(client, plugin, task);
 	}
 
 	/** "(20 Defence, 20 Ranged)": every level you're missing, for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
-		String missing = TaskTargetExtras.missingRequirement(client, task);
-		return missing != null ? "(" + missing + ")" : "(Lvl " + task.getLevelRequirement() + ")";
+		return TaskTargetExtras.levelNote(client, plugin, task);
 	}
-
 
 	// --- Shift + hover ---------------------------------------------------------------
 

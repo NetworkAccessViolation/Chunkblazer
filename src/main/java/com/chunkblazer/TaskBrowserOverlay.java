@@ -129,7 +129,6 @@ import net.runelite.client.util.LinkBrowser;
 public class TaskBrowserOverlay extends Overlay
 {
 	private static final String CONFIG_GROUP = "chunkblazer";
-	private static final String SAVED_KEY = "savedTasks";
 	private static final String SEEN_KEY = "seenTasks";
 
 	// New-task alert: ticks to wait after login, how long the pointer shows, pulse speed.
@@ -799,23 +798,9 @@ public class TaskBrowserOverlay extends Overlay
 					{
 						toggleSaved(((NuzlockeTask) item).getTaskId());
 					}
-					else if (item instanceof NuzlockeTask && QuestRequirements.isQuestTask((NuzlockeTask) item))
-					{
-						// Quests aren't tracked: their requirements open over the side panel instead.
-						openQuestPane((NuzlockeTask) item);
-					}
 					else if (item instanceof NuzlockeTask)
 					{
-						// Clicking the tracked task again stops tracking it, like the saved list.
-						NuzlockeTask tracked = plugin.getSelectedTask();
-						if (tracked != null && tracked.getTaskId().equals(((NuzlockeTask) item).getTaskId()))
-						{
-							plugin.clearSelectedTask();
-						}
-						else
-						{
-							plugin.selectTaskFromGame((NuzlockeTask) item);
-						}
+						trackOrOpen((NuzlockeTask) item, TaskBrowserOverlay.this::openQuestPane);
 					}
 					// Redraw now rather than on the next game tick (up to 0.6s away).
 					sideKey = "";
@@ -1096,8 +1081,7 @@ public class TaskBrowserOverlay extends Overlay
 			return header;
 		}
 		NuzlockeTask task = (NuzlockeTask) item;
-		NuzlockeTask tracked = plugin.getSelectedTask();
-		boolean selected = tracked != null && task.getTaskId().equals(tracked.getTaskId());
+		boolean selected = isTracked(task);
 		boolean global = plugin.isGlobalTask(task.getTaskId());
 		int target = task.getTargetQuantity();
 		int progress = Math.min(task.getCurrentProgress(), target);
@@ -1226,19 +1210,40 @@ public class TaskBrowserOverlay extends Overlay
 
 	private Set<String> savedIds()
 	{
-		Set<String> ids = idSet(SAVED_KEY);
-		return ids == null ? new LinkedHashSet<>() : ids;
+		return archive.savedIds();
 	}
 
 	private void toggleSaved(String taskId)
 	{
-		Set<String> ids = savedIds();
-		if (!ids.remove(taskId))
-		{
-			ids.add(taskId);
-		}
-		storeIds(SAVED_KEY, ids);
+		archive.toggleSaved(taskId);
 		rowsBuiltAt = 0;
+	}
+
+	/**
+	 * A click on a task in any list: a quest opens its requirements ({@code openQuest}),
+	 * the tracked task stops being tracked, and any other task is tracked.
+	 */
+	private void trackOrOpen(NuzlockeTask task, Consumer<NuzlockeTask> openQuest)
+	{
+		if (QuestRequirements.isQuestTask(task))
+		{
+			openQuest.accept(task);
+		}
+		else if (isTracked(task))
+		{
+			plugin.clearSelectedTask();
+		}
+		else
+		{
+			plugin.selectTaskFromGame(task);
+		}
+	}
+
+	/** True if this is the task being tracked. */
+	private boolean isTracked(NuzlockeTask task)
+	{
+		NuzlockeTask tracked = plugin.getSelectedTask();
+		return tracked != null && task != null && tracked.getTaskId().equals(task.getTaskId());
 	}
 
 	/** Archive or restore a task. Archiving the tracked task also stops tracking it. */
@@ -1246,8 +1251,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		boolean archiving = !archive.isArchived(task);
 		archive.toggle(task.getTaskId());
-		NuzlockeTask tracked = plugin.getSelectedTask();
-		if (archiving && tracked != null && task.getTaskId().equals(tracked.getTaskId()))
+		if (archiving && isTracked(task))
 		{
 			plugin.clearSelectedTask();
 		}
@@ -1524,7 +1528,7 @@ public class TaskBrowserOverlay extends Overlay
 		switch (by)
 		{
 			case PROGRESS:
-				main = Comparator.comparingDouble(TaskBrowserOverlay::fraction);
+				main = Comparator.comparingDouble(TaskTargetExtras::progress);
 				break;
 			case LEVEL:
 				main = Comparator.comparingInt(NuzlockeTask::getLevelRequirement);
@@ -1695,27 +1699,17 @@ public class TaskBrowserOverlay extends Overlay
 		return lines;
 	}
 
-	private static double fraction(NuzlockeTask task)
-	{
-		return Math.min(1.0, task.getCurrentProgress() / (double) Math.max(1, task.getTargetQuantity()));
-	}
-
 	/** Level checks, real requirements (TaskTargetExtras) and, for quests, their requirements. */
 	private boolean canDo(NuzlockeTask task)
 	{
-		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null
-			&& quests.isReady(task);
+		return TaskTargetExtras.canDo(client, plugin, task) && quests.isReady(task);
 	}
 
 	/** "(20 Defence, 20 Ranged)", "(Lvl 40)" or "(Not ready)" for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
-		String missing = TaskTargetExtras.missingRequirement(client, task);
-		if (missing != null)
-		{
-			return "(" + missing + ")";
-		}
-		return plugin.meetsLevelRequirement(task) ? "(Not ready)" : "(Lvl " + task.getLevelRequirement() + ")";
+		String note = TaskTargetExtras.levelNote(client, plugin, task);
+		return note != null ? note : "(Not ready)";
 	}
 
 	// --- Drawing --------------------------------------------------------------
@@ -2422,8 +2416,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		boolean inList = list.contains(mx, my);
 		String taskId = task.getTaskId();
-		NuzlockeTask tracked = plugin.getSelectedTask();
-		boolean isTracked = tracked != null && taskId.equals(tracked.getTaskId());
+		boolean isTracked = isTracked(task);
 		if (isTracked)
 		{
 			// The task shown in the task box: warm fill, orange edge bar and outline.
@@ -2461,22 +2454,7 @@ public class TaskBrowserOverlay extends Overlay
 		drawDetail(graphics, detail, textX, row.y + ROW - 1, list, mx, my, small);
 		if (inList)
 		{
-			// A quest opens in the pane; clicking the tracked task stops tracking it; any other row tracks it.
-			hits.add(new Hit(row.intersection(list), () ->
-			{
-				if (QuestRequirements.isQuestTask(task))
-				{
-					openQuestPane(task);
-				}
-				else if (isTracked)
-				{
-					plugin.clearSelectedTask();
-				}
-				else
-				{
-					plugin.selectTaskFromGame(task);
-				}
-			}));
+			hits.add(new Hit(row.intersection(list), () -> trackOrOpen(task, this::openQuestPane)));
 		}
 		if (expandable)
 		{
@@ -2511,7 +2489,7 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.drawString(progress, rightEdge - progressWidth, row.y + 30);
 			progressStart = rightEdge - progressWidth - 76;
 			fill(graphics, new Rectangle(progressStart, row.y + 24, 70, 6), DARK);
-			fill(graphics, new Rectangle(progressStart, row.y + 24, (int) Math.round(70 * fraction(task)), 6), BAR_FILL);
+			fill(graphics, new Rectangle(progressStart, row.y + 24, (int) Math.round(70 * TaskTargetExtras.progress(task)), 6), BAR_FILL);
 		}
 		graphics.setColor(SUBTEXT);
 		graphics.drawString(fit(sm, info, progressStart - 10 - textX), textX, row.y + 30);
@@ -2743,9 +2721,8 @@ public class TaskBrowserOverlay extends Overlay
 	/**
 	 * The saved list in the pane: name (red if your level's too low), then its chunk or
 	 * category and progress. Click to track or untrack (a quest opens its requirements),
-	 * Shift + click to unsave.
+	 * Shift + click to unsave. Returns its full height, for the scrollbar.
 	 */
-	/** Draws the saved list and returns its full height, for the scrollbar. */
 	private int drawSavedList(Graphics2D graphics, List<NuzlockeTask> saved, Rectangle body, int mx, int my, Font small)
 	{
 		graphics.setFont(small);
@@ -2768,7 +2745,6 @@ public class TaskBrowserOverlay extends Overlay
 			total += 24 + 12 * names.get(names.size() - 1).size();
 		}
 		scroll = Math.max(0, Math.min(scroll, total - body.height));
-		NuzlockeTask tracked = plugin.getSelectedTask();
 		boolean shift = client.isKeyPressed(KeyCode.KC_SHIFT);
 		int y = body.y + 4 - scroll;
 		for (int i = 0; i < saved.size(); i++)
@@ -2780,7 +2756,7 @@ public class TaskBrowserOverlay extends Overlay
 			Rectangle row = new Rectangle(body.x + 4, y, body.width - 14, 20 + 12 * name.size());
 			y += row.height + 4;
 			boolean hover = row.contains(mx, my) && body.contains(mx, my);
-			boolean isTracked = tracked != null && task.getTaskId().equals(tracked.getTaskId());
+			boolean isTracked = isTracked(task);
 			Color tier = TaskCardTier.fromTask(task).getAccent();
 			graphics.setColor(hover && shift ? new Color(255, 70, 70, 50) : hover ? ROW_HOVER : isTracked ? TRACKED_FILL : ROW_ALT);
 			graphics.fillRoundRect(row.x, row.y, row.width, row.height, 8, 8);
@@ -2788,10 +2764,10 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.drawRoundRect(row.x, row.y, row.width, row.height, 8, 8);
 			graphics.setColor(tier);
 			graphics.fillRoundRect(row.x + 2, row.y + 4, 3, row.height - 8, 3, 3);
-			int goal = Math.max(1, task.getTargetQuantity());
-			if (goal > 1)
+			int target = Math.max(1, task.getTargetQuantity());
+			if (target > 1)
 			{
-				graphics.fillRect(row.x + 8, row.y + row.height - 3, (row.width - 14) * Math.min(task.getCurrentProgress(), goal) / goal, 2);
+				graphics.fillRect(row.x + 8, row.y + row.height - 3, (row.width - 14) * Math.min(task.getCurrentProgress(), target) / target, 2);
 			}
 			if (hover)
 			{
@@ -2805,21 +2781,12 @@ public class TaskBrowserOverlay extends Overlay
 					{
 						toggleSaved(task.getTaskId());
 					}
-					else if (QuestRequirements.isQuestTask(task))
-					{
-						navigateTo(task);
-					}
-					else if (isTracked)
-					{
-						plugin.clearSelectedTask();
-					}
 					else
 					{
-						plugin.selectTaskFromGame(task);
+						trackOrOpen(task, this::navigateTo);
 					}
 				}));
 			}
-			int target = Math.max(1, task.getTargetQuantity());
 			String progress = target > 1 ? Math.min(task.getCurrentProgress(), target) + "/" + target : "";
 			String where = plugin.isGlobalTask(task.getTaskId()) ? NuzlockeTask.displayCategory(task.getCategory())
 				: chunkNames.computeIfAbsent(task.getTaskId(), k -> chunkName(task));
