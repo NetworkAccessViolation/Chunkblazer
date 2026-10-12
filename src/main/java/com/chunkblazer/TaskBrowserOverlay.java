@@ -832,6 +832,7 @@ public class TaskBrowserOverlay extends Overlay
 					((FlatTextField) c).getTextField().setForeground(Color.WHITE);
 					((FlatTextField) c).getTextField().setCaretColor(Color.WHITE);
 					((FlatTextField) c).getTextField().setFont(FontManager.getRunescapeFont());
+					smooth(((FlatTextField) c).getTextField());
 				}
 			}
 			sideSearch.setPreferredSize(new Dimension(sideSearch.getPreferredSize().width, 34));
@@ -858,12 +859,20 @@ public class TaskBrowserOverlay extends Overlay
 			sideSize = size == null ? 16f : Float.parseFloat(size);
 			// Everything A-/A+ resizes besides the list itself.
 			List<JComponent> scaled = new ArrayList<>(Arrays.asList(sideSkill, sideTier, sideSort));
-			Runnable rescale = () -> scaled.forEach(c -> c.setFont(FontManager.getRunescapeSmallFont().deriveFont(sideSize)));
+			Runnable rescale = () -> scaled.forEach(c ->
+			{
+				c.setFont(FontManager.getRunescapeSmallFont().deriveFont(sideSize));
+				smooth(c);
+				if (c instanceof JComboBox && ((JComboBox<?>) c).getRenderer() instanceof JComponent)
+				{
+					smooth((JComponent) ((JComboBox<?>) c).getRenderer());
+				}
+			});
 			JPanel sizes = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 			sizes.setOpaque(false);
 			for (int step : new int[]{-2, 2})
 			{
-				JButton button = new JButton(step < 0 ? "A-" : "A+");
+				JButton button = smooth(new JButton(step < 0 ? "A-" : "A+"));
 				button.addActionListener(e ->
 				{
 					sideSize = Math.max(12, Math.min(24, sideSize + step));
@@ -961,7 +970,7 @@ public class TaskBrowserOverlay extends Overlay
 			};
 			rescale.run();
 			sideSync.run();
-			panel.addTaskList(sideStats);
+			panel.addTaskList(smooth(sideStats));
 			for (JComponent c : Arrays.asList(sizes, search, fold, filters, sideSort))
 			{
 				c.setMaximumSize(new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height));
@@ -1039,6 +1048,19 @@ public class TaskBrowserOverlay extends Overlay
 		});
 	}
 
+	/**
+	 * The RuneScape fonts are pixel fonts on a 16-pixel grid, so they're only crisp when their
+	 * size on screen is 16 (or 32) pixels. Any other size, or Windows display scaling (150% on a
+	 * 4K screen), squeezes the grid unevenly; drawn as plain pixels, rows and columns drop out
+	 * or double up. Smoothed (greyscale) text stays whole at any size and is just as sharp on
+	 * the grid. Greyscale, not the coloured ClearType edges Windows would pick.
+	 */
+	private static <T extends JComponent> T smooth(T component)
+	{
+		component.putClientProperty(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		return component;
+	}
+
 	/** Chunks paid for with points or a boss token; free, charter and starting chunks don't count. */
 	private int paidChunks()
 	{
@@ -1088,7 +1110,7 @@ public class TaskBrowserOverlay extends Overlay
 			header.setBorder(BorderFactory.createCompoundBorder(new EmptyBorder(8, 0, 4, 0),
 				BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(70, 70, 70)),
 					new EmptyBorder(2, 2, 3, 2))));
-			return header;
+			return smooth(header);
 		}
 		NuzlockeTask task = (NuzlockeTask) item;
 		boolean selected = isTracked(task);
@@ -1099,7 +1121,8 @@ public class TaskBrowserOverlay extends Overlay
 		String description = task.getDescription() == null ? "" : task.getDescription().trim();
 		// Name; category, points and level; chunk; description. Then a progress bar.
 		JLabel card = new JLabel("<html><table cellpadding=0 cellspacing=0 width=165><tr><td>"
-			+ "<span style='font-size:" + Math.round(sideSize + 2) + "pt'><font color='#96ff96'>"
+			// The name in RuneScape Bold at the same size: a bigger size would be off the font's pixel grid.
+			+ "<span style='font-family:RuneScape;font-weight:bold'><font color='#96ff96'>"
 			+ (saved(task) ? "&#9733; " : "") + (task.getName() == null ? task.getTaskId() : task.getName())
 			+ "</font></span><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory())
 			+ (task.getLevelRequirement() > 1 ? "  Lvl " + task.getLevelRequirement() : "")
@@ -1112,6 +1135,7 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				Graphics2D g2 = (Graphics2D) g.create();
 				g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+				g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 				int w = getWidth();
 				int h = getHeight() - 3;
 				java.awt.geom.RoundRectangle2D box = new java.awt.geom.RoundRectangle2D.Float(0.5f, 0.5f, w - 1.5f, h - 1.5f, 12, 12);
@@ -1145,7 +1169,7 @@ public class TaskBrowserOverlay extends Overlay
 		};
 		card.setFont(small);
 		card.setBorder(new EmptyBorder(5, 12, global ? 9 : 25, 6));
-		return card;
+		return smooth(card);
 	}
 
 	private boolean saved(NuzlockeTask task)
