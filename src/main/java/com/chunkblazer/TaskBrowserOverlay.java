@@ -75,7 +75,6 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.KeyCode;
@@ -329,6 +328,13 @@ public class TaskBrowserOverlay extends Overlay
 	private final List<Hit> menuHits = new ArrayList<>();
 	private volatile Runnable hoveredAction;
 	private volatile boolean mouseInWindow;
+	// Where the window or box was last drawn, on screen (null when neither is shown).
+	private volatile Rectangle shownArea;
+	// A hint to show by the mouse this frame (set while drawing, drawn last by drawTip).
+	private String tip;
+	private String tipQuest;
+	private long tipQuestAt;
+	private boolean tipQuestFound;
 
 	// Dragging the window by its title. Drag events are swallowed, so movement is read
 	// from the events, not the game's mouse position.
@@ -354,15 +360,19 @@ public class TaskBrowserOverlay extends Overlay
 
 	private final MouseAdapter mouse = new MouseAdapter()
 	{
-		// Over the task window or the side pane, moves stop at the overlay (like RuneLite's
-		// own), so nothing under it (inventory items, NPCs...) shows hover text or tooltips.
+		// Over the task window or the quest/saved box, the game is told the mouse left the
+		// screen, so nothing under it (inventory items, NPCs...) keeps hover text or a tooltip.
+		// (Swallowing the move left the game's mouse where it entered, stuck on what was there.)
+		// The last drawn area is checked too: mouseInWindow is a frame behind on the way in.
 		@Override
 		public MouseEvent mouseMoved(MouseEvent event)
 		{
 			paneMouse = event.getPoint();
-			if ((open || questPane != null) && mouseInWindow)
+			Rectangle area = shownArea;
+			if ((open || questPane != null) && (mouseInWindow || area != null && area.contains(event.getPoint())))
 			{
-				event.consume();
+				return new MouseEvent(event.getComponent(), event.getID(), event.getWhen(), event.getModifiersEx(),
+					-1, -1, 0, false);
 			}
 			return event;
 		}
@@ -1741,6 +1751,7 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			hoveredAction = null;
 			mouseInWindow = false;
+			shownArea = null;
 			if (!open && loggedIn && !newIds.isEmpty())
 			{
 				drawNewTaskAlert(graphics);
@@ -1882,6 +1893,8 @@ public class TaskBrowserOverlay extends Overlay
 			drawTierMenu(graphics, filterButton, mx, my);
 		}
 		finishHover(window, mx, my);
+		shownArea = window;
+		drawTip(graphics, mx, my, 0, 0);
 		return null;
 	}
 
@@ -2497,7 +2510,7 @@ public class TaskBrowserOverlay extends Overlay
 
 	/**
 	 * Detail lines from (x, y). Clickable ones get a hit: a section header opens/closes, a
-	 * chunk shows on the map, a quest opens in the pane.
+	 * chunk shows on the world map (now, or as soon as it's opened), a quest opens in the pane.
 	 */
 	private void drawDetail(Graphics2D graphics, List<QuestRequirements.Line> detail, int x, int y, Rectangle clip,
 		int mx, int my, Font small)
@@ -2511,12 +2524,21 @@ public class TaskBrowserOverlay extends Overlay
 			Rectangle area = detailLineArea(sm, detail, x, y, i);
 			if (line.clickable() && in)
 			{
-				hits.add(new Hit(area.intersection(clip), line.region > 0 ? () -> showChunkOnMap(line.region, line.text.trim())
-					: line.quest != null ? () -> showQuest(line.quest, line.text.replace(" (checking)", ""))
+				hits.add(new Hit(area.intersection(clip), line.region > 0 ? () -> worldMap.focusRegion(line.region)
+					: line.quest != null ? () -> showQuest(line.quest)
 					: () -> quests.toggleSection(line.toggle)));
 			}
 			int lineY = area.y + 1 + sm.getAscent();
 			boolean hover = line.clickable() && in && area.contains(mx, my);
+			if (hover && line.region > 0)
+			{
+				tip = worldMap.isMapOpen() ? "Click to show it on the world map" : "Click, then open the world map to see it";
+			}
+			else if (hover && line.quest != null)
+			{
+				tip = hasQuestTask(line.quest) ? "Click to see this quest's requirements"
+					: "Not in your task list (done, or not a ChunkBlazer quest)";
+			}
 			// Section headings sit on a faint band; anything clickable lights up under the mouse.
 			if (line.header || hover)
 			{
@@ -2573,18 +2595,35 @@ public class TaskBrowserOverlay extends Overlay
 	}
 
 	/** A prerequisite quest was clicked: open it in the pane, or say in chat that it isn't a task right now. */
-	private void showQuest(String questName, String display)
+	private void showQuest(String questName)
 	{
-		NuzlockeTask found = pool(true).stream()
+		NuzlockeTask found = questTask(questName);
+		if (found != null)
+		{
+			navigateTo(found);
+		}
+	}
+
+	/** For the hover tip: whether the quest is in your task list, rechecked at most once a second. */
+	private boolean hasQuestTask(String questName)
+	{
+		long now = System.currentTimeMillis();
+		if (!questName.equals(tipQuest) || now - tipQuestAt > 1000)
+		{
+			tipQuest = questName;
+			tipQuestAt = now;
+			tipQuestFound = questTask(questName) != null;
+		}
+		return tipQuestFound;
+	}
+
+	/** The quest task for this quest (a RuneLite Quest name), or null if it isn't in your task list. */
+	private NuzlockeTask questTask(String questName)
+	{
+		return pool(true).stream()
 			.filter(t -> QuestRequirements.isQuestTask(t) && t.getConstraints() != null
 				&& questName.equals(t.getConstraints().getQuest()))
 			.findFirst().orElse(null);
-		if (found == null)
-		{
-			chat(display + " isn't in your task list (it's done, or not a ChunkBlazer quest).");
-			return;
-		}
-		navigateTo(found);
 	}
 
 	/**
@@ -2716,6 +2755,33 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.translate(-(int) (16 * (1 - in) * (1 - in)), 0);
 		graphics.setComposite(oldComposite);
 		finishHover(pane, mx, my);
+		shownArea = new Rectangle(pane.x + ox, pane.y + oy, pane.width, pane.height);
+		drawTip(graphics, mx, my, ox, oy);
+	}
+
+	/**
+	 * The hint set while drawing ({@code tip}), in a small box by the mouse, over everything.
+	 * Drawn here rather than by RuneLite's tooltips, which follow the game's mouse: over the
+	 * window and box the game is told the mouse is off screen. (ox, oy) is where (0, 0) is on screen.
+	 */
+	private void drawTip(Graphics2D graphics, int mx, int my, int ox, int oy)
+	{
+		String text = tip;
+		tip = null;
+		if (text == null)
+		{
+			return;
+		}
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+		Rectangle box = new Rectangle(0, 0, fm.stringWidth(text) + 10, 17);
+		box.x = Math.max(-ox, Math.min(mx + 12, client.getCanvasWidth() - ox - box.width - 2));
+		box.y = my + 20 + box.height > client.getCanvasHeight() - oy ? my - box.height - 4 : my + 20;
+		fill(graphics, box, MENU_BACKGROUND);
+		graphics.setColor(BORDER);
+		graphics.drawRect(box.x, box.y, box.width, box.height);
+		graphics.setColor(Color.WHITE);
+		graphics.drawString(text, box.x + 5, box.y + 13);
 	}
 
 	/**
@@ -2868,24 +2934,6 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			questPane = null;
 		}
-	}
-
-	/** Jump the world map to a chunk and outline it; if the map is closed, say to open it. */
-	private void showChunkOnMap(int region, String name)
-	{
-		worldMap.focusRegion(region);
-		clientThread.invoke(() ->
-		{
-			if (!worldMap.isMapOpen())
-			{
-				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Open the world map to see " + name + ".", null);
-			}
-		});
-	}
-
-	private void chat(String message)
-	{
-		clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null));
 	}
 
 	// --- Small drawing helpers ------------------------------------------------
