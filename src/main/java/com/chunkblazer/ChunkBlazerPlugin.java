@@ -315,6 +315,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// @Singleton survives disable/enable.
 		serverBackoff.reset();
 		syncRejectedKey = null;
+		lastSyncSuccessMs = 0;
 		registrationClosedRsn = null;
 
 		// Resolve this plugin's OWN sandboxed data directory as a Filepath, rooted
@@ -575,6 +576,11 @@ public class ChunkBlazerPlugin extends Plugin
 
 	// Key the server refused on sync (401). Sync halts until the key changes.
 	private volatile String syncRejectedKey;
+
+	// When this account's last sync was accepted (0 = not this session). The reset link
+	// is only safe while this is recent: the server copy is what a reset restores from.
+	private volatile long lastSyncSuccessMs;
+	private static final long RESET_SYNC_FRESHNESS_MS = 2 * 60_000L;
 
 	// RSN refused by closed registration. Skipped by the periodic login retry.
 	private volatile String registrationClosedRsn;
@@ -2777,6 +2783,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// key only on first claim (security C1), so a returning account authenticates
 		// with the copy it persisted, not one re-fetched every login.
 		loadPersistedApiKey();
+		lastSyncSuccessMs = 0;
 		String accountId = hashedAccountId();
 		apiClient.login(rsn, fullHashRsn(rsn), accountId)
 			.thenAccept(resp ->
@@ -3034,6 +3041,33 @@ public class ChunkBlazerPlugin extends Plugin
 	 * player to restart the client and log back in. Sync is left with no key, so a stale
 	 * logout sync can never push the cleared data back to the server.
 	 */
+	/**
+	 * Why resetting this account's local data now would erase progress the server
+	 * doesn't have, or null when it's safe. A reset restores from the server, so it's
+	 * only safe while syncing works and has just succeeded (Blaze Locked lost two days
+	 * of progress resetting while sync was refused).
+	 */
+	String resetBlockedReason(long nowMs)
+	{
+		if (!isServerSyncEnabled())
+		{
+			return "Server sync is off, so this account's progress only exists on this computer. "
+				+ "Resetting would erase it for good.";
+		}
+		if (syncRejectedKey != null || apiClient == null || apiClient.currentApiKey() == null)
+		{
+			return "This account isn't syncing right now, so your recent progress hasn't reached the "
+				+ "server. Resetting would erase it. Relog to reconnect, or paste this account's key "
+				+ "into Sync recovery key in the ChunkBlazer settings, then try again.";
+		}
+		if (lastSyncSuccessMs == 0 || nowMs - lastSyncSuccessMs > RESET_SYNC_FRESHNESS_MS)
+		{
+			return "This account hasn't synced in the last couple of minutes, so the server may be "
+				+ "missing your recent progress. Stay logged in for a minute so it can sync, then try again.";
+		}
+		return null;
+	}
+
 	public void resetAccountLocalData()
 	{
 		if (configManager == null || !isAccountStateAvailable())
@@ -4399,6 +4433,10 @@ public class ChunkBlazerPlugin extends Plugin
 					// dropped request: the retry would arrive without the flag, be
 					// refused as a destructive drop, and the next login's union would
 					// restore everything the player asked to clear.
+					if (resp != null && resp.isSuccess())
+					{
+						lastSyncSuccessMs = System.currentTimeMillis();
+					}
 					if (resp != null && resp.isSuccess() && targets != null)
 					{
 						setAccountState(TARGETS_SENT_KEY, targets.sentThrough);
