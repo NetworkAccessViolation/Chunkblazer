@@ -211,7 +211,7 @@ public class ChunkBlazerPlugin extends Plugin
 	private TaskCardInput taskCardInput;
 
 	// True while the configured world-map unlock key is held. Set by
-	// ChunkBlazerInput (KeyListener); read in onMenuOptionClicked so a click on
+	// ChunkBlazerInput (KeyListener); read in unlockFromWorldMap so a click on
 	// the world map while the key is down unlocks the hovered chunk.
 	@Setter
 	private boolean worldMapUnlockKeyPressed;
@@ -876,6 +876,10 @@ public class ChunkBlazerPlugin extends Plugin
 		// login): start the in-game UI and load the tasks. A pending bootstrap below
 		// reloads the tasks anyway. An account's mode only goes from unset to set, so
 		// once it's set this stops checking until logout, when another account may follow.
+		if (!modeReady && !isModeLocked())
+		{
+			grandfatherCasual();
+		}
 		if (!modeReady && isModeLocked())
 		{
 			setModeReady(true);
@@ -1045,6 +1049,70 @@ public class ChunkBlazerPlugin extends Plugin
 			// Don't leave the key "stuck on" if focus is lost mid-hold.
 			worldMapUnlockKeyPressed = false;
 		}
+	}
+
+	/**
+	 * An account with progress from before a mode was required, that can't qualify for
+	 * Competitive anyway, is set to Casual so it carries on instead of stopping until a
+	 * mode is picked. One that could still go Competitive keeps the choice. Waits for the
+	 * server's state when syncing, since that may carry the account's mode.
+	 */
+	private void grandfatherCasual()
+	{
+		if (!isAccountStateAvailable() || (config.apiEnabled() && !serverStateMerged)
+			|| pendingCompetitiveLock || pendingNuzlockeSnapshot != null || pendingVerificationNonce != null
+			|| acStr("completedTasks", "").isEmpty())
+		{
+			return;
+		}
+		String rsn = getPlayerName();
+		EligibilitySnapshot snapshot = buildEligibilitySnapshot();
+		if (rsn == null || snapshot == null || couldStillGoCompetitive(snapshot))
+		{
+			return;
+		}
+		// Only the lock, not commitModeLock: picking Casual there also unlocks the chunk the
+		// player stands in as a free start, which an account with progress mustn't get. The
+		// next sync records the mode on the server.
+		setAccountState("accountModeHash", hashRsn(rsn) + ":" + GameMode.CASUAL.name());
+		setAccountState("gameMode", GameMode.CASUAL);
+		addPluginChatMessage("ChunkBlazer now needs a game mode before it runs. This account already has "
+			+ "progress, so it's been set to Casual and carries on as before.");
+	}
+
+	private static final Set<String> COMBAT_SKILLS = new HashSet<>(Arrays.asList(
+		"ATTACK", "STRENGTH", "DEFENCE", "RANGED", "MAGIC", "PRAYER", "HITPOINTS"));
+
+	/**
+	 * A loose mirror of the server's Competitive rule (nuzlocke.go): could this account
+	 * still pass it? An ironman type, combat 9 or lower, Hitpoints 15 or lower, other
+	 * skills 3 or lower, no quests past Tutorial Island. Unknown data leaves the choice.
+	 */
+	static boolean couldStillGoCompetitive(EligibilitySnapshot s)
+	{
+		Integer type = s.getAccountType();
+		if ((type != null && (type < 1 || type > 3)) || s.getCombatLevel() > 9 || s.getQuestPoints() > 1)
+		{
+			return false;
+		}
+		Map<String, Integer> skills = s.getSkills();
+		if (skills == null)
+		{
+			return true;
+		}
+		Integer hp = skills.get("HITPOINTS");
+		if (hp != null && hp > 15)
+		{
+			return false;
+		}
+		for (Map.Entry<String, Integer> e : skills.entrySet())
+		{
+			if (!COMBAT_SKILLS.contains(e.getKey()) && e.getValue() != null && e.getValue() > 3)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -2574,7 +2642,7 @@ public class ChunkBlazerPlugin extends Plugin
 					{
 						if (mode == GameMode.NUZLOCKE)
 						{
-							addPluginChatMessage("Couldn't reach the server to confirm Competitive. Staying on Casual, try again later.");
+							addPluginChatMessage("Couldn't reach the server to confirm Competitive. Try again in a moment.");
 						}
 						return;
 					}
@@ -2598,7 +2666,8 @@ public class ChunkBlazerPlugin extends Plugin
 						// Never leave a local Competitive lock the server won't honor.
 						if (mode == GameMode.NUZLOCKE)
 						{
-							addPluginChatMessage("Competitive was declined by the server. Your account isn't eligible, so you're staying on Casual.");
+							addPluginChatMessage("Competitive was declined by the server because your account isn't eligible. "
+								+ "Pick Casual in the ChunkBlazer side panel to start playing.");
 						}
 						log.warn("Server lock-mode response: status={} message={}",
 							response.getStatus(), response.getMessage());
@@ -4281,7 +4350,7 @@ public class ChunkBlazerPlugin extends Plugin
 								setAccountState("accountModeHash", "");
 								setAccountState("gameMode", GameMode.CASUAL);
 								modeLockConfirmed = false;
-								addPluginChatMessage("Your account isn't eligible for Competitive, so ChunkBlazer set it back to Casual.");
+								addPluginChatMessage("Your account isn't eligible for Competitive, so its Competitive lock was removed.");
 							}
 						});
 				}
