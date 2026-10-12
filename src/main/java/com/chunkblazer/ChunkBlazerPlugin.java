@@ -315,6 +315,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// @Singleton survives disable/enable.
 		serverBackoff.reset();
 		syncRejectedKey = null;
+		lastSyncSuccessMs = 0;
 		registrationClosedRsn = null;
 
 		// Resolve this plugin's OWN sandboxed data directory as a Filepath, rooted
@@ -596,6 +597,11 @@ public class ChunkBlazerPlugin extends Plugin
 	// Key the server refused on sync (401). Sync halts until the key changes.
 	private volatile String syncRejectedKey;
 
+	// When this account's last sync was accepted (0 = not this session). The reset link
+	// is only safe while this is recent: the server copy is what a reset restores from.
+	private volatile long lastSyncSuccessMs;
+	private static final long RESET_SYNC_FRESHNESS_MS = 2 * 60_000L;
+
 	// RSN refused by closed registration. Skipped by the periodic login retry.
 	private volatile String registrationClosedRsn;
 
@@ -604,6 +610,11 @@ public class ChunkBlazerPlugin extends Plugin
 	// confirms it authenticates THIS account (login response authed_by_key), so a wrong
 	// or unknown key can never brick a working account. Cleared once the login resolves.
 	private String pendingPastedKey;
+
+	// A first-login sync key that couldn't be saved yet, and the hashed account id it was
+	// issued to (see persistApiKey / retryUnsavedApiKey).
+	private volatile String unsavedApiKey;
+	private volatile String unsavedApiKeyAccount;
 
 	// Last RS profile key onProfileChanged acted on. A world hop (and some no-op
 	// ProfilePanel actions) re-activate the config profile without changing the
@@ -856,6 +867,10 @@ public class ChunkBlazerPlugin extends Plugin
 		// once, and the per-task settle-up path freezes the client at that volume
 		// (see completeTasks()). Coalescing keeps it to a single settle-up per tick.
 		flushPendingCompletions();
+		if (unsavedApiKey != null)
+		{
+			retryUnsavedApiKey(hashedAccountId());
+		}
 
 		// Pick up a mode being locked (panel, server-confirmed Competitive, adopted at
 		// login): start the in-game UI and load the tasks. A pending bootstrap below
@@ -2839,7 +2854,9 @@ public class ChunkBlazerPlugin extends Plugin
 		// key only on first claim (security C1), so a returning account authenticates
 		// with the copy it persisted, not one re-fetched every login.
 		loadPersistedApiKey();
-		apiClient.login(rsn, fullHashRsn(rsn), hashedAccountId())
+		lastSyncSuccessMs = 0;
+		String accountId = hashedAccountId();
+		apiClient.login(rsn, fullHashRsn(rsn), accountId)
 			.thenAccept(resp ->
 			{
 				ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
@@ -2888,7 +2905,7 @@ public class ChunkBlazerPlugin extends Plugin
 							// The pasted key key-authenticated as THIS account: confirmed
 							// correct, so NOW persist it (replacing any old key) and wipe
 							// the shared recovery field.
-							persistApiKey(pendingPastedKey);
+							persistApiKey(pendingPastedKey, accountId);
 							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
 							addPluginChatMessage("Sync key accepted. This account is now synced with it.");
 						}
@@ -2907,7 +2924,7 @@ public class ChunkBlazerPlugin extends Plugin
 					else
 					{
 						// First-claim logins return a fresh key; capture it per-account.
-						persistApiKey(apiClient.getPlayerApiKey());
+						persistApiKey(apiClient.getPlayerApiKey(), accountId);
 					}
 					pendingPastedKey = null;
 					clientThread.invoke(this::sendPendingHcimDeath);
@@ -3029,16 +3046,56 @@ public class ChunkBlazerPlugin extends Plugin
 	 * account leak — mirroring every account's key there is what let the next account inherit
 	 * it. The panel reveals the key straight from the per-account store (getSyncRecoveryKey).
 	 */
-	private void persistApiKey(String key)
+	void persistApiKey(String key, String accountId)
 	{
 		if (key == null || key.isEmpty())
 		{
 			return;
 		}
-		if (isAccountStateAvailable() && !key.equals(acStr("apiKey", "")))
+		if (!isAccountStateAvailable())
+		{
+			// The server sends a key only on an account's first login, so dropping it here
+			// strands the account: every later session's sync is refused (HevansBlazer).
+			// Hold it until this account's store is ready; onGameTick retries.
+			if (!key.equals(unsavedApiKey))
+			{
+				log.warn("[CHUNKBLAZER] account settings not ready; holding the new sync key until they are");
+			}
+			unsavedApiKey = key;
+			unsavedApiKeyAccount = accountId;
+			return;
+		}
+		if (!key.equals(acStr("apiKey", "")))
 		{
 			setAccountState("apiKey", key);
+			flushConfigToDisk();
 		}
+		unsavedApiKey = null;
+		unsavedApiKeyAccount = null;
+	}
+
+	/**
+	 * Save a held sync key once account settings are ready, but only into the account it
+	 * was issued to. Saving it into whichever account is logged in now would hand one
+	 * account's key to another (the cross-account leak), so a key whose account has gone
+	 * is dropped instead.
+	 */
+	void retryUnsavedApiKey(String currentAccountId)
+	{
+		String key = unsavedApiKey;
+		if (key == null || !isAccountStateAvailable())
+		{
+			return;
+		}
+		String owner = unsavedApiKeyAccount;
+		if (owner == null || !owner.equals(currentAccountId))
+		{
+			log.warn("[CHUNKBLAZER] dropped a held sync key: the account it belongs to is no longer logged in");
+			unsavedApiKey = null;
+			unsavedApiKeyAccount = null;
+			return;
+		}
+		persistApiKey(key, owner);
 	}
 
 	/**
@@ -3055,6 +3112,33 @@ public class ChunkBlazerPlugin extends Plugin
 	 * player to restart the client and log back in. Sync is left with no key, so a stale
 	 * logout sync can never push the cleared data back to the server.
 	 */
+	/**
+	 * Why resetting this account's local data now would erase progress the server
+	 * doesn't have, or null when it's safe. A reset restores from the server, so it's
+	 * only safe while syncing works and has just succeeded (Blaze Locked lost two days
+	 * of progress resetting while sync was refused).
+	 */
+	String resetBlockedReason(long nowMs)
+	{
+		if (!isServerSyncEnabled())
+		{
+			return "Server sync is off, so this account's progress only exists on this computer. "
+				+ "Resetting would erase it for good.";
+		}
+		if (syncRejectedKey != null || apiClient == null || apiClient.currentApiKey() == null)
+		{
+			return "This account isn't syncing right now, so your recent progress hasn't reached the "
+				+ "server. Resetting would erase it. Relog to reconnect, or paste this account's key "
+				+ "into Sync recovery key in the ChunkBlazer settings, then try again.";
+		}
+		if (lastSyncSuccessMs == 0 || nowMs - lastSyncSuccessMs > RESET_SYNC_FRESHNESS_MS)
+		{
+			return "This account hasn't synced in the last couple of minutes, so the server may be "
+				+ "missing your recent progress. Stay logged in for a minute so it can sync, then try again.";
+		}
+		return null;
+	}
+
 	public void resetAccountLocalData()
 	{
 		if (configManager == null || !isAccountStateAvailable())
@@ -3067,6 +3151,8 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		configManager.unsetRSProfileConfiguration(CONFIG_GROUP, "apiKey");
 		configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+		unsavedApiKey = null;
+		unsavedApiKeyAccount = null;
 		if (apiClient != null)
 		{
 			apiClient.setPlayerApiKey(null);
@@ -4418,6 +4504,10 @@ public class ChunkBlazerPlugin extends Plugin
 					// dropped request: the retry would arrive without the flag, be
 					// refused as a destructive drop, and the next login's union would
 					// restore everything the player asked to clear.
+					if (resp != null && resp.isSuccess())
+					{
+						lastSyncSuccessMs = System.currentTimeMillis();
+					}
 					if (resp != null && resp.isSuccess() && targets != null)
 					{
 						setAccountState(TARGETS_SENT_KEY, targets.sentThrough);
