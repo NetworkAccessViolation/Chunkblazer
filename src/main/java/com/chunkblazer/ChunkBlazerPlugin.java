@@ -585,6 +585,11 @@ public class ChunkBlazerPlugin extends Plugin
 	// or unknown key can never brick a working account. Cleared once the login resolves.
 	private String pendingPastedKey;
 
+	// A first-login sync key that couldn't be saved yet, and the hashed account id it was
+	// issued to (see persistApiKey / retryUnsavedApiKey).
+	private volatile String unsavedApiKey;
+	private volatile String unsavedApiKeyAccount;
+
 	// Last RS profile key onProfileChanged acted on. A world hop (and some no-op
 	// ProfilePanel actions) re-activate the config profile without changing the
 	// account, re-firing ProfileChanged; acting again revokes sync and reseeds off
@@ -832,6 +837,10 @@ public class ChunkBlazerPlugin extends Plugin
 		// once, and the per-task settle-up path freezes the client at that volume
 		// (see completeTasks()). Coalescing keeps it to a single settle-up per tick.
 		flushPendingCompletions();
+		if (unsavedApiKey != null)
+		{
+			retryUnsavedApiKey(hashedAccountId());
+		}
 
 		if (pendingServerLogin && player.getName() != null && countedWorld)
 		{
@@ -2768,7 +2777,8 @@ public class ChunkBlazerPlugin extends Plugin
 		// key only on first claim (security C1), so a returning account authenticates
 		// with the copy it persisted, not one re-fetched every login.
 		loadPersistedApiKey();
-		apiClient.login(rsn, fullHashRsn(rsn), hashedAccountId())
+		String accountId = hashedAccountId();
+		apiClient.login(rsn, fullHashRsn(rsn), accountId)
 			.thenAccept(resp ->
 			{
 				ApiOutcome outcome = resp == null ? ApiOutcome.TRANSIENT : resp.getOutcome();
@@ -2817,7 +2827,7 @@ public class ChunkBlazerPlugin extends Plugin
 							// The pasted key key-authenticated as THIS account: confirmed
 							// correct, so NOW persist it (replacing any old key) and wipe
 							// the shared recovery field.
-							persistApiKey(pendingPastedKey);
+							persistApiKey(pendingPastedKey, accountId);
 							configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
 							addPluginChatMessage("Sync key accepted. This account is now synced with it.");
 						}
@@ -2836,7 +2846,7 @@ public class ChunkBlazerPlugin extends Plugin
 					else
 					{
 						// First-claim logins return a fresh key; capture it per-account.
-						persistApiKey(apiClient.getPlayerApiKey());
+						persistApiKey(apiClient.getPlayerApiKey(), accountId);
 					}
 					pendingPastedKey = null;
 					clientThread.invoke(this::sendPendingHcimDeath);
@@ -2958,16 +2968,56 @@ public class ChunkBlazerPlugin extends Plugin
 	 * account leak — mirroring every account's key there is what let the next account inherit
 	 * it. The panel reveals the key straight from the per-account store (getSyncRecoveryKey).
 	 */
-	private void persistApiKey(String key)
+	void persistApiKey(String key, String accountId)
 	{
 		if (key == null || key.isEmpty())
 		{
 			return;
 		}
-		if (isAccountStateAvailable() && !key.equals(acStr("apiKey", "")))
+		if (!isAccountStateAvailable())
+		{
+			// The server sends a key only on an account's first login, so dropping it here
+			// strands the account: every later session's sync is refused (HevansBlazer).
+			// Hold it until this account's store is ready; onGameTick retries.
+			if (!key.equals(unsavedApiKey))
+			{
+				log.warn("[CHUNKBLAZER] account settings not ready; holding the new sync key until they are");
+			}
+			unsavedApiKey = key;
+			unsavedApiKeyAccount = accountId;
+			return;
+		}
+		if (!key.equals(acStr("apiKey", "")))
 		{
 			setAccountState("apiKey", key);
+			flushConfigToDisk();
 		}
+		unsavedApiKey = null;
+		unsavedApiKeyAccount = null;
+	}
+
+	/**
+	 * Save a held sync key once account settings are ready, but only into the account it
+	 * was issued to. Saving it into whichever account is logged in now would hand one
+	 * account's key to another (the cross-account leak), so a key whose account has gone
+	 * is dropped instead.
+	 */
+	void retryUnsavedApiKey(String currentAccountId)
+	{
+		String key = unsavedApiKey;
+		if (key == null || !isAccountStateAvailable())
+		{
+			return;
+		}
+		String owner = unsavedApiKeyAccount;
+		if (owner == null || !owner.equals(currentAccountId))
+		{
+			log.warn("[CHUNKBLAZER] dropped a held sync key: the account it belongs to is no longer logged in");
+			unsavedApiKey = null;
+			unsavedApiKeyAccount = null;
+			return;
+		}
+		persistApiKey(key, owner);
 	}
 
 	/**
@@ -2996,6 +3046,8 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		configManager.unsetRSProfileConfiguration(CONFIG_GROUP, "apiKey");
 		configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
+		unsavedApiKey = null;
+		unsavedApiKeyAccount = null;
 		if (apiClient != null)
 		{
 			apiClient.setPlayerApiKey(null);
