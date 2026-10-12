@@ -1114,13 +1114,17 @@ public class TaskTargetHighlighter extends Overlay
 			}
 		}
 
+		// The action that set this off may have just finished one of them (one mud pie):
+		// a finished task is never tracked.
+		Set<String> completed = plugin.getCompletedTaskIdSet();
 		NuzlockeTask pick = null;
 		Comparator<NuzlockeTask> order = Comparator.comparingInt(NuzlockeTask::getBasePoints)
 			.thenComparing(Comparator.comparingDouble(TaskTargetExtras::progress).reversed())
 			.thenComparing(t -> t.getName() == null ? "" : t.getName());
 		for (NuzlockeTask task : tasks)
 		{
-			if (canDo(task) && (pick == null || order.compare(task, pick) < 0))
+			if (canDo(task) && !task.isCompleted() && !completed.contains(task.getTaskId())
+				&& (pick == null || order.compare(task, pick) < 0))
 			{
 				pick = task;
 			}

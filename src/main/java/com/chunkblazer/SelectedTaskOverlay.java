@@ -202,8 +202,9 @@ public class SelectedTaskOverlay extends OverlayPanel
 				.leftColor(Color.WHITE)
 				.build());
 
-		// What the task actually asks for, when the name alone doesn't say.
-		for (String requirement : requirementLines(task))
+		// What the task actually asks for, when the name alone doesn't say. A timed task's
+		// limit isn't repeated as text when the countdown bar below shows it.
+		for (String requirement : requirementLines(task, timeLimitTicks(task) == 0))
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 					.left(requirement)
@@ -503,6 +504,12 @@ public class SelectedTaskOverlay extends OverlayPanel
 	 */
 	static List<String> requirementLines(NuzlockeTask task)
 	{
+		return requirementLines(task, true);
+	}
+
+	/** The same, with or without the time limit ("Within 0:18"). */
+	private static List<String> requirementLines(NuzlockeTask task, boolean withTime)
+	{
 		List<String> lines = new ArrayList<>();
 		String description = task.getDescription();
 		if (description != null && !description.trim().isEmpty()
@@ -517,7 +524,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		{
 			return lines;
 		}
-		if (c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
+		if (withTime && c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
 		{
 			int seconds = (int) Math.round(c.getTimeInTicks() * 0.6);
 			lines.add(String.format("Within %d:%02d", seconds / 60, seconds % 60));
