@@ -58,12 +58,14 @@ public class WorldMapLegendOverlay extends Overlay
 
 	private final Client client;
 	private final ChunkBlazerConfig config;
+	private final ChunkBlazerWorldMapOverlay worldMap;
 
 	@Inject
-	public WorldMapLegendOverlay(Client client, ChunkBlazerConfig config)
+	public WorldMapLegendOverlay(Client client, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap)
 	{
 		this.client = client;
 		this.config = config;
+		this.worldMap = worldMap;
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ALWAYS_ON_TOP);
 		setPriority(PRIORITY_HIGHEST);
@@ -72,10 +74,6 @@ public class WorldMapLegendOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!config.showWorldMapChunks() || !config.showChunkLegend())
-		{
-			return null;
-		}
 		Widget map = client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER);
 		if (map == null || map.isHidden())
 		{
@@ -86,7 +84,17 @@ public class WorldMapLegendOverlay extends Overlay
 		{
 			return null;
 		}
+		if (config.showWorldMapChunks() && config.showChunkLegend())
+		{
+			drawLegend(graphics, worldMapRect);
+		}
+		// The map's hover tooltip goes on top too, over the legend and map icons.
+		worldMap.drawTooltip(graphics);
+		return null;
+	}
 
+	private void drawLegend(Graphics2D graphics, Rectangle worldMapRect)
+	{
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		FontMetrics fm = graphics.getFontMetrics();
 
@@ -126,6 +134,5 @@ public class WorldMapLegendOverlay extends Overlay
 			graphics.drawString(row.legend, sx + swatch + padding, rowY + (lineHeight + fm.getAscent()) / 2 - 2);
 			rowY += lineHeight;
 		}
-		return null;
 	}
 }

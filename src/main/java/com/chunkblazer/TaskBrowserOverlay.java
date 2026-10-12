@@ -49,6 +49,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -58,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import javax.inject.Inject;
@@ -72,9 +75,9 @@ import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.KeyCode;
 import net.runelite.api.MenuAction;
 import net.runelite.api.Skill;
 import net.runelite.api.events.FocusChanged;
@@ -82,6 +85,7 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.VarClientIntChanged;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarClientID;
 import net.runelite.api.widgets.Widget;
@@ -105,6 +109,7 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.OverlayPriority;
+import net.runelite.client.util.LinkBrowser;
 
 /**
  * Leagues-style task window, opened from the Points orb (ChunkBlazerOrbWidget).
@@ -123,7 +128,6 @@ import net.runelite.client.ui.overlay.OverlayPriority;
 public class TaskBrowserOverlay extends Overlay
 {
 	private static final String CONFIG_GROUP = "chunkblazer";
-	private static final String SAVED_KEY = "savedTasks";
 	private static final String SEEN_KEY = "seenTasks";
 
 	// New-task alert: ticks to wait after login, how long the pointer shows, pulse speed.
@@ -303,6 +307,15 @@ public class TaskBrowserOverlay extends Overlay
 	// A quest link was clicked: scroll to and briefly outline this task.
 	// The quest whose requirements are shown over the side panel (null when closed).
 	private volatile NuzlockeTask questPane;
+	// Stands in for the saved-tasks list in the pane, so Back and closing work the same.
+	private static final NuzlockeTask SAVED_PANE = new NuzlockeTask();
+	private long questPaneAt;
+	// Quests opened from inside the pane, newest first, for its Back link.
+	private final Deque<NuzlockeTask> questBack = new ConcurrentLinkedDeque<>();
+	// The saved-list row under the mouse, for right-click to unsave.
+	private volatile String paneRowId;
+	// Where the side panel was when the box was last drawn, to notice it moving.
+	private Rectangle paneSide;
 
 	// New-task alert: unseen active tasks, the snapshot the New tab shows, the Points orb.
 	private final Set<String> newIds = ConcurrentHashMap.newKeySet();
@@ -315,6 +328,13 @@ public class TaskBrowserOverlay extends Overlay
 	private final List<Hit> menuHits = new ArrayList<>();
 	private volatile Runnable hoveredAction;
 	private volatile boolean mouseInWindow;
+	// Where the window or box was last drawn, on screen (null when neither is shown).
+	private volatile Rectangle shownArea;
+	// A hint to show by the mouse this frame (set while drawing, drawn last by drawTip).
+	private String tip;
+	private String tipQuest;
+	private long tipQuestAt;
+	private boolean tipQuestFound;
 
 	// Dragging the window by its title. Drag events are swallowed, so movement is read
 	// from the events, not the game's mouse position.
@@ -335,12 +355,33 @@ public class TaskBrowserOverlay extends Overlay
 	private final Map<String, List<String>> requirements = new HashMap<>();
 	private long rowsBuiltAt;
 
+	// The mouse as the window and pane see it; the game stops following it over them.
+	private volatile java.awt.Point paneMouse = new java.awt.Point(-1, -1);
+
 	private final MouseAdapter mouse = new MouseAdapter()
 	{
+		// Over the task window or the quest/saved box, the game is told the mouse left the
+		// screen, so nothing under it (inventory items, NPCs...) keeps hover text or a tooltip.
+		// (Swallowing the move left the game's mouse where it entered, stuck on what was there.)
+		// The last drawn area is checked too: mouseInWindow is a frame behind on the way in.
+		@Override
+		public MouseEvent mouseMoved(MouseEvent event)
+		{
+			paneMouse = event.getPoint();
+			Rectangle area = shownArea;
+			if ((open || questPane != null) && (mouseInWindow || area != null && area.contains(event.getPoint())))
+			{
+				return new MouseEvent(event.getComponent(), event.getID(), event.getWhen(), event.getModifiersEx(),
+					-1, -1, 0, false);
+			}
+			return event;
+		}
+
 		@Override
 		public MouseEvent mousePressed(MouseEvent event)
 		{
-			if (!open && questPane == null || !mouseInWindow)
+			// Alt + click is RuneLite moving the free-standing quest/saved box.
+			if (!open && questPane == null || !mouseInWindow || event.isAltDown())
 			{
 				return event;
 			}
@@ -355,6 +396,11 @@ public class TaskBrowserOverlay extends Overlay
 			else if (event.getButton() == MouseEvent.BUTTON1 && hoveredAction != null)
 			{
 				hoveredAction.run();
+			}
+			else if (event.getButton() == MouseEvent.BUTTON3 && !open && paneRowId != null)
+			{
+				// Right-click unsaves in the saved list, as it unstars in the side panel.
+				toggleSaved(paneRowId);
 			}
 			// Clicks inside the window never reach the game.
 			event.consume();
@@ -396,7 +442,7 @@ public class TaskBrowserOverlay extends Overlay
 		return event;
 	};
 
-	// Esc closes the window; any key closes the quest pane. Search typing goes through a chatbox
+	// Esc closes the window and the quest/saved box (F-keys close the box too). Search typing goes through a chatbox
 	// input (startSearch), so key-remapping plugins don't eat the letters.
 	private final KeyListener keys = new KeyListener()
 	{
@@ -412,8 +458,14 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				tasksKeyHeld = true;
 			}
-			// Any key (a tab hotkey, Esc...) closes the quest pane, so it never blocks a prayer switch.
-			questPane = null;
+			// Esc closes the quest/saved box, and so do the F-key tab hotkeys while it covers the
+			// inventory, so it never blocks a prayer switch. Typing in chat and moving the camera
+			// leave it open (switching tab any other way closes it too: onVarClientIntChanged).
+			int code = event.getKeyCode();
+			if (code == KeyEvent.VK_ESCAPE || code >= KeyEvent.VK_F1 && code <= KeyEvent.VK_F12 && !config.movableTaskBox())
+			{
+				questPane = null;
+			}
 			if (open && !searchFocused && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 			{
 				close();
@@ -461,12 +513,41 @@ public class TaskBrowserOverlay extends Overlay
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
 		setPriority(OverlayPriority.HIGH);
+		freeBox = new Overlay(plugin)
+		{
+			@Override
+			public String getName()
+			{
+				return "ChunkBlazerTaskBox";
+			}
+
+			@Override
+			public Dimension render(Graphics2D graphics)
+			{
+				Rectangle at = getBounds();
+				if (!config.movableTaskBox() || open || questPane == null || at == null
+					|| client.getGameState() != GameState.LOGGED_IN)
+				{
+					return null;
+				}
+				Rectangle size = sidePanel();
+				drawQuestPane(graphics, new Rectangle(0, 0, size.width, size.height), at.x, at.y);
+				return new Dimension(size.width, size.height);
+			}
+		};
+		freeBox.setPosition(OverlayPosition.BOTTOM_RIGHT);
+		freeBox.setLayer(OverlayLayer.ABOVE_WIDGETS);
 	}
+
+	// With "Movable Quest/Saved Box" on, the box is its own overlay, so RuneLite's
+	// Alt + drag moves it and remembers where; it keeps the inventory's size.
+	private final Overlay freeBox;
 
 	/** Registers this window and the other UI overlays (item outlines, banner, map legend). */
 	public void startUp()
 	{
 		overlayManager.add(this);
+		overlayManager.add(freeBox);
 		mouseManager.registerMouseListener(mouse);
 		mouseManager.registerMouseWheelListener(wheel);
 		keyManager.registerKeyListener(keys);
@@ -482,6 +563,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		open = false;
 		overlayManager.remove(this);
+		overlayManager.remove(freeBox);
 		mouseManager.unregisterMouseListener(mouse);
 		mouseManager.unregisterMouseWheelListener(wheel);
 		keyManager.unregisterKeyListener(keys);
@@ -653,7 +735,6 @@ public class TaskBrowserOverlay extends Overlay
 	// The side panel's task list, styled like the original panel: stats, the selected task,
 	// then Saved, Chunk, Active and Global sections of rounded tier cards. Click a heading
 	// to fold it. It uses the window's task data, so none of that logic is repeated here.
-	private static final int SIDE_MAX = 25;
 	private static final Color FLAME = new Color(255, 140, 0);
 	private final JList<Object> sideList = new JList<Object>()
 	{
@@ -673,9 +754,12 @@ public class TaskBrowserOverlay extends Overlay
 	private final JComboBox<String> sideSkill = new JComboBox<>();
 	private final JComboBox<String> sideTier = new JComboBox<>();
 	private final JComboBox<String> sideSort = new JComboBox<>();
-	// Side panel filters: like the window's, but each box cycles off, on (shown) and hidden.
-	private final Set<Filter> sideOn = ConcurrentHashMap.newKeySet();
-	private final Set<Filter> sideHidden = ConcurrentHashMap.newKeySet();
+	// The side panel shares the window's filters and sort; these keep its controls in step.
+	private final Map<Filter, JButton> sideBoxes = new EnumMap<>(Filter.class);
+	private Runnable sideSync = () ->
+	{
+	};
+	private boolean sideSyncing;
 	private final JLabel sideStats = new JLabel();
 
 	/** Once a tick: add the list to the side panel, and refresh it while it's on screen. */
@@ -685,7 +769,9 @@ public class TaskBrowserOverlay extends Overlay
 		if (!sideAdded && panel != null)
 		{
 			sideAdded = true;
-			sideFolded.addAll(Arrays.asList("Active Tasks", "Global Tasks"));
+			String folded = configManager.getRSProfileConfiguration(CONFIG_GROUP, "sideFolded");
+			sideFolded.addAll(Arrays.asList((folded == null ? "Active Tasks,Global Tasks" : folded).split(",")));
+			loadFilters();
 			sideList.setCellRenderer((list, item, index, selected, focus) -> sideRow(item, index == sideHover));
 			java.awt.event.MouseAdapter sideMouse = new java.awt.event.MouseAdapter()
 			{
@@ -716,19 +802,15 @@ public class TaskBrowserOverlay extends Overlay
 						{
 							sideFolded.add(section);
 						}
+						configManager.setRSProfileConfiguration(CONFIG_GROUP, "sideFolded", String.join(",", sideFolded));
 					}
 					else if (item instanceof NuzlockeTask && SwingUtilities.isRightMouseButton(e))
 					{
 						toggleSaved(((NuzlockeTask) item).getTaskId());
 					}
-					else if (item instanceof NuzlockeTask && QuestRequirements.isQuestTask((NuzlockeTask) item))
-					{
-						// Quests aren't tracked: their requirements open over the side panel instead.
-						openQuestPane((NuzlockeTask) item);
-					}
 					else if (item instanceof NuzlockeTask)
 					{
-						plugin.selectTaskFromGame((NuzlockeTask) item);
+						trackOrOpen((NuzlockeTask) item, TaskBrowserOverlay.this::openQuestPane);
 					}
 					// Redraw now rather than on the next game tick (up to 0.6s away).
 					sideKey = "";
@@ -799,6 +881,19 @@ public class TaskBrowserOverlay extends Overlay
 			Arrays.stream(TaskCardTier.values()).forEach(t -> sideTier.addItem(t.getDisplayName()));
 			JPanel filters = new JPanel(new GridLayout(0, 2, 4, 4));
 			filters.setOpaque(false);
+			filters.setVisible(false);
+			// The filters fold under one button, shut to start, which counts what's set.
+			JButton fold = new JButton();
+			scaled.add(fold);
+			Runnable foldText = () -> fold.setText((filters.isVisible() ? "\u25BC Filters" : "\u25B6 Filters")
+				+ " (" + (filterOn.size() + filterHidden.size() + (filterSkill != null ? 1 : 0)
+				+ (filterTier != null ? 1 : 0)) + ")");
+			fold.addActionListener(e ->
+			{
+				filters.setVisible(!filters.isVisible());
+				foldText.run();
+				panel.revalidate();
+			});
 			filters.add(sideSkill);
 			filters.add(sideTier);
 			// Each sort field twice: its usual direction first, so "Points" high to low leads.
@@ -809,38 +904,65 @@ public class TaskBrowserOverlay extends Overlay
 					sideSort.addItem("Sort: " + field.label + (asc ? " \u25B2" : " \u25BC"));
 				}
 			}
+			Runnable changed = () ->
+			{
+				saveFilters();
+				refresh();
+				sideSync.run();
+				research.run();
+			};
 			for (JComboBox<String> box : Arrays.asList(sideSkill, sideTier, sideSort))
 			{
 				box.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 				box.setForeground(Color.WHITE);
-				box.addActionListener(e -> research.run());
+				box.addActionListener(e ->
+				{
+					if (sideSyncing)
+					{
+						return;
+					}
+					int skill = sideSkill.getSelectedIndex();
+					int tier = sideTier.getSelectedIndex();
+					int sort = sideSort.getSelectedIndex();
+					filterSkill = skill < 1 ? null : sideSkills()[skill - 1];
+					filterTier = tier < 1 ? null : TaskCardTier.values()[tier - 1];
+					sortField = SortField.values()[sort / 2];
+					ascending = sortField.ascendingByDefault == (sort % 2 == 0);
+					changed.run();
+				});
 			}
 			for (Filter f : Filter.values())
 			{
 				JButton box = new JButton(f.shortLabel);
 				scaled.add(box);
+				sideBoxes.put(f, box);
+				// Off, then on (shown), then hidden, then off again.
 				box.addActionListener(e ->
 				{
-					boolean on = sideOn.remove(f);
-					boolean hidden = sideHidden.remove(f);
-					if (!on && !hidden)
-					{
-						sideOn.add(f);
-					}
-					else if (on)
-					{
-						sideHidden.add(f);
-					}
-					box.setText((sideOn.contains(f) ? "\u2713 " : sideHidden.contains(f) ? "\u2717 " : "") + f.shortLabel);
-					box.setForeground(sideOn.contains(f) ? new Color(120, 220, 120)
-						: sideHidden.contains(f) ? new Color(255, 110, 110) : Color.WHITE);
-					research.run();
+					toggleFilter(f, filterOn.contains(f) || filterHidden.contains(f));
+					changed.run();
 				});
 				filters.add(box);
 			}
+			sideSync = () ->
+			{
+				sideSyncing = true;
+				sideSkill.setSelectedIndex(filterSkill == null ? 0 : Arrays.asList(sideSkills()).indexOf(filterSkill) + 1);
+				sideTier.setSelectedIndex(filterTier == null ? 0 : filterTier.ordinal() + 1);
+				sideSort.setSelectedIndex(sortField.ordinal() * 2 + (ascending == sortField.ascendingByDefault ? 0 : 1));
+				sideBoxes.forEach((f, box) ->
+				{
+					box.setText((filterOn.contains(f) ? "\u2713 " : filterHidden.contains(f) ? "\u2717 " : "") + f.shortLabel);
+					box.setForeground(filterOn.contains(f) ? new Color(120, 220, 120)
+						: filterHidden.contains(f) ? new Color(255, 110, 110) : Color.WHITE);
+				});
+				foldText.run();
+				sideSyncing = false;
+			};
 			rescale.run();
+			sideSync.run();
 			panel.addTaskList(sideStats);
-			for (JComponent c : Arrays.asList(sizes, search, filters, sideSort))
+			for (JComponent c : Arrays.asList(sizes, search, fold, filters, sideSort))
 			{
 				c.setMaximumSize(new Dimension(Integer.MAX_VALUE, c.getPreferredSize().height));
 				panel.addTaskList(c);
@@ -857,11 +979,7 @@ public class TaskBrowserOverlay extends Overlay
 		List<NuzlockeTask> chunk = new ArrayList<>();
 		List<NuzlockeTask> globals = new ArrayList<>();
 		String query = sideSearch.getText().trim().toLowerCase();
-		int skill = sideSkill.getSelectedIndex();
-		int tier = sideTier.getSelectedIndex();
-		Predicate<NuzlockeTask> test = filterTest(sideOn, sideHidden,
-			skill < 1 ? null : Arrays.stream(Skill.values()).filter(k -> k != Skill.OVERALL).toArray(Skill[]::new)[skill - 1],
-			tier < 1 ? null : TaskCardTier.values()[tier - 1]);
+		Predicate<NuzlockeTask> test = filterTest(filterOn, filterHidden, filterSkill, filterTier);
 		for (NuzlockeTask task : pool(true))
 		{
 			chunkNames.computeIfAbsent(task.getTaskId(), k -> chunkName(task));
@@ -871,17 +989,23 @@ public class TaskBrowserOverlay extends Overlay
 				(plugin.isGlobalTask(task.getTaskId()) ? globals : chunk).add(task);
 			}
 		}
-		SortField field = SortField.values()[sideSort.getSelectedIndex() / 2];
-		Comparator<NuzlockeTask> order = sorter(field, field.ascendingByDefault == (sideSort.getSelectedIndex() % 2 == 0));
+		Comparator<NuzlockeTask> order = sorter(sortField, ascending);
 		chunk.sort(order);
 		globals.sort(order);
 		NuzlockeTask tracked = plugin.getSelectedTask();
 		List<Object> items = new ArrayList<>();
-		addSection(items, "Selected Task", tracked == null ? Collections.emptyList() : Collections.singletonList(tracked));
+		// Only while something is tracked.
+		if (tracked != null)
+		{
+			addSection(items, "Selected Task", Collections.singletonList(tracked));
+		}
 		List<NuzlockeTask> savedTasks = new ArrayList<>(chunk);
 		savedTasks.addAll(globals);
 		savedTasks.removeIf(t -> !saved.contains(t.getTaskId()));
 		addSection(items, "Saved", savedTasks);
+		// Saved tasks are listed once, under Saved.
+		chunk.removeIf(t -> saved.contains(t.getTaskId()));
+		globals.removeIf(t -> saved.contains(t.getTaskId()));
 		List<NuzlockeTask> inChunk = new ArrayList<>(chunk);
 		inChunk.removeIf(t -> !here.equals(chunkNames.get(t.getTaskId())));
 		addSection(items, "Chunk Tasks", inChunk);
@@ -890,10 +1014,10 @@ public class TaskBrowserOverlay extends Overlay
 
 		// The stat boxes from the original panel's top row.
 		String stats = "<html><table width=190 cellpadding=1><tr>" + stat(plugin.getTotalPoints(), "Points")
-			+ stat(plugin.getUnlockedRegionIds().size(), "Chunks") + stat(plugin.getCompletedTaskIdSet().size(), "Tasks")
+			+ stat(paidChunks(), "Chunks") + stat(plugin.getCompletedTaskIdSet().size(), "Tasks")
 			+ stat(plugin.getBossTokens(), "Tokens") + "</tr></table></html>";
 		// Only rebuild when something changed, so the panel doesn't jump while scrolling.
-		StringBuilder key = new StringBuilder(stats + query + skill + tier + sideSort.getSelectedIndex() + sideOn + sideHidden + saved);
+		StringBuilder key = new StringBuilder(stats + query + filterLabel() + sortField + ascending + saved);
 		items.forEach(o -> key.append(o instanceof NuzlockeTask
 			? ((NuzlockeTask) o).getTaskId() + ((NuzlockeTask) o).getCurrentProgress() : o));
 		if (key.toString().equals(sideKey))
@@ -907,11 +1031,19 @@ public class TaskBrowserOverlay extends Overlay
 			DefaultListModel<Object> model = new DefaultListModel<>();
 			items.forEach(model::addElement);
 			sideList.setModel(model);
+			sideSync.run();
 			sideStats.setText(stats);
 			// The panel only grows to fit if it's told the list changed size.
 			panel.revalidate();
 			panel.repaint();
 		});
+	}
+
+	/** Chunks paid for with points or a boss token; free, charter and starting chunks don't count. */
+	private int paidChunks()
+	{
+		return plugin.countPayableUnlockedChunks() + (int) plugin.getUnlockedRegionIds().stream()
+			.filter(id -> id.trim().matches("\\d+") && plugin.isBossRegion(Integer.parseInt(id.trim()))).count();
 	}
 
 	private static String stat(int value, String label)
@@ -926,7 +1058,7 @@ public class TaskBrowserOverlay extends Overlay
 		return !sideSearch.getText().trim().isEmpty();
 	}
 
-	/** A header with its count, then (unless folded) up to SIDE_MAX tasks and a "+N more" line. */
+	/** A header with its count, then (unless folded) all its tasks. */
 	private void addSection(List<Object> items, String title, List<NuzlockeTask> tasks)
 	{
 		items.add(title + " (" + tasks.size() + ")");
@@ -934,26 +1066,14 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			return;
 		}
-		items.addAll(tasks.subList(0, Math.min(SIDE_MAX, tasks.size())));
-		if (tasks.size() > SIDE_MAX || tasks.isEmpty())
-		{
-			items.add(tasks.size() - SIDE_MAX);
-		}
+		// Every task, however many; an empty section is just its heading.
+		items.addAll(tasks);
 	}
 
 	/** A section heading, a "+N more" line, or a rounded tier card like the original panel's. */
 	private JLabel sideRow(Object item, boolean hover)
 	{
 		Font small = FontManager.getRunescapeSmallFont().deriveFont(sideSize);
-		if (item instanceof Integer)
-		{
-			int extra = (Integer) item;
-			JLabel more = new JLabel(extra > 0 ? "+" + extra + " more in the task window" : "Nothing here");
-			more.setFont(small);
-			more.setForeground(Color.GRAY);
-			more.setBorder(new EmptyBorder(2, 8, 6, 4));
-			return more;
-		}
 		if (item instanceof String)
 		{
 			// "Active Tasks 12" in the original section colours, a fold arrow, a divider under it.
@@ -971,8 +1091,7 @@ public class TaskBrowserOverlay extends Overlay
 			return header;
 		}
 		NuzlockeTask task = (NuzlockeTask) item;
-		NuzlockeTask tracked = plugin.getSelectedTask();
-		boolean selected = tracked != null && task.getTaskId().equals(tracked.getTaskId());
+		boolean selected = isTracked(task);
 		boolean global = plugin.isGlobalTask(task.getTaskId());
 		int target = task.getTargetQuantity();
 		int progress = Math.min(task.getCurrentProgress(), target);
@@ -980,12 +1099,12 @@ public class TaskBrowserOverlay extends Overlay
 		String description = task.getDescription() == null ? "" : task.getDescription().trim();
 		// Name; category, points and level; chunk; description. Then a progress bar.
 		JLabel card = new JLabel("<html><table cellpadding=0 cellspacing=0 width=165><tr><td>"
-			+ "<font color='#96ff96'>"
+			+ "<span style='font-size:" + Math.round(sideSize + 2) + "pt'><font color='#96ff96'>"
 			+ (saved(task) ? "&#9733; " : "") + (task.getName() == null ? task.getTaskId() : task.getName())
-			+ "</font><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory()) + "  "
-			+ task.getBasePoints() + "pt" + (task.getLevelRequirement() > 1 ? "  L" + task.getLevelRequirement() : "")
-			+ "</font><br><font color='#8cc8e6'>" + (global ? "Global" : "Chunk: " + chunkNames.getOrDefault(task.getTaskId(), ""))
-			+ "</font>" + (description.isEmpty() ? "" : "<br><font color='#b9b9b9'>" + description + "</font>")
+			+ "</font></span><br><font color='#ffc800'>" + NuzlockeTask.displayCategory(task.getCategory())
+			+ (task.getLevelRequirement() > 1 ? "  Lvl " + task.getLevelRequirement() : "")
+			+ "</font>" + (global ? "" : "<br><font color='#8cc8e6'>" + chunkNames.getOrDefault(task.getTaskId(), "") + "</font>")
+			+ (description.isEmpty() ? "" : "<br><font color='#b9b9b9'>" + description + "</font>")
 			+ "</td></tr></table></html>")
 		{
 			@Override
@@ -1034,6 +1153,36 @@ public class TaskBrowserOverlay extends Overlay
 		return savedIds().contains(task.getTaskId());
 	}
 
+	/** Saved tasks still to do, in the order they were starred. */
+	List<NuzlockeTask> savedTasks()
+	{
+		Map<String, NuzlockeTask> byId = new HashMap<>();
+		pool(true).forEach(t -> byId.put(t.getTaskId(), t));
+		Set<String> archived = archive.ids();
+		List<NuzlockeTask> list = new ArrayList<>();
+		for (String id : savedIds())
+		{
+			if (byId.containsKey(id) && !archived.contains(id))
+			{
+				list.add(byId.get(id));
+			}
+		}
+		return list;
+	}
+
+	/** The saved bubble: open the saved list over the side panel, or close it. */
+	void toggleSavedPane()
+	{
+		if (questPane == SAVED_PANE)
+		{
+			questPane = null;
+		}
+		else
+		{
+			openQuestPane(SAVED_PANE);
+		}
+	}
+
 	/** A comma-separated id set stored per account, or null if never stored. */
 	private Set<String> idSet(String key)
 	{
@@ -1071,19 +1220,40 @@ public class TaskBrowserOverlay extends Overlay
 
 	private Set<String> savedIds()
 	{
-		Set<String> ids = idSet(SAVED_KEY);
-		return ids == null ? new LinkedHashSet<>() : ids;
+		return archive.savedIds();
 	}
 
 	private void toggleSaved(String taskId)
 	{
-		Set<String> ids = savedIds();
-		if (!ids.remove(taskId))
-		{
-			ids.add(taskId);
-		}
-		storeIds(SAVED_KEY, ids);
+		archive.toggleSaved(taskId);
 		rowsBuiltAt = 0;
+	}
+
+	/**
+	 * A click on a task in any list: a quest opens its requirements ({@code openQuest}),
+	 * the tracked task stops being tracked, and any other task is tracked.
+	 */
+	private void trackOrOpen(NuzlockeTask task, Consumer<NuzlockeTask> openQuest)
+	{
+		if (QuestRequirements.isQuestTask(task))
+		{
+			openQuest.accept(task);
+		}
+		else if (isTracked(task))
+		{
+			plugin.clearSelectedTask();
+		}
+		else
+		{
+			plugin.selectTaskFromGame(task);
+		}
+	}
+
+	/** True if this is the task being tracked. */
+	private boolean isTracked(NuzlockeTask task)
+	{
+		NuzlockeTask tracked = plugin.getSelectedTask();
+		return tracked != null && task != null && tracked.getTaskId().equals(task.getTaskId());
 	}
 
 	/** Archive or restore a task. Archiving the tracked task also stops tracking it. */
@@ -1091,8 +1261,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		boolean archiving = !archive.isArchived(task);
 		archive.toggle(task.getTaskId());
-		NuzlockeTask tracked = plugin.getSelectedTask();
-		if (archiving && tracked != null && task.getTaskId().equals(tracked.getTaskId()))
+		if (archiving && isTracked(task))
 		{
 			plugin.clearSelectedTask();
 		}
@@ -1241,6 +1410,7 @@ public class TaskBrowserOverlay extends Overlay
 		filterHidden = Collections.emptySet();
 		filterSkill = null;
 		filterTier = null;
+		saveFilters();
 	}
 
 	/** Tick or untick a filter (show) or its eye (hide). One undoes the other. */
@@ -1258,7 +1428,67 @@ public class TaskBrowserOverlay extends Overlay
 		}
 		filterOn = Collections.unmodifiableSet(on);
 		filterHidden = Collections.unmodifiableSet(hidden);
+		saveFilters();
 		refresh();
+	}
+
+	/** Skills you can filter by, in the order the side panel lists them. */
+	private static Skill[] sideSkills()
+	{
+		return Arrays.stream(Skill.values()).filter(k -> k != Skill.OVERALL).toArray(Skill[]::new);
+	}
+
+	/** Filters and sort are shared by the window and side panel, and remembered per account. */
+	private void saveFilters()
+	{
+		if (configManager.getRSProfileKey() == null)
+		{
+			return;
+		}
+		configManager.setRSProfileConfiguration(CONFIG_GROUP, "taskFilters", (filterSkill == null ? "" : filterSkill.name())
+			+ ";" + (filterTier == null ? "" : filterTier.name()) + ";" + names(filterOn) + ";" + names(filterHidden)
+			+ ";" + sortField.name() + ";" + ascending);
+	}
+
+	private static String names(Set<Filter> filters)
+	{
+		return filters.stream().map(Enum::name).collect(java.util.stream.Collectors.joining(","));
+	}
+
+	private void loadFilters()
+	{
+		String raw = configManager.getRSProfileConfiguration(CONFIG_GROUP, "taskFilters");
+		String[] p = raw == null ? new String[0] : raw.split(";", -1);
+		if (p.length < 6)
+		{
+			return;
+		}
+		try
+		{
+			filterSkill = p[0].isEmpty() ? null : Skill.valueOf(p[0]);
+			filterTier = p[1].isEmpty() ? null : TaskCardTier.valueOf(p[1]);
+			filterOn = Collections.unmodifiableSet(filterSet(p[2]));
+			filterHidden = Collections.unmodifiableSet(filterSet(p[3]));
+			sortField = SortField.valueOf(p[4]);
+			ascending = Boolean.parseBoolean(p[5]);
+		}
+		catch (IllegalArgumentException e)
+		{
+			clearFilters();
+		}
+	}
+
+	private static Set<Filter> filterSet(String csv)
+	{
+		Set<Filter> set = EnumSet.noneOf(Filter.class);
+		for (String name : csv.split(","))
+		{
+			if (!name.isEmpty())
+			{
+				set.add(Filter.valueOf(name));
+			}
+		}
+		return set;
 	}
 
 	/** "Mining + Tier 5 + Combat + no Bosses": every active filter. */
@@ -1308,7 +1538,7 @@ public class TaskBrowserOverlay extends Overlay
 		switch (by)
 		{
 			case PROGRESS:
-				main = Comparator.comparingDouble(TaskBrowserOverlay::fraction);
+				main = Comparator.comparingDouble(TaskTargetExtras::progress);
 				break;
 			case LEVEL:
 				main = Comparator.comparingInt(NuzlockeTask::getLevelRequirement);
@@ -1479,27 +1709,17 @@ public class TaskBrowserOverlay extends Overlay
 		return lines;
 	}
 
-	private static double fraction(NuzlockeTask task)
-	{
-		return Math.min(1.0, task.getCurrentProgress() / (double) Math.max(1, task.getTargetQuantity()));
-	}
-
 	/** Level checks, real requirements (TaskTargetExtras) and, for quests, their requirements. */
 	private boolean canDo(NuzlockeTask task)
 	{
-		return plugin.meetsLevelRequirement(task) && TaskTargetExtras.missingRequirement(client, task) == null
-			&& quests.isReady(task);
+		return TaskTargetExtras.canDo(client, plugin, task) && quests.isReady(task);
 	}
 
 	/** "(20 Defence, 20 Ranged)", "(Lvl 40)" or "(Not ready)" for a task you can't do yet. */
 	private String levelNote(NuzlockeTask task)
 	{
-		String missing = TaskTargetExtras.missingRequirement(client, task);
-		if (missing != null)
-		{
-			return "(" + missing + ")";
-		}
-		return plugin.meetsLevelRequirement(task) ? "(Not ready)" : "(Lvl " + task.getLevelRequirement() + ")";
+		String note = TaskTargetExtras.levelNote(client, plugin, task);
+		return note != null ? note : "(Not ready)";
 	}
 
 	// --- Drawing --------------------------------------------------------------
@@ -1508,15 +1728,30 @@ public class TaskBrowserOverlay extends Overlay
 	public Dimension render(Graphics2D graphics)
 	{
 		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
+		if (questPane == null)
+		{
+			paneSide = null;
+		}
 		if (!open && questPane != null && loggedIn)
 		{
-			drawQuestPane(graphics);
+			// Anything else that moves the side panel out from under it closes it too.
+			Rectangle side = sidePanel();
+			if (paneSide != null && !paneSide.equals(side))
+			{
+				questPane = null;
+			}
+			else if (!config.movableTaskBox())
+			{
+				drawQuestPane(graphics, side, 0, 0);
+			}
+			paneSide = side;
 			return null;
 		}
 		if (!open || !loggedIn)
 		{
 			hoveredAction = null;
 			mouseInWindow = false;
+			shownArea = null;
 			if (!open && loggedIn && !newIds.isEmpty())
 			{
 				drawNewTaskAlert(graphics);
@@ -1524,9 +1759,8 @@ public class TaskBrowserOverlay extends Overlay
 			return null;
 		}
 
-		net.runelite.api.Point point = client.getMouseCanvasPosition();
-		int mx = point == null ? -1 : point.getX();
-		int my = point == null ? -1 : point.getY();
+		int mx = paneMouse.x;
+		int my = paneMouse.y;
 		hits.clear();
 		menuHits.clear();
 		menuBox = null;
@@ -1659,6 +1893,8 @@ public class TaskBrowserOverlay extends Overlay
 			drawTierMenu(graphics, filterButton, mx, my);
 		}
 		finishHover(window, mx, my);
+		shownArea = window;
+		drawTip(graphics, mx, my, 0, 0);
 		return null;
 	}
 
@@ -1812,7 +2048,7 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.setColor(TITLE);
 			graphics.drawRoundRect(boxX, boxY, boxWidth, boxHeight, 8, 8);
 			graphics.setColor(Color.WHITE);
-			graphics.drawString(text, boxX + 6, boxY + (boxHeight + fm.getAscent()) / 2 - 2);
+			graphics.drawString(text, boxX + 6, boxY + (boxHeight + fm.getAscent()) / 2 - 1);
 		}
 		graphics.setComposite(previousComposite);
 		graphics.setStroke(previousStroke);
@@ -1920,7 +2156,7 @@ public class TaskBrowserOverlay extends Overlay
 		fill(graphics, area, active || area.contains(mx, my) ? TAB_ON : TAB_OFF);
 		graphics.setColor(active ? Color.WHITE : SUBTEXT);
 		FontMetrics fm = graphics.getFontMetrics();
-		graphics.drawString(fit(fm, label, area.width - 18), area.x + 6, area.y + (area.height + fm.getAscent()) / 2 - 2);
+		graphics.drawString(fit(fm, label, area.width - 18), area.x + 6, area.y + (area.height + fm.getAscent()) / 2 - 1);
 	}
 
 	// --- Dropdowns -------------------------------------------------------------
@@ -1964,6 +2200,7 @@ public class TaskBrowserOverlay extends Overlay
 		sortField = field;
 		ascending = asc;
 		menu = Menu.NONE;
+		saveFilters();
 		refresh();
 	}
 
@@ -2040,7 +2277,7 @@ public class TaskBrowserOverlay extends Overlay
 		FontMetrics fm = graphics.getFontMetrics();
 		String shown = value == null ? "Any" : value;
 		graphics.setColor(value != null ? TITLE : SUBTEXT);
-		graphics.drawString(shown, row.x + row.width - 20 - fm.stringWidth(shown), row.y + (MENU_ROW + fm.getAscent()) / 2 - 2);
+		graphics.drawString(shown, row.x + row.width - 20 - fm.stringWidth(shown), row.y + (MENU_ROW + fm.getAscent()) / 2 - 1);
 		arrow(graphics, row.x + row.width - 10, row.y + MENU_ROW / 2, RIGHT, SUBTEXT);
 	}
 
@@ -2061,6 +2298,7 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				filterSkill = skill == filterSkill ? null : skill;
 				menu = Menu.FILTER;
+				saveFilters();
 				refresh();
 			}));
 			boolean hover = cell.contains(mx, my);
@@ -2090,6 +2328,7 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				filterTier = tier == filterTier ? null : tier;
 				menu = Menu.FILTER;
+				saveFilters();
 				refresh();
 			}));
 			fill(graphics, row, row.contains(mx, my) ? ROW_HOVER : tier == filterTier ? TAB_ON : null);
@@ -2097,7 +2336,7 @@ public class TaskBrowserOverlay extends Overlay
 			int points = tier.ordinal() + 1;
 			graphics.setColor(tier == filterTier ? Color.WHITE : SUBTEXT);
 			graphics.drawString(tier.getDisplayName() + " (" + points + (points == 1 ? " pt)" : " pts)"),
-				row.x + 22, row.y + (MENU_ROW + graphics.getFontMetrics().getAscent()) / 2 - 2);
+				row.x + 22, row.y + (MENU_ROW + graphics.getFontMetrics().getAscent()) / 2 - 1);
 		}
 	}
 
@@ -2118,7 +2357,7 @@ public class TaskBrowserOverlay extends Overlay
 		fill(graphics, row, hover ? ROW_HOVER : null);
 		FontMetrics fm = graphics.getFontMetrics();
 		graphics.setColor(labelColor != null ? labelColor : on || hover ? Color.WHITE : SUBTEXT);
-		graphics.drawString(label, row.x + 6, row.y + (row.height + fm.getAscent()) / 2 - 2);
+		graphics.drawString(label, row.x + 6, row.y + (row.height + fm.getAscent()) / 2 - 1);
 		if (box)
 		{
 			checkbox(graphics, row.x + row.width - 18, row.y + (row.height - 10) / 2, on, hover);
@@ -2190,8 +2429,7 @@ public class TaskBrowserOverlay extends Overlay
 	{
 		boolean inList = list.contains(mx, my);
 		String taskId = task.getTaskId();
-		NuzlockeTask tracked = plugin.getSelectedTask();
-		boolean isTracked = tracked != null && taskId.equals(tracked.getTaskId());
+		boolean isTracked = isTracked(task);
 		if (isTracked)
 		{
 			// The task shown in the task box: warm fill, orange edge bar and outline.
@@ -2229,22 +2467,7 @@ public class TaskBrowserOverlay extends Overlay
 		drawDetail(graphics, detail, textX, row.y + ROW - 1, list, mx, my, small);
 		if (inList)
 		{
-			// A quest opens in the pane; clicking the tracked task stops tracking it; any other row tracks it.
-			hits.add(new Hit(row.intersection(list), () ->
-			{
-				if (QuestRequirements.isQuestTask(task))
-				{
-					openQuestPane(task);
-				}
-				else if (isTracked)
-				{
-					plugin.clearSelectedTask();
-				}
-				else
-				{
-					plugin.selectTaskFromGame(task);
-				}
-			}));
+			hits.add(new Hit(row.intersection(list), () -> trackOrOpen(task, this::openQuestPane)));
 		}
 		if (expandable)
 		{
@@ -2279,7 +2502,7 @@ public class TaskBrowserOverlay extends Overlay
 			graphics.drawString(progress, rightEdge - progressWidth, row.y + 30);
 			progressStart = rightEdge - progressWidth - 76;
 			fill(graphics, new Rectangle(progressStart, row.y + 24, 70, 6), DARK);
-			fill(graphics, new Rectangle(progressStart, row.y + 24, (int) Math.round(70 * fraction(task)), 6), BAR_FILL);
+			fill(graphics, new Rectangle(progressStart, row.y + 24, (int) Math.round(70 * TaskTargetExtras.progress(task)), 6), BAR_FILL);
 		}
 		graphics.setColor(SUBTEXT);
 		graphics.drawString(fit(sm, info, progressStart - 10 - textX), textX, row.y + 30);
@@ -2287,7 +2510,7 @@ public class TaskBrowserOverlay extends Overlay
 
 	/**
 	 * Detail lines from (x, y). Clickable ones get a hit: a section header opens/closes, a
-	 * chunk shows on the map, a quest opens in the pane.
+	 * chunk shows on the world map (now, or as soon as it's opened), a quest opens in the pane.
 	 */
 	private void drawDetail(Graphics2D graphics, List<QuestRequirements.Line> detail, int x, int y, Rectangle clip,
 		int mx, int my, Font small)
@@ -2301,23 +2524,34 @@ public class TaskBrowserOverlay extends Overlay
 			Rectangle area = detailLineArea(sm, detail, x, y, i);
 			if (line.clickable() && in)
 			{
-				hits.add(new Hit(area.intersection(clip), line.region > 0 ? () -> showChunkOnMap(line.region, line.text.trim())
-					: line.quest != null ? () -> showQuest(line.quest, line.text.replace(" (checking)", ""))
+				hits.add(new Hit(area.intersection(clip), line.region > 0 ? () -> worldMap.focusRegion(line.region)
+					: line.quest != null ? () -> showQuest(line.quest)
 					: () -> quests.toggleSection(line.toggle)));
 			}
-			int lineY = area.y + 1 + sm.getAscent() - 2;
+			int lineY = area.y + 1 + sm.getAscent();
 			boolean hover = line.clickable() && in && area.contains(mx, my);
+			if (hover && line.region > 0)
+			{
+				tip = worldMap.isMapOpen() ? "Click to show it on the world map" : "Click, then open the world map to see it";
+			}
+			else if (hover && line.quest != null)
+			{
+				tip = hasQuestTask(line.quest) ? "Click to see this quest's requirements"
+					: "Not in your task list (done, or not a ChunkBlazer quest)";
+			}
+			// Section headings sit on a faint band; anything clickable lights up under the mouse.
+			if (line.header || hover)
+			{
+				graphics.setColor(hover ? ROW_HOVER : ROW_ALT);
+				graphics.fillRoundRect(x - 3, area.y, line.header ? clip.width - 12 : area.width + 6, DETAIL_LINE, 6, 6);
+			}
 			if (line.header)
 			{
-				arrow(graphics, x + 3, lineY - sm.getAscent() / 2, line.open ? DOWN : RIGHT, hover ? Color.WHITE : SUBTEXT);
+				arrow(graphics, x + 3, lineY - 1 - sm.getAscent() / 2, line.open ? DOWN : RIGHT, hover ? Color.WHITE : SUBTEXT);
 			}
 			int lineX = x + lineIndent(line);
 			graphics.setColor(line.color);
 			graphics.drawString(line.text, lineX, lineY);
-			if (hover)
-			{
-				graphics.drawLine(lineX, lineY + 2, lineX + sm.stringWidth(line.text), lineY + 2);
-			}
 		}
 	}
 
@@ -2361,18 +2595,35 @@ public class TaskBrowserOverlay extends Overlay
 	}
 
 	/** A prerequisite quest was clicked: open it in the pane, or say in chat that it isn't a task right now. */
-	private void showQuest(String questName, String display)
+	private void showQuest(String questName)
 	{
-		NuzlockeTask found = pool(true).stream()
+		NuzlockeTask found = questTask(questName);
+		if (found != null)
+		{
+			navigateTo(found);
+		}
+	}
+
+	/** For the hover tip: whether the quest is in your task list, rechecked at most once a second. */
+	private boolean hasQuestTask(String questName)
+	{
+		long now = System.currentTimeMillis();
+		if (!questName.equals(tipQuest) || now - tipQuestAt > 1000)
+		{
+			tipQuest = questName;
+			tipQuestAt = now;
+			tipQuestFound = questTask(questName) != null;
+		}
+		return tipQuestFound;
+	}
+
+	/** The quest task for this quest (a RuneLite Quest name), or null if it isn't in your task list. */
+	private NuzlockeTask questTask(String questName)
+	{
+		return pool(true).stream()
 			.filter(t -> QuestRequirements.isQuestTask(t) && t.getConstraints() != null
 				&& questName.equals(t.getConstraints().getQuest()))
 			.findFirst().orElse(null);
-		if (found == null)
-		{
-			chat(display + " isn't in your task list (it's done, or not a ChunkBlazer quest).");
-			return;
-		}
-		openQuestPane(found);
 	}
 
 	/**
@@ -2382,41 +2633,259 @@ public class TaskBrowserOverlay extends Overlay
 	 */
 	void openQuestPane(NuzlockeTask task)
 	{
+		// Opened fresh (window, side panel, bubble): no Back trail from whatever was open before.
+		questBack.clear();
+		paneSide = null;
+		showInPane(task);
+	}
+
+	/** Follow a link inside the box (a required quest, a saved quest): Back returns here. */
+	private void navigateTo(NuzlockeTask task)
+	{
+		if (questPane != null && questPane != task)
+		{
+			questBack.push(questPane);
+		}
+		showInPane(task);
+	}
+
+	private void showInPane(NuzlockeTask task)
+	{
 		close();
 		questPane = task;
+		questPaneAt = System.currentTimeMillis();
 		scroll = 0;
 	}
 
-	private void drawQuestPane(Graphics2D graphics)
+	/** The quest/saved box at {@code pane}; (ox, oy) is where that's drawn on screen when it's moved. */
+	private void drawQuestPane(Graphics2D graphics, Rectangle pane, int ox, int oy)
 	{
 		NuzlockeTask task = questPane;
-		Rectangle pane = sidePanel();
-		net.runelite.api.Point point = client.getMouseCanvasPosition();
-		int mx = point == null ? -1 : point.getX();
-		int my = point == null ? -1 : point.getY();
+		int mx = paneMouse.x - ox;
+		int my = paneMouse.y - oy;
 		hits.clear();
 		menuHits.clear();
 		menuBox = null;
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		fill(graphics, pane, BACKGROUND);
+		// A rounded card with a darker header band and an orange rule under it.
+		boolean savedList = task == SAVED_PANE;
+		List<NuzlockeTask> saved = savedList ? savedTasks() : null;
+		graphics.setFont(FontManager.getRunescapeBoldFont());
+		List<String> title = wrap(graphics.getFontMetrics(), savedList ? "Saved tasks (" + saved.size() + ")"
+			: task.getName().replaceFirst("^Complete ", ""), pane.width - (questBack.isEmpty() ? 62 : 96));
+		int top = pane.y + 12 + title.size() * 15;
+		graphics.setColor(BACKGROUND);
+		graphics.fillRoundRect(pane.x, pane.y, pane.width - 1, pane.height - 1, 10, 10);
+		graphics.setColor(DARK);
+		graphics.fillRoundRect(pane.x + 1, pane.y + 1, pane.width - 3, top - pane.y - 2, 9, 9);
+		graphics.setColor(new Color(255, 152, 31, 120));
+		graphics.drawLine(pane.x + 6, top - 1, pane.x + pane.width - 8, top - 1);
 		graphics.setColor(BORDER);
-		graphics.drawRect(pane.x, pane.y, pane.width - 1, pane.height - 1);
-		Rectangle close = new Rectangle(pane.x + pane.width - 20, pane.y + 6, 14, 14);
+		graphics.drawRoundRect(pane.x, pane.y, pane.width - 1, pane.height - 1, 10, 10);
+		Rectangle close = new Rectangle(pane.x + pane.width - 21, pane.y + 5, 16, 16);
 		hits.add(new Hit(close, () -> questPane = null));
-		cross(graphics, close.x + 7, close.y + 7, 5, close.contains(mx, my) ? NO_LEVEL : SUBTEXT);
+		if (close.contains(mx, my))
+		{
+			graphics.setColor(TAB_ON);
+			graphics.fillOval(close.x, close.y, close.width, close.height);
+		}
+		cross(graphics, close.x + 8, close.y + 8, 4, close.contains(mx, my) ? NO_LEVEL : SUBTEXT);
+		// The quest's OSRS Wiki page, beside the close button.
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		Rectangle wiki = new Rectangle(close.x - 30, close.y + 1, 27, 14);
+		if (!savedList)
+		{
+			// The wiki's search jumps straight to the page when the name matches, and
+			// lists the closest pages when it doesn't (the Recipe for Disaster parts).
+			String quest = task.getName().replaceFirst("^Complete ", "").replace("&", "%26").replace(' ', '+');
+			hits.add(new Hit(wiki, () -> LinkBrowser.browse("https://oldschool.runescape.wiki/?title=Special:Search&go=Go&search=" + quest)));
+			pill(graphics, wiki, "Wiki", wiki.contains(mx, my));
+		}
+		// Back to the quest this one was opened from.
+		Rectangle back = new Rectangle(wiki.x - 33, close.y + 1, 30, 14);
+		if (!questBack.isEmpty())
+		{
+			hits.add(new Hit(back, () ->
+			{
+				questPane = questBack.pop();
+				questPaneAt = System.currentTimeMillis();
+				scroll = 0;
+			}));
+			pill(graphics, back, "Back", back.contains(mx, my));
+		}
+		// A quick fade and slide in, so moving to a required quest reads as a new page.
+		float in = Math.min(1f, (System.currentTimeMillis() - questPaneAt) / 200f);
+		Composite oldComposite = graphics.getComposite();
+		graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, in));
+		graphics.translate((int) (16 * (1 - in) * (1 - in)), 0);
+		// The whole name, wrapped, without the "Complete" every quest task starts with.
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		graphics.setColor(TITLE);
-		graphics.drawString(fit(graphics.getFontMetrics(), task.getName(), pane.width - 32), pane.x + 6, pane.y + 18);
+		for (int i = 0; i < title.size(); i++)
+		{
+			graphics.drawString(title.get(i), pane.x + 8, pane.y + 19 + i * 15);
+		}
 
 		Font small = FontManager.getRunescapeSmallFont();
-		List<QuestRequirements.Line> lines = wrapDetail(graphics.getFontMetrics(small), task, pane.width - 12);
-		Rectangle body = new Rectangle(pane.x + 1, pane.y + 24, pane.width - 2, pane.height - 25);
-		scroll = Math.max(0, Math.min(scroll, detailHeight(lines) - body.height));
+		// The saved list keeps its how-to line pinned at the bottom.
+		int foot = savedList && !saved.isEmpty() ? 16 : 0;
+		Rectangle body = new Rectangle(pane.x + 1, top + 2, pane.width - 2, pane.y + pane.height - 3 - top - foot);
+		if (foot > 0)
+		{
+			graphics.setColor(BORDER);
+			graphics.drawLine(pane.x + 6, body.y + body.height, pane.x + pane.width - 8, body.y + body.height);
+			graphics.setFont(small);
+			graphics.setColor(SUBTEXT);
+			graphics.drawString("Right-click to remove", pane.x + 8, body.y + body.height + 12);
+		}
 		Shape oldClip = graphics.getClip();
 		graphics.clip(body);
-		drawDetail(graphics, lines, pane.x + 6, body.y - scroll, body, mx, my, small);
+		if (savedList)
+		{
+			drawScrollbar(graphics, body, drawSavedList(graphics, saved, body, mx, my, small));
+		}
+		else
+		{
+			List<QuestRequirements.Line> lines = wrapDetail(graphics.getFontMetrics(small), task, pane.width - 12);
+			scroll = Math.max(0, Math.min(scroll, detailHeight(lines) - body.height));
+			drawDetail(graphics, lines, pane.x + 6, body.y - scroll, body, mx, my, small);
+			drawScrollbar(graphics, body, detailHeight(lines));
+		}
 		graphics.setClip(oldClip);
+		graphics.translate(-(int) (16 * (1 - in) * (1 - in)), 0);
+		graphics.setComposite(oldComposite);
 		finishHover(pane, mx, my);
+		shownArea = new Rectangle(pane.x + ox, pane.y + oy, pane.width, pane.height);
+		drawTip(graphics, mx, my, ox, oy);
+	}
+
+	/**
+	 * The hint set while drawing ({@code tip}), in a small box by the mouse, over everything.
+	 * Drawn here rather than by RuneLite's tooltips, which follow the game's mouse: over the
+	 * window and box the game is told the mouse is off screen. (ox, oy) is where (0, 0) is on screen.
+	 */
+	private void drawTip(Graphics2D graphics, int mx, int my, int ox, int oy)
+	{
+		String text = tip;
+		tip = null;
+		if (text == null)
+		{
+			return;
+		}
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+		Rectangle box = new Rectangle(0, 0, fm.stringWidth(text) + 10, 17);
+		box.x = Math.max(-ox, Math.min(mx + 12, client.getCanvasWidth() - ox - box.width - 2));
+		box.y = my + 20 + box.height > client.getCanvasHeight() - oy ? my - box.height - 4 : my + 20;
+		fill(graphics, box, MENU_BACKGROUND);
+		graphics.setColor(BORDER);
+		graphics.drawRect(box.x, box.y, box.width, box.height);
+		graphics.setColor(Color.WHITE);
+		graphics.drawString(text, box.x + 5, box.y + 13);
+	}
+
+	/**
+	 * The saved list in the pane: name (red if your level's too low), then its chunk or
+	 * category and progress. Click to track or untrack (a quest opens its requirements),
+	 * Shift + click to unsave. Returns its full height, for the scrollbar.
+	 */
+	private int drawSavedList(Graphics2D graphics, List<NuzlockeTask> saved, Rectangle body, int mx, int my, Font small)
+	{
+		graphics.setFont(small);
+		FontMetrics fm = graphics.getFontMetrics();
+		paneRowId = null;
+		if (saved.isEmpty())
+		{
+			graphics.setColor(SUBTEXT);
+			graphics.drawString("Star tasks in the task window", body.x + 5, body.y + 14);
+			return 0;
+		}
+		// Long names wrap onto a second line (and the card grows) rather than being cut off.
+		int width = body.width - 28;
+		List<List<String>> names = new ArrayList<>();
+		int total = 4;
+		for (NuzlockeTask task : saved)
+		{
+			List<String> lines = wrap(fm, task.getName(), width);
+			names.add(lines.size() > 2 ? Arrays.asList(lines.get(0), fit(fm, lines.get(1) + " " + lines.get(2), width)) : lines);
+			total += 24 + 12 * names.get(names.size() - 1).size();
+		}
+		scroll = Math.max(0, Math.min(scroll, total - body.height));
+		boolean shift = client.isKeyPressed(KeyCode.KC_SHIFT);
+		int y = body.y + 4 - scroll;
+		for (int i = 0; i < saved.size(); i++)
+		{
+			NuzlockeTask task = saved.get(i);
+			List<String> name = names.get(i);
+			// Each task is a small rounded card: its tier colour down the left, like the side
+			// panel's, and a thin progress bar along the bottom for counted tasks.
+			Rectangle row = new Rectangle(body.x + 4, y, body.width - 14, 20 + 12 * name.size());
+			y += row.height + 4;
+			boolean hover = row.contains(mx, my) && body.contains(mx, my);
+			boolean isTracked = isTracked(task);
+			Color tier = TaskCardTier.fromTask(task).getAccent();
+			graphics.setColor(hover && shift ? new Color(255, 70, 70, 50) : hover ? ROW_HOVER : isTracked ? TRACKED_FILL : ROW_ALT);
+			graphics.fillRoundRect(row.x, row.y, row.width, row.height, 8, 8);
+			graphics.setColor(isTracked ? TITLE : new Color(255, 255, 255, 22));
+			graphics.drawRoundRect(row.x, row.y, row.width, row.height, 8, 8);
+			graphics.setColor(tier);
+			graphics.fillRoundRect(row.x + 2, row.y + 4, 3, row.height - 8, 3, 3);
+			int target = Math.max(1, task.getTargetQuantity());
+			if (target > 1)
+			{
+				graphics.fillRect(row.x + 8, row.y + row.height - 3, (row.width - 14) * Math.min(task.getCurrentProgress(), target) / target, 2);
+			}
+			if (hover)
+			{
+				paneRowId = task.getTaskId();
+			}
+			if (body.contains(mx, my))
+			{
+				hits.add(new Hit(row, () ->
+				{
+					if (client.isKeyPressed(KeyCode.KC_SHIFT))
+					{
+						toggleSaved(task.getTaskId());
+					}
+					else
+					{
+						trackOrOpen(task, this::navigateTo);
+					}
+				}));
+			}
+			String progress = target > 1 ? Math.min(task.getCurrentProgress(), target) + "/" + target : "";
+			String where = plugin.isGlobalTask(task.getTaskId()) ? NuzlockeTask.displayCategory(task.getCategory())
+				: chunkNames.computeIfAbsent(task.getTaskId(), k -> chunkName(task));
+			// Red when you can't do it yet, with why ("(Lvl 40)") ahead of where it is.
+			boolean ready = canDo(task);
+			graphics.setColor(hover && shift || !ready ? NO_LEVEL : Color.WHITE);
+			for (int l = 0; l < name.size(); l++)
+			{
+				graphics.drawString(hover && shift && l == 0 ? fit(fm, "Remove " + name.get(0), width) : name.get(l),
+					row.x + 8, row.y + 14 + 12 * l);
+			}
+			int lineY = row.y + 15 + 12 * name.size();
+			String why = ready ? "" : levelNote(task) + " ";
+			graphics.setColor(NO_LEVEL);
+			graphics.drawString(why, row.x + 8, lineY);
+			graphics.setColor(SUBTEXT);
+			graphics.drawString(fit(fm, where, row.width - 19 - fm.stringWidth(why) - fm.stringWidth(progress)),
+				row.x + 8 + fm.stringWidth(why), lineY);
+			graphics.drawString(progress, row.x + row.width - 5 - fm.stringWidth(progress), lineY);
+		}
+		return total;
+	}
+
+	/** A small rounded button with a label, lit up while hovered. */
+	private static void pill(Graphics2D graphics, Rectangle r, String text, boolean hover)
+	{
+		graphics.setColor(hover ? TAB_ON : TAB_OFF);
+		graphics.fillRoundRect(r.x, r.y, r.width, r.height, 8, 8);
+		graphics.setColor(hover ? TITLE : BORDER);
+		graphics.drawRoundRect(r.x, r.y, r.width, r.height, 8, 8);
+		FontMetrics fm = graphics.getFontMetrics();
+		graphics.setColor(hover ? Color.WHITE : SUBTEXT);
+		graphics.drawString(text, r.x + (r.width - fm.stringWidth(text)) / 2 + 1, r.y + 13);
 	}
 
 	/** The side panel's area in whichever layout is on; a spot by the right edge if it's closed. */
@@ -2431,35 +2900,40 @@ public class TaskBrowserOverlay extends Overlay
 				return panel.getBounds();
 			}
 		}
+		// A bank, shop, Grand Exchange or trade hides the side panels and shows its own
+		// inventory in their place: sit over that instead.
+		for (int group : new int[]{15, 301, 467, 336})
+		{
+			Widget side = client.getWidget(group, 0);
+			if (side != null && !side.isHidden() && side.getWidth() > 0)
+			{
+				return side.getBounds();
+			}
+		}
 		return new Rectangle(client.getCanvasWidth() - 214, client.getCanvasHeight() - 340, 204, 275);
+	}
+
+	// Interfaces that take over the screen and inventory: bank, deposit box, shop, Grand
+	// Exchange and its collection box, seed vault and trade. Opening one closes the box.
+	private static final Set<Integer> TAKEOVER = Set.of(12, 192, 300, 465, 402, 631, 335);
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (TAKEOVER.contains(event.getGroupId()))
+		{
+			questPane = null;
+		}
 	}
 
 	/** Switching side tab (prayer, inventory...) closes the quest pane. */
 	@Subscribe
 	public void onVarClientIntChanged(VarClientIntChanged event)
 	{
-		if (event.getIndex() == VarClientID.TOPLEVEL_PANEL)
+		if (event.getIndex() == VarClientID.TOPLEVEL_PANEL && !config.movableTaskBox())
 		{
 			questPane = null;
 		}
-	}
-
-	/** Jump the world map to a chunk and outline it; if the map is closed, say to open it. */
-	private void showChunkOnMap(int region, String name)
-	{
-		worldMap.focusRegion(region);
-		clientThread.invoke(() ->
-		{
-			if (!worldMap.isMapOpen())
-			{
-				client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Open the world map to see " + name + ".", null);
-			}
-		});
-	}
-
-	private void chat(String message)
-	{
-		clientThread.invoke(() -> client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null));
 	}
 
 	// --- Small drawing helpers ------------------------------------------------
@@ -2553,7 +3027,7 @@ public class TaskBrowserOverlay extends Overlay
 	private static void drawCentered(Graphics2D graphics, String text, Rectangle area)
 	{
 		FontMetrics fm = graphics.getFontMetrics();
-		graphics.drawString(text, area.x + (area.width - fm.stringWidth(text)) / 2, area.y + (area.height + fm.getAscent()) / 2 - 2);
+		graphics.drawString(text, area.x + (area.width - fm.stringWidth(text)) / 2, area.y + (area.height + fm.getAscent()) / 2 - 1);
 	}
 
 	/** Shorten text with "..." so it fits the width. */

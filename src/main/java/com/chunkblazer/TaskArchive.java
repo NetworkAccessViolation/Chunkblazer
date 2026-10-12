@@ -31,7 +31,9 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.Stroke;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -44,20 +46,22 @@ import net.runelite.client.config.ConfigManager;
  * the right-click Tasks menu. Stored per account, like saved tasks.
  *
  * Shared by the task window, the task box and the highlighter, so all of them agree
- * on what's archived. Also draws the book icon they use.
+ * on what's archived. Also keeps the saved (starred) list the same way, and draws the
+ * book icon they use.
  */
 @Singleton
 public class TaskArchive
 {
 	private static final String CONFIG_GROUP = "chunkblazer";
 	private static final String ARCHIVE_KEY = "archivedTasks";
+	private static final String SAVED_KEY = "savedTasks";
 
 	private final ConfigManager configManager;
 
-	// Parsed form of the stored list, rebuilt only when the stored string changes.
+	// Parsed form of each stored list, rebuilt only when the stored string changes.
 	// The highlighter asks about every task each tick, so re-splitting would be waste.
-	private String cachedRaw;
-	private Set<String> cachedIds = Collections.emptySet();
+	private final Map<String, String> cachedRaw = new HashMap<>();
+	private final Map<String, Set<String>> cachedIds = new HashMap<>();
 
 	@Inject
 	TaskArchive(ConfigManager configManager)
@@ -66,14 +70,31 @@ public class TaskArchive
 	}
 
 	/** Archived task ids for the current account (empty when no account is loaded). */
-	public synchronized Set<String> ids()
+	public Set<String> ids()
 	{
-		String raw = configManager.getRSProfileConfiguration(CONFIG_GROUP, ARCHIVE_KEY);
+		return read(ARCHIVE_KEY);
+	}
+
+	/** Saved (starred) task ids for the current account, in the order they were saved. */
+	public Set<String> savedIds()
+	{
+		return read(SAVED_KEY);
+	}
+
+	/** Save the task, or unsave it if it's saved. */
+	public void toggleSaved(String taskId)
+	{
+		write(SAVED_KEY, taskId, !savedIds().contains(taskId));
+	}
+
+	private synchronized Set<String> read(String key)
+	{
+		String raw = configManager.getRSProfileConfiguration(CONFIG_GROUP, key);
 		if (raw == null)
 		{
 			raw = "";
 		}
-		if (!raw.equals(cachedRaw))
+		if (!raw.equals(cachedRaw.get(key)))
 		{
 			Set<String> parsed = new LinkedHashSet<>();
 			for (String id : raw.split(","))
@@ -83,10 +104,10 @@ public class TaskArchive
 					parsed.add(id.trim());
 				}
 			}
-			cachedIds = Collections.unmodifiableSet(parsed);
-			cachedRaw = raw;
+			cachedIds.put(key, Collections.unmodifiableSet(parsed));
+			cachedRaw.put(key, raw);
 		}
-		return cachedIds;
+		return cachedIds.get(key);
 	}
 
 	public boolean isArchived(NuzlockeTask task)
@@ -96,30 +117,25 @@ public class TaskArchive
 
 	public void archive(String taskId)
 	{
-		set(taskId, true);
-	}
-
-	public void restore(String taskId)
-	{
-		set(taskId, false);
+		write(ARCHIVE_KEY, taskId, true);
 	}
 
 	public void toggle(String taskId)
 	{
-		set(taskId, !ids().contains(taskId));
+		write(ARCHIVE_KEY, taskId, !ids().contains(taskId));
 	}
 
-	private synchronized void set(String taskId, boolean archived)
+	private synchronized void write(String key, String taskId, boolean add)
 	{
 		if (taskId == null || configManager.getRSProfileKey() == null)
 		{
 			return;
 		}
-		Set<String> updated = new LinkedHashSet<>(ids());
-		boolean changed = archived ? updated.add(taskId) : updated.remove(taskId);
+		Set<String> updated = new LinkedHashSet<>(read(key));
+		boolean changed = add ? updated.add(taskId) : updated.remove(taskId);
 		if (changed)
 		{
-			configManager.setRSProfileConfiguration(CONFIG_GROUP, ARCHIVE_KEY, String.join(",", updated));
+			configManager.setRSProfileConfiguration(CONFIG_GROUP, key, String.join(",", updated));
 		}
 	}
 

@@ -29,17 +29,23 @@ package com.chunkblazer;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/** How the task selected in the side panel is shown in game. */
+/**
+ * How the task selected in the side panel is shown in game. Every look is drawn by
+ * SelectedTaskOverlay and tracks the same way (right-click Deselect, the Tasks menu on
+ * targets); Off hides the box and the menu.
+ */
 @Getter
 @RequiredArgsConstructor
 public enum TaskTrackerStyle
 {
 	/** Nothing on the game screen; the side panel shows the Selected Task box. */
 	OFF("Off"),
-	/** ChunkBlazerTaskOverlay: a detailed info box with a progress bar. */
+	/** Net's simple box (designed by NetworkAccessViolation): name, details and a progress bar. */
 	NET("Simple overlay by Net"),
-	/** SelectedTaskOverlay box, plus a Tasks right-click menu on task targets. */
-	VANI("Yellow paint by Vani");
+	/** Vani's full box: requirements, missing levels, timers, close and archive buttons. */
+	VANI("Detailed by Vani"),
+	/** The same, as one small line: name, progress and a thin bar. */
+	COMPACT("Compact by Vani");
 
 	private final String name;
 

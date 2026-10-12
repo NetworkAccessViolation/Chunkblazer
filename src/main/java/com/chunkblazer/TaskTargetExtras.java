@@ -122,6 +122,26 @@ public final class TaskTargetExtras
 		return needs;
 	}
 
+	/** The task's own level check, plus any real requirements it's missing. */
+	static boolean canDo(Client client, ChunkBlazerPlugin plugin, NuzlockeTask task)
+	{
+		return plugin.meetsLevelRequirement(task) && missingRequirement(client, task) == null;
+	}
+
+	/** "(20 Defence, 20 Ranged)" or "(Lvl 40)" for a task you lack the levels for; null if you have them. */
+	static String levelNote(Client client, ChunkBlazerPlugin plugin, NuzlockeTask task)
+	{
+		String missing = missingRequirement(client, task);
+		return missing != null ? "(" + missing + ")"
+			: plugin.meetsLevelRequirement(task) ? null : "(Lvl " + task.getLevelRequirement() + ")";
+	}
+
+	/** How far along the task is, 0 to 1. */
+	static double progress(NuzlockeTask task)
+	{
+		return Math.min(1.0, task.getCurrentProgress() / (double) Math.max(1, task.getTargetQuantity()));
+	}
+
 	/**
 	 * Every requirement the player is missing, like "20 Defence, 20 Ranged", or null if
 	 * they have them all.
@@ -171,7 +191,6 @@ public final class TaskTargetExtras
 			return null;
 		}
 	}
-
 
 	/** Extra object ids for this task (empty if none). */
 	static Set<Integer> objectIds(NuzlockeTask task)

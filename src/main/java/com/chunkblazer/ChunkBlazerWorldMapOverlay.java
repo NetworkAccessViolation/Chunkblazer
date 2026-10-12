@@ -35,6 +35,7 @@ import java.awt.BasicStroke;
 import java.awt.Rectangle;
 import java.awt.Stroke;
 import java.util.Set;
+import java.util.function.Consumer;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -87,6 +88,8 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 	private volatile int focusRegion = -1;
 	private volatile boolean focusPending;
 	private volatile long focusShownAt;
+	// The hover tooltip, drawn by WorldMapLegendOverlay on the always-on-top layer so map icons can't cover it.
+	private volatile Consumer<Graphics2D> tooltip;
 
 	@Inject
 	private ChunkBlazerWorldMapOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
@@ -129,9 +132,19 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		return client.getWidget(InterfaceID.Worldmap.MAP_CONTAINER) != null;
 	}
 
+	void drawTooltip(Graphics2D graphics)
+	{
+		Consumer<Graphics2D> shown = tooltip;
+		if (shown != null)
+		{
+			shown.accept(graphics);
+		}
+	}
+
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		tooltip = null;
 		// The focus outline goes on top of the chunk tints.
 		Dimension size = renderChunks(graphics);
 		renderFocus(graphics);
@@ -388,17 +401,17 @@ class ChunkBlazerWorldMapOverlay extends Overlay
 		// world-map right-click menu entries don't render reliably.
 		if (isHoveredUnlockable && hoveredRegionId > 0)
 		{
-			drawHoverTooltip(graphics, mousePos, hoveredRegionId);
+			int id = hoveredRegionId;
+			tooltip = g -> drawHoverTooltip(g, mousePos, id);
 		}
 		// Hovering a chunk you own: the same key + click opens its tasks (TaskBrowserOverlay).
 		else if (hoveredRegionId > 0 && plugin.isRegionUnlocked(hoveredRegionId)
 			&& !plugin.isFreeRegion(hoveredRegionId)
 			&& !plugin.getRegionName(hoveredRegionId).startsWith("Unknown Region"))
 		{
-			drawUnlockedTooltip(graphics, mousePos, hoveredRegionId);
+			int id = hoveredRegionId;
+			tooltip = g -> drawUnlockedTooltip(g, mousePos, id);
 		}
-
-		// (The colour legend is its own always-on-top overlay: WorldMapLegendOverlay.)
 
 		// Draw region ID in top-left corner of world map
 		if (hoveredRegionId > 0)

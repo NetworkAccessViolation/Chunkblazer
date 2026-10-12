@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2026, Vani-Lab
+ * Copyright (c) 2026, NetworkAccessViolation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,9 +30,11 @@ package com.chunkblazer;
 import com.chunkblazer.modules.NPCKillModule;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.BasicStroke;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,8 +43,10 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
+import net.runelite.client.ui.overlay.components.ComponentConstants;
 import net.runelite.client.ui.overlay.components.LineComponent;
 import net.runelite.client.ui.overlay.components.ProgressBarComponent;
 import net.runelite.client.ui.overlay.components.TitleComponent;
@@ -59,11 +64,14 @@ import net.runelite.client.ui.overlay.components.TitleComponent;
  * timing): green, then yellow, orange and red, and "Too slow" once time runs out.
  * Multi-kill timed tasks also show "Kills x/y". Single-action tasks, including
  * 1-tick tasks, get no bar at all.
+ *
+ * Three looks (the Task Box setting): Vani's full box, Vani's compact strip, and Net's
+ * simple box, designed by NetworkAccessViolation (it was ChunkBlazerTaskOverlay). They
+ * all track the same way: right-click Deselect, the Tasks menu on targets, Alt + drag.
  */
 @Singleton
 public class SelectedTaskOverlay extends OverlayPanel
 {
-	private static final Color FLAME = new Color(255, 140, 0);
 	private static final Color BAR_BACKGROUND = new Color(60, 60, 60, 200);
 	private static final Color REQUIREMENT_TEXT = new Color(200, 200, 200);
 	private static final Color MISSING_LEVEL = new Color(255, 90, 90);
@@ -72,6 +80,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private static final Color CLOSE_IDLE = new Color(200, 200, 200);
 	private static final Color CLOSE_HOVER = new Color(255, 90, 90);
 	private static final Color ARCHIVE_HOVER = new Color(190, 140, 90);
+	private static final Color VANI_BACKGROUND = new Color(30, 26, 22, 215);
+	private static final Color NET_ORANGE = new Color(255, 152, 0);
 
 	// Countdown colours, from plenty of time left to out of time.
 	private static final Color TIMER_OK = new Color(90, 200, 90);
@@ -93,6 +103,13 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private int lastTick = -1;
 	private long lastTickAt;
 
+	// Compact layout: how far it has opened into the full box (0 shut, 1 open), when that
+	// was last moved on, and the two sizes it moves between.
+	private float expand;
+	private long expandAt;
+	private Dimension compactSize = new Dimension(120, 17);
+	private Dimension fullSize = new Dimension(190, 60);
+
 	private final Client client;
 	private final ChunkBlazerPlugin plugin;
 	private final ChunkBlazerConfig config;
@@ -111,9 +128,6 @@ public class SelectedTaskOverlay extends OverlayPanel
 		this.archive = archive;
 
 		setPosition(OverlayPosition.TOP_LEFT);
-		panelComponent.setPreferredSize(new Dimension(190, 0));
-		// A few pixels between rows, so wrapped text never touches the progress bar.
-		panelComponent.setGap(new Point(0, 3));
 
 		addMenuEntry(MenuAction.RUNELITE_OVERLAY, "Deselect", "ChunkBlazer task",
 				e -> plugin.clearSelectedTask());
@@ -122,7 +136,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (config.taskTrackerStyle() != TaskTrackerStyle.VANI || client.getGameState() != GameState.LOGGED_IN)
+		TaskTrackerStyle style = config.taskTrackerStyle();
+		if (style == TaskTrackerStyle.OFF || client.getGameState() != GameState.LOGGED_IN)
 		{
 			hideButtons();
 			return null;
@@ -135,9 +150,50 @@ public class SelectedTaskOverlay extends OverlayPanel
 			return null;
 		}
 
+		if (style == TaskTrackerStyle.NET)
+		{
+			hideButtons();
+			return drawNet(graphics, task);
+		}
+		// Vani's looks: a wider box, and a few pixels between rows so wrapped text never
+		// touches the progress bar.
+		panelComponent.setPreferredSize(new Dimension(190, 0));
+		panelComponent.setGap(new Point(0, 3));
+		panelComponent.setBackgroundColor(VANI_BACKGROUND);
+
+		Color tier = TaskCardTier.fromTask(task).getAccent();
+		// Compact: one small line, out of the way. Hovering it opens the full box (what to do,
+		// requirements, missing levels); timed tasks keep the full box for their countdown.
+		net.runelite.api.Point at = client.getMouseCanvasPosition();
+		Rectangle shown = getBounds();
+		boolean hovered = at != null && shown != null && shown.contains(at.getX(), at.getY());
+		// Opens quickly under the mouse (0.12s), closes slower once it leaves (0.4s).
+		long now = System.currentTimeMillis();
+		long step = Math.min(100, now - expandAt);
+		expandAt = now;
+		expand = hovered ? Math.min(1, expand + step / 120f) : Math.max(0, expand - step / 400f);
+		boolean compact = style == TaskTrackerStyle.COMPACT && timeLimitTicks(task) == 0;
+		if (compact && expand == 0)
+		{
+			hideButtons();
+			compactSize = drawCompact(graphics, task, tier);
+			return compactSize;
+		}
+		// Part way open: show the full box cut to a size between the two.
+		float e = expand * (2 - expand);
+		int w = Math.round(compactSize.width + (fullSize.width - compactSize.width) * e);
+		int h = Math.round(compactSize.height + (fullSize.height - compactSize.height) * e);
+		java.awt.Shape oldClip = graphics.getClip();
+		if (compact && expand < 1)
+		{
+			graphics.clip(new Rectangle(0, 0, w, h));
+		}
+
+		// The heading is the task's category and level, in its tier colour (which is its points).
 		panelComponent.getChildren().add(TitleComponent.builder()
-				.text("ChunkBlazer Task")
-				.color(FLAME)
+				.text(NuzlockeTask.displayCategory(task.getCategory())
+					+ (task.getLevelRequirement() > 1 ? "  Lvl " + task.getLevelRequirement() : ""))
+				.color(tier)
 				.build());
 
 		// LineComponent wraps long text onto extra lines automatically.
@@ -146,14 +202,9 @@ public class SelectedTaskOverlay extends OverlayPanel
 				.leftColor(Color.WHITE)
 				.build());
 
-		String info = NuzlockeTask.displayCategory(task.getCategory()) + " | " + task.getBasePoints() + " pts";
-		panelComponent.getChildren().add(LineComponent.builder()
-				.left(info)
-				.leftColor(new Color(255, 200, 100))
-				.build());
-
-		// What the task actually asks for, when the name alone doesn't say.
-		for (String requirement : requirementLines(task))
+		// What the task actually asks for, when the name alone doesn't say. A timed task's
+		// limit isn't repeated as text when the countdown bar below shows it.
+		for (String requirement : requirementLines(task, timeLimitTicks(task) == 0))
 		{
 			panelComponent.getChildren().add(LineComponent.builder()
 					.left(requirement)
@@ -203,7 +254,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 			bar.setMinimum(0);
 			bar.setMaximum(target);
 			bar.setValue(Math.min(progress, target));
-			bar.setForegroundColor(FLAME);
+			bar.setForegroundColor(tier);
 			bar.setBackgroundColor(BAR_BACKGROUND);
 			bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
 			panelComponent.getChildren().add(bar);
@@ -212,6 +263,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		Dimension size = super.render(graphics);
 		if (size == null)
 		{
+			graphics.setClip(oldClip);
 			hideButtons();
 			return null;
 		}
@@ -239,7 +291,89 @@ public class SelectedTaskOverlay extends OverlayPanel
 		closeButton = box;
 		archiveButton = book;
 		shownTaskId = task.getTaskId();
+		fullSize = size;
+		if (compact && expand < 1)
+		{
+			graphics.setClip(oldClip);
+			return new Dimension(w, h);
+		}
 		return size;
+	}
+
+	/**
+	 * Compact layout: a small rounded strip with the tier colour at the left, the name
+	 * (red if you can't do it yet), its count on the right and a thin bar along the
+	 * bottom. Right-click it to deselect, as with the full box.
+	 */
+	private Dimension drawCompact(Graphics2D graphics, NuzlockeTask task, Color tier)
+	{
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+		int target = Math.max(1, task.getTargetQuantity());
+		int done = Math.min(task.getCurrentProgress(), target);
+		String count = target > 1 ? done + "/" + target : "";
+		// The whole name, however long: the strip grows to fit it.
+		String name = task.getName() == null ? "" : task.getName();
+		int width = 15 + fm.stringWidth(name) + (count.isEmpty() ? 0 : 8 + fm.stringWidth(count));
+		int height = 18;
+		graphics.setColor(new Color(20, 18, 15, 175));
+		graphics.fillRoundRect(0, 0, width, height, 9, 9);
+		graphics.setColor(tier);
+		graphics.fillRoundRect(3, 4, 3, height - 8, 3, 3);
+		if (target > 1)
+		{
+			graphics.fillRect(9, height - 3, (width - 15) * done / target, 2);
+		}
+		boolean ready = TaskTargetExtras.canDo(client, plugin, task);
+		graphics.setColor(ready ? Color.WHITE : MISSING_LEVEL);
+		graphics.drawString(name, 9, 14);
+		graphics.setColor(REQUIREMENT_TEXT);
+		graphics.drawString(count, width - 6 - fm.stringWidth(count), 14);
+		return new Dimension(width, height);
+	}
+
+	/**
+	 * Net's simple box (by NetworkAccessViolation), drawn as he made it: "Selected Task",
+	 * the name, the description, category, points and level, the chunk and area, then an
+	 * orange progress bar. RuneLite's standard panel size and background.
+	 */
+	private Dimension drawNet(Graphics2D graphics, NuzlockeTask task)
+	{
+		panelComponent.setPreferredSize(new Dimension(ComponentConstants.STANDARD_WIDTH, 0));
+		panelComponent.setGap(new Point(5, 1));
+		panelComponent.setBackgroundColor(ComponentConstants.STANDARD_BACKGROUND_COLOR);
+		panelComponent.getChildren().add(TitleComponent.builder().text("Selected Task").color(NET_ORANGE).build());
+		panelComponent.getChildren().add(LineComponent.builder().left(task.getName()).build());
+		// An empty title, for a little padding.
+		panelComponent.getChildren().add(TitleComponent.builder().text("").build());
+		String description = task.getDescription();
+		if (description != null && !description.trim().isEmpty())
+		{
+			panelComponent.getChildren().add(LineComponent.builder().left(description).leftColor(REQUIREMENT_TEXT).build());
+		}
+		String info = NuzlockeTask.displayCategory(task.getCategory()) + " | " + task.getBasePoints() + " pts"
+			+ (task.getLevelRequirement() > 1 ? " | L" + task.getLevelRequirement() : "");
+		panelComponent.getChildren().add(LineComponent.builder().left(info).leftColor(new Color(255, 200, 100)).build());
+		String region = plugin.getTaskRegionName(task);
+		panelComponent.getChildren().add(LineComponent.builder()
+			.left("Chunk: " + (region != null && !region.isEmpty() ? region : "unknown"))
+			.leftColor(new Color(140, 200, 230))
+			.build());
+		String area = plugin.getTaskArea(task);
+		if (area != null && !area.isEmpty())
+		{
+			panelComponent.getChildren().add(LineComponent.builder().left("Area: " + area).leftColor(new Color(180, 180, 220)).build());
+		}
+		ProgressBarComponent bar = new ProgressBarComponent();
+		bar.setBackgroundColor(new Color(61, 56, 49));
+		bar.setForegroundColor(NET_ORANGE);
+		bar.setValue(task.getCurrentProgress());
+		bar.setMaximum(task.getTargetQuantity());
+		bar.setRightLabel(String.format("%d/%d", task.getCurrentProgress(), task.getTargetQuantity()));
+		bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.TEXT_ONLY);
+		panelComponent.getChildren().add(bar);
+		return super.render(graphics);
 	}
 
 	/**
@@ -370,6 +504,12 @@ public class SelectedTaskOverlay extends OverlayPanel
 	 */
 	static List<String> requirementLines(NuzlockeTask task)
 	{
+		return requirementLines(task, true);
+	}
+
+	/** The same, with or without the time limit ("Within 0:18"). */
+	private static List<String> requirementLines(NuzlockeTask task, boolean withTime)
+	{
 		List<String> lines = new ArrayList<>();
 		String description = task.getDescription();
 		if (description != null && !description.trim().isEmpty()
@@ -384,7 +524,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		{
 			return lines;
 		}
-		if (c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
+		if (withTime && c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
 		{
 			int seconds = (int) Math.round(c.getTimeInTicks() * 0.6);
 			lines.add(String.format("Within %d:%02d", seconds / 60, seconds % 60));
