@@ -4019,10 +4019,20 @@ public class ChunkBlazerPlugin extends Plugin
 
 		Set<String> merged = new LinkedHashSet<>(getCompletedTaskIds());
 		int before = merged.size();
+		Set<String> server = new HashSet<>(pdata.getCompletedTasks());
+		// Both sides had tasks the other lacked: this account was played on two computers
+		// without sync. A task done on both counts once, which can read as lost points.
+		// Quests are skipped: every login fills them in locally before this merge.
+		boolean apart = merged.stream().anyMatch(t -> !t.startsWith("quest_") && !server.contains(t));
 		merged.addAll(pdata.getCompletedTasks());
 		if (merged.size() == before)
 		{
 			return;
+		}
+		if (apart)
+		{
+			addPluginChatMessage("Synced with progress from another computer. Tasks done on both only count once, "
+				+ "so your points may be lower than this computer showed.");
 		}
 
 		setAccountState("completedTasks", String.join(",", merged));

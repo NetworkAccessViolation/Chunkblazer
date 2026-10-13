@@ -50,6 +50,9 @@ class ServerStateMergeTest
 	@Mock
 	private ConfigManager configManager;
 
+	@Mock
+	private net.runelite.client.callback.ClientThread clientThread;
+
 	private java.util.Map<String, String> writes;
 
 	private ChunkBlazerPlugin plugin;
@@ -60,6 +63,7 @@ class ServerStateMergeTest
 		plugin = new ChunkBlazerPlugin();
 		setField(plugin, "config", config);
 		setField(plugin, "configManager", configManager);
+		setField(plugin, "clientThread", clientThread);
 		writes = RsProfileTestSupport.install(configManager, config);
 	}
 
@@ -282,5 +286,43 @@ class ServerStateMergeTest
 		Field f = ChunkBlazerPlugin.class.getDeclaredField("serverStateMerged");
 		f.setAccessible(true);
 		f.set(plugin, value);
+	}
+
+	/** Chat messages queued by the plugin (each one is a clientThread.invoke). */
+	private int chatMessages()
+	{
+		return mockingDetails(clientThread).getInvocations().size();
+	}
+
+	/**
+	 * StarryChunks: two computers played the account apart, so each has tasks the other
+	 * lacks. The merge says why points may read lower.
+	 */
+	@Test
+	void mergingTwoComputersSaysTasksCountOnce() throws Exception
+	{
+		writes.put("completedTasks", "mine_tin,quest_cooks_assistant,chop_tree");
+		mergeTasks(pdata(null, Arrays.asList("chop_tree", "equip_mooleta")));
+		assertEquals(1, chatMessages());
+		assertEquals(new LinkedHashSet<>(Arrays.asList("mine_tin", "quest_cooks_assistant", "chop_tree", "equip_mooleta")),
+			capturedCsv("completedTasks"));
+	}
+
+	/** A new computer or reinstall only gains the server's tasks: nothing to explain. */
+	@Test
+	void newComputerOrReinstallSaysNothing() throws Exception
+	{
+		writes.put("completedTasks", "quest_cooks_assistant");
+		mergeTasks(pdata(null, Arrays.asList("chop_tree", "quest_cooks_assistant")));
+		assertEquals(0, chatMessages(), "quests filled in at startup aren't this computer's own progress");
+	}
+
+	/** A computer ahead of the server (its sync just hasn't landed yet) merges nothing. */
+	@Test
+	void computerAheadOfTheServerSaysNothing() throws Exception
+	{
+		writes.put("completedTasks", "chop_tree,mine_tin");
+		mergeTasks(pdata(null, Collections.singletonList("chop_tree")));
+		assertEquals(0, chatMessages());
 	}
 }
