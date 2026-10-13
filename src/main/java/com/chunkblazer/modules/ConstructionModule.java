@@ -229,8 +229,7 @@ public class ConstructionModule extends AbstractTaskModule
 				// Every authored construction task names its finished object;
 				// a task without one can never credit. Shout so the authoring
 				// gap is visible instead of silently untrackable.
-				log.warn("CONSTRUCTION task '{}' ({}) has no required_finished_object, cannot track it",
-					task.getName(), task.getTaskId());
+				log.warn("Task '{}' ({}): no required_finished_object", task.getName(), task.getTaskId());
 				return;
 			}
 
@@ -249,16 +248,8 @@ public class ConstructionModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error("ConstructionModule.addActiveTask() EXCEPTION: ", e);
+			log.error("ConstructionModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		// For legacy single-task support
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override
@@ -576,7 +567,7 @@ public class ConstructionModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.warn("ConstructionModule: failed to resolve region for task '{}'", task.getTaskId(), e);
+			log.warn("Task '{}': region not found", task.getTaskId(), e);
 		}
 		int playerRegionId = getCurrentRegionId();
 		if (taskRegionId > 0 && playerRegionId > 0 && taskRegionId != playerRegionId)

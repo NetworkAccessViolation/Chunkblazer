@@ -234,15 +234,8 @@ public class FiremakingModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error("FiremakingModule.addActiveTask() EXCEPTION: ", e);
+			log.error("FiremakingModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

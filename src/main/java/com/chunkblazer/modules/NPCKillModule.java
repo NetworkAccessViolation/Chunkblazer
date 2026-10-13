@@ -471,9 +471,7 @@ public class NPCKillModule extends AbstractTaskModule
 	public void addActiveTask(NuzlockeTask task)
 	{
 		super.addActiveTask(task);
-		// Seed the Slayer XP baseline on the MULTI-task registration path too
-		// (registerActiveTask → addActiveTask — onTaskAssigned below is only
-		// the legacy single-task path). Without this, a (re)registered task
+		// Seed the Slayer XP baseline when a task is registered. Without this, a (re)registered task
 		// starts with previousSlayerXp = -1 and the first Slayer XP event gets
 		// swallowed as the baseline instead of arming the on-task gate.
 		clientThread.invokeLater(() ->
@@ -483,20 +481,6 @@ public class NPCKillModule extends AbstractTaskModule
 				previousSlayerXp = client.getSkillExperience(Skill.SLAYER);
 			}
 		});
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-
-		// Baseline Slayer XP so the first on-task kill after assignment registers a
-		// gain (rather than being swallowed as the baseline). Guarded for tests/off-thread.
-		if (client.getLocalPlayer() != null)
-		{
-			previousSlayerXp = client.getSkillExperience(Skill.SLAYER);
-		}
-
 	}
 
 	@Override

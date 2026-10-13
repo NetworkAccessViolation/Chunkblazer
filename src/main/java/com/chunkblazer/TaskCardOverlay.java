@@ -33,19 +33,13 @@ import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
-import java.awt.image.BufferedImage;
-import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -65,9 +59,7 @@ import net.runelite.client.ui.overlay.OverlayPriority;
  * already committed to {@code regionRolledTasks} the moment it happens, so refusing to
  * flip a card you don't like cannot reroll it — the card is a reveal, never a gamble.
  *
- * <p>Art lives in {@code Task_Cards/} ({@code front_<tier>.png} / {@code back_<tier>.png},
- * see {@link TaskCardTier}). Missing art is drawn as a flat tier-coloured card rather
- * than skipped, so the flow is testable before the assets land.
+ * <p>The cards are drawn in the game's style by {@link CardArt}.
  */
 @Slf4j
 @Singleton
@@ -87,33 +79,13 @@ public class TaskCardOverlay extends Overlay
 	private static final int DECK_OFFSET = 7;
 	/** How many face-down cards to draw in the pile behind the current card. */
 	private static final int DECK_MAX_VISIBLE = 5;
-	/** Used only when art is missing — the drawn fallback needs some shape. */
-	private static final double FALLBACK_ASPECT = 202.0 / 344.0;
-
-	// Body-panel geometry, MEASURED off the shipped art rather than guessed: the panel
-	// is the largest contiguous flat-grey run in front_<tier>.png, which sits at
-	// y 90..180 and x 44..312 of 356x200 — identical across all five tiers. The panel is
-	// below the title plate, so its centre is NOT the card's centre.
-	// If the art is ever redrawn, re-measure rather than nudging these by eye.
-	private static final double BODY_CENTRE_FRACTION = 0.675;  // (90+180)/2 / 200
-	private static final double BODY_HEIGHT_FRACTION = 0.450;  // (180-90)  / 200
-	/** 0.753 measured, trimmed slightly so text never touches the panel bevel. */
-	private static final double BODY_WIDTH_FRACTION = 0.720;
-
-	private static final Color TEXT = new Color(255, 255, 255);
-	/** The "how to complete" blurb under the task name — a touch dimmer than the title. */
-	private static final Color DESC_TEXT = new Color(205, 205, 205);
-	private static final Color QUANTITY_TEXT = new Color(255, 200, 60);
-	private static final Color TEXT_SHADOW = new Color(0, 0, 0, 190);
+	/** Height over width, as the original card art (356 x 200). */
+	private static final double ASPECT = 200.0 / 356.0;
 	private static final Color PROMPT = new Color(235, 235, 235, 225);
-	private static final Color CARD_SHADOW = new Color(0, 0, 0, 110);
 
 	private final Client client;
 	private final ChunkBlazerConfig config;
 	private final ChunkBlazerPlugin plugin;
-
-	private final Map<TaskCardTier, BufferedImage> fronts = new EnumMap<>(TaskCardTier.class);
-	private final Map<TaskCardTier, BufferedImage> backs = new EnumMap<>(TaskCardTier.class);
 
 	/** Cards currently on screen, in draw order. Rebuilt from the plugin's pending set. */
 	private final List<Card> cards = new ArrayList<>();
@@ -221,80 +193,10 @@ public class TaskCardOverlay extends Overlay
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
 		setPriority(OverlayPriority.HIGH);
-		loadArt();
 	}
 
-	private void loadArt()
-	{
-		for (TaskCardTier tier : TaskCardTier.values())
-		{
-			BufferedImage front = loadImage(tier.getFrontAsset());
-			BufferedImage back = loadImage(tier.getBackAsset());
-			if (front != null)
-			{
-				fronts.put(tier, front);
-			}
-			if (back != null)
-			{
-				backs.put(tier, back);
-			}
-		}
-	}
 
-	/**
-	 * Load card art, tolerating the case the file happens to be saved in.
-	 *
-	 * <p>Windows is case-insensitive so {@code Front_Easy.PNG} looks identical to
-	 * {@code front_easy.png} in Explorer, but the classpath lookup is not — the art would
-	 * simply never load and the card would silently fall back to a placeholder with no
-	 * error to explain it. Hand-saved assets are exactly where that happens, so try the
-	 * obvious variants rather than making a filename typo look like a code bug.
-	 */
-	private BufferedImage loadImage(String path)
-	{
-		for (String candidate : caseVariants(path))
-		{
-			try (InputStream is = getClass().getResourceAsStream(candidate))
-			{
-				if (is != null)
-				{
-					BufferedImage image = ImageIO.read(is);
-					if (image != null)
-					{
-						return image;
-					}
-				}
-			}
-			catch (Exception e)
-			{
-				log.warn("Failed to load task card art {}: {}", candidate, e.getMessage());
-			}
-		}
-		return null;
-	}
 
-	/** e.g. Task_Cards/front_easy.png -> also try .PNG, Front_easy.png, Front_easy.PNG. */
-	private static List<String> caseVariants(String path)
-	{
-		List<String> variants = new ArrayList<>();
-		variants.add(path);
-
-		int dot = path.lastIndexOf('.');
-		String stem = dot < 0 ? path : path.substring(0, dot);
-		String ext = dot < 0 ? "" : path.substring(dot);
-		variants.add(stem + ext.toUpperCase());
-
-		int slash = stem.lastIndexOf('/');
-		if (slash >= 0 && slash + 1 < stem.length())
-		{
-			String dir = stem.substring(0, slash + 1);
-			String file = stem.substring(slash + 1);
-			String capitalised = dir + Character.toUpperCase(file.charAt(0)) + file.substring(1);
-			variants.add(capitalised + ext);
-			variants.add(capitalised + ext.toUpperCase());
-		}
-		return variants;
-	}
 
 	/**
 	 * Take a click at viewport coordinates.
@@ -436,7 +338,7 @@ public class TaskCardOverlay extends Overlay
 			{
 				// A pending id with no task behind it can never be revealed by clicking,
 				// so it would wedge the queue forever. Drop it rather than draw nothing.
-				log.warn("[CHUNKBLAZER] unrevealed task '{}' has no definition, discarding", taskId);
+				log.warn("Unknown unrevealed task '{}' dropped", taskId);
 				plugin.revealTaskCard(taskId);
 				continue;
 			}
@@ -540,7 +442,7 @@ public class TaskCardOverlay extends Overlay
 	{
 		int cardWidth = Math.min(CARD_WIDTH, viewport.width - 80);
 		cardWidth = Math.max(48, cardWidth); // a truly tiny viewport still gets something
-		int cardHeight = (int) Math.round(cardWidth * aspectRatio());
+		int cardHeight = (int) Math.round(cardWidth * ASPECT);
 		int x = viewport.x + (viewport.width - cardWidth) / 2;
 		int y = viewport.y + (viewport.height - cardHeight) / 2;
 		current.bounds = new Rectangle(x, y, cardWidth, cardHeight);
@@ -560,46 +462,13 @@ public class TaskCardOverlay extends Overlay
 		int visible = Math.min(remaining, DECK_MAX_VISIBLE);
 		Rectangle b = current.bounds;
 		TaskCardTier tier = cards.size() > 1 ? cards.get(1).tier : current.tier;
-		BufferedImage back = backs.get(tier);
 		// Farthest card first so nearer ones overlap it.
 		for (int i = visible; i >= 1; i--)
 		{
 			int ox = b.x - i * DECK_OFFSET;
 			int oy = b.y - i * DECK_OFFSET;
-			graphics.setColor(CARD_SHADOW);
-			graphics.fillRect(ox + 3, oy + 4, b.width, b.height);
-			if (back != null)
-			{
-				graphics.drawImage(back, ox, oy, b.width, b.height, null);
-			}
-			else
-			{
-				graphics.setColor(tier.getAccent().darker().darker());
-				graphics.fillRect(ox, oy, b.width, b.height);
-				graphics.setColor(tier.getAccent());
-				graphics.drawRect(ox, oy, b.width - 1, b.height - 1);
-			}
+			CardArt.paint(graphics, new Rectangle(ox, oy, b.width, b.height), tier, false, null, null, 0);
 		}
-	}
-
-	/** Height-to-width ratio taken from the real art when it's present. */
-	private double aspectRatio()
-	{
-		for (BufferedImage img : backs.values())
-		{
-			if (img != null && img.getWidth() > 0)
-			{
-				return (double) img.getHeight() / img.getWidth();
-			}
-		}
-		for (BufferedImage img : fronts.values())
-		{
-			if (img != null && img.getWidth() > 0)
-			{
-				return (double) img.getHeight() / img.getWidth();
-			}
-		}
-		return FALLBACK_ASPECT;
 	}
 
 	private void drawCard(Graphics2D graphics, Card card)
@@ -639,150 +508,46 @@ public class TaskCardOverlay extends Overlay
 		graphics.scale(scaleX, 1.0);
 		graphics.translate(-(b.x + b.width / 2.0), -(b.y + b.height / 2.0));
 
-		graphics.setColor(CARD_SHADOW);
-		graphics.fillRect(b.x + 3, b.y + 4, b.width, b.height);
-
-		BufferedImage art = showFront ? fronts.get(card.tier) : backs.get(card.tier);
-		boolean hasArt = art != null;
-		if (hasArt)
-		{
-			graphics.drawImage(art, b.x, b.y, b.width, b.height, null);
-		}
-		else
-		{
-			drawFallbackCard(graphics, card, b, showFront);
-		}
-
-		if (showFront)
-		{
-			drawCardFace(graphics, card, b, hasArt);
-		}
-
+		revealGlow(graphics, card, b);
+		CardArt.paint(graphics, b, card.tier, showFront, card.taskName, card.description, card.quantity);
 		graphics.setTransform(originalTransform);
 		graphics.setComposite(originalComposite);
 	}
 
-	/** Flat tier-coloured stand-in so the flow works before the art is dropped in. */
-	private void drawFallbackCard(Graphics2D graphics, Card card, Rectangle b, boolean showFront)
-	{
-		Color accent = card.tier.getAccent();
-		graphics.setColor(showFront ? new Color(58, 58, 58) : accent.darker().darker());
-		graphics.fillRect(b.x, b.y, b.width, b.height);
-		graphics.setColor(accent);
-		graphics.drawRect(b.x, b.y, b.width - 1, b.height - 1);
-		graphics.drawRect(b.x + 2, b.y + 2, b.width - 5, b.height - 5);
-
-		if (!showFront)
-		{
-			graphics.setFont(FontManager.getRunescapeBoldFont());
-			drawCentered(graphics, "ChunkBlazer", b.x + b.width / 2, b.y + b.height / 2, accent);
-		}
-	}
-
 	/**
-	 * Task name wrapped into the card's body panel.
-	 *
-	 * <p>The tier label is drawn ONLY on the placeholder card. The real front art
-	 * already has "Easy Task" / "Elite Task" painted into its title plate, so drawing it
-	 * again would stack our text on top of theirs.
-	 *
-	 * <p>{@link #BODY_CENTRE_FRACTION} is where the art's body panel sits, measured down
-	 * from the top of the card — the panel is below the title plate, so it is NOT the
-	 * card's centre. Expect to tune this against the real PNGs.
+	 * As a card turns face up, pixel rings step out from behind it, more
+	 * the rarer it is (nothing for Easy, a flare for Master).
 	 */
-	private void drawCardFace(Graphics2D graphics, Card card, Rectangle b, boolean hasArt)
+	private static void revealGlow(Graphics2D graphics, Card card, Rectangle b)
 	{
-		if (!hasArt)
+		int k = card.tier.ordinal();
+		if (k == 0 || card.isFaceDown() || card.isLeaving())
 		{
-			graphics.setFont(FontManager.getRunescapeBoldFont());
-			drawCentered(graphics, card.tier.getDisplayName() + " Task",
-				b.x + b.width / 2, b.y + Math.max(14, b.height / 8), TEXT);
+			return;
 		}
-
-		graphics.setFont(FontManager.getRunescapeSmallFont());
-		FontMetrics fm = graphics.getFontMetrics();
-		int lineHeight = fm.getHeight();
-
-		int textWidth = hasArt
-			? (int) Math.round(b.width * BODY_WIDTH_FRACTION)
-			: b.width - 20;
-
-		// Body block: the task NAME (title), then its DESCRIPTION ("how to complete
-		// this") beneath it when authored. Both wrapped; name has priority for the
-		// limited panel height, the description fills whatever is left (ellipsised if
-		// it can't all fit). Most non-raid tasks have no description, so this collapses
-		// back to just the name.
-		List<String> nameLines = wrap(card.taskName, fm, textWidth);
-		List<String> descLines = (card.description != null && !card.description.trim().isEmpty())
-			? wrap(card.description.trim(), fm, textWidth)
-			: new ArrayList<>();
-
-		// "Quantity: 23" sits under the name; a single-item task doesn't need it.
-		String quantityLine = card.quantity > 1 ? "Quantity: " + card.quantity : null;
-		int quantityLines = quantityLine == null ? 0 : 1;
-
-		int panelHeight = (int) Math.round(b.height * (hasArt ? BODY_HEIGHT_FRACTION : 0.8));
-		int maxLines = Math.max(1 + quantityLines, panelHeight / lineHeight);
-
-		// Name: keep it all when there's no description; otherwise leave room for a
-		// gap + at least one description line.
-		int nameCap = Math.max(1, (descLines.isEmpty() ? maxLines : maxLines - 2) - quantityLines);
-		if (nameLines.size() > nameCap)
+		long age = card.sinceFlip() - FLIP_DURATION / 2;
+		long life = 500 + 250L * k;
+		if (age < 0 || age > life)
 		{
-			nameLines = new ArrayList<>(nameLines.subList(0, nameCap));
-			nameLines.set(nameCap - 1, ellipsise(nameLines.get(nameCap - 1), fm, textWidth));
+			return;
 		}
-
-		int gap = descLines.isEmpty() ? 0 : 1; // one blank line between title and blurb
-		int descCap = Math.max(0, maxLines - nameLines.size() - quantityLines - gap);
-		if (!descLines.isEmpty())
+		float f = 1 - age / (float) life;
+		Color c = card.tier.getAccent();
+		int grow = Math.round((12 + 8 * k) * (1 - f * f));
+		java.awt.Composite old = graphics.getComposite();
+		graphics.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, Math.min(1f, f)));
+		// Square pixel rings stepping outwards.
+		for (int i = 0; i < k; i++)
 		{
-			if (descCap == 0)
-			{
-				descLines = new ArrayList<>();
-				gap = 0;
-			}
-			else if (descLines.size() > descCap)
-			{
-				descLines = new ArrayList<>(descLines.subList(0, descCap));
-				descLines.set(descCap - 1, ellipsise(descLines.get(descCap - 1), fm, textWidth));
-			}
+			int d = grow + i * 6;
+			graphics.setColor(i % 2 == 0 ? c : new Color(255, 255, 0));
+			graphics.drawRect(b.x - d, b.y - d, b.width + d * 2, b.height + d * 2);
 		}
-
-		int totalLines = nameLines.size() + quantityLines + gap + descLines.size();
-		double centreFraction = hasArt ? BODY_CENTRE_FRACTION : 0.5;
-		int bodyCentreY = b.y + (int) Math.round(b.height * centreFraction);
-		int cx = b.x + b.width / 2;
-		int y = bodyCentreY - (totalLines * lineHeight) / 2 + fm.getAscent();
-
-		for (String line : nameLines)
-		{
-			drawCentered(graphics, line, cx, y, TEXT);
-			y += lineHeight;
-		}
-		if (quantityLine != null)
-		{
-			drawCentered(graphics, quantityLine, cx, y, QUANTITY_TEXT);
-			y += lineHeight;
-		}
-		y += gap * lineHeight;
-		for (String line : descLines)
-		{
-			drawCentered(graphics, line, cx, y, DESC_TEXT);
-			y += lineHeight;
-		}
+		graphics.setComposite(old);
 	}
 
-	/** Trim a line until it plus an ellipsis fits the panel. */
-	private static String ellipsise(String line, FontMetrics fm, int maxWidth)
-	{
-		String text = line;
-		while (text.length() > 1 && fm.stringWidth(text + "...") > maxWidth)
-		{
-			text = text.substring(0, text.length() - 1);
-		}
-		return text.trim() + "...";
-	}
+
+
 
 	private void drawPrompt(Graphics2D graphics, Rectangle viewport, Card current)
 	{
@@ -808,8 +573,9 @@ public class TaskCardOverlay extends Overlay
 			return;
 		}
 
-		graphics.setFont(FontManager.getRunescapeBoldFont());
-		drawCentered(graphics, text, viewport.x + viewport.width / 2, current.bounds.y - 14, PROMPT);
+		graphics.setFont(Skin.bold());
+		drawCentered(graphics, text, viewport.x + viewport.width / 2, current.bounds.y - 14,
+			new Color(255, 255, 0));
 
 		// Batch controls: only meaningful with a pile to work through, and only while
 		// the front card is still face down (mid-flip/face-up the click means "next").
@@ -836,7 +602,7 @@ public class TaskCardOverlay extends Overlay
 	/** A small centred pill button. Returns its bounds for hit-testing in onClick. */
 	private Rectangle drawButton(Graphics2D graphics, String text, int centreX, int top)
 	{
-		graphics.setFont(FontManager.getRunescapeSmallFont());
+		graphics.setFont(Skin.small());
 		FontMetrics fm = graphics.getFontMetrics();
 		int padX = 10;
 		int padY = 4;
@@ -845,17 +611,11 @@ public class TaskCardOverlay extends Overlay
 		int x = centreX - w / 2;
 		Rectangle bounds = new Rectangle(x, top, w, h);
 
-		graphics.setColor(new Color(0, 0, 0, 160));
-		graphics.fillRect(x, top, w, h);
-		graphics.setColor(PROMPT);
-		graphics.drawRect(x, top, w - 1, h - 1);
+		Skin.button(graphics, bounds, false, false);
 
 		int tx = centreX - fm.stringWidth(text) / 2;
 		int ty = top + padY + fm.getAscent();
-		graphics.setColor(TEXT_SHADOW);
-		graphics.drawString(text, tx + 1, ty + 1);
-		graphics.setColor(PROMPT);
-		graphics.drawString(text, tx, ty);
+		Skin.text(graphics, text, tx, ty, PROMPT);
 		return bounds;
 	}
 
@@ -863,40 +623,9 @@ public class TaskCardOverlay extends Overlay
 	{
 		FontMetrics fm = graphics.getFontMetrics();
 		int x = centreX - fm.stringWidth(text) / 2;
-		graphics.setColor(TEXT_SHADOW);
-		graphics.drawString(text, x + 1, y + 1);
-		graphics.setColor(colour);
-		graphics.drawString(text, x, y);
+		Skin.text(graphics, text, x, y, colour);
 	}
 
-	/** Greedy word wrap. Task names are short, so this never needs to be clever. */
-	private static List<String> wrap(String text, FontMetrics fm, int maxWidth)
-	{
-		List<String> lines = new ArrayList<>();
-		if (text == null || text.isEmpty())
-		{
-			return lines;
-		}
-		StringBuilder line = new StringBuilder();
-		for (String word : text.split(" "))
-		{
-			String candidate = line.length() == 0 ? word : line + " " + word;
-			if (fm.stringWidth(candidate) > maxWidth && line.length() > 0)
-			{
-				lines.add(line.toString());
-				line = new StringBuilder(word);
-			}
-			else
-			{
-				line = new StringBuilder(candidate);
-			}
-		}
-		if (line.length() > 0)
-		{
-			lines.add(line.toString());
-		}
-		return lines;
-	}
 
 	/** Drop every card without revealing anything — for shutdown / logout. */
 	public void clear()

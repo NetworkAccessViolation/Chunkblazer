@@ -230,13 +230,6 @@ public class RaidChallengeModule extends AbstractTaskModule
 	}
 
 	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
-	}
-
-	@Override
 	public void addActiveTask(NuzlockeTask task)
 	{
 		super.addActiveTask(task);

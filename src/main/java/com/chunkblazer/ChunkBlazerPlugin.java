@@ -699,8 +699,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			else
 			{
-				log.warn("[CHUNKBLAZER] skipping logout sync, RS profile already cleared, so "
-					+ "per-account state is unreadable and a sync would push empty over the record");
+				log.warn("Skipped logout sync: RS profile already cleared");
 			}
 			activeTask = null;
 			lastRegionId = -1;
@@ -1332,7 +1331,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			else
 			{
-				log.warn("Starting chunk {} has no chunk or tasks defined", DEFAULT_START_REGION);
+				log.warn("Start chunk {} has no tasks", DEFAULT_START_REGION);
 			}
 		}
 	}
@@ -1428,7 +1427,7 @@ public class ChunkBlazerPlugin extends Plugin
 				String jsonContent = readTaskFileContent(jsonFile);
 				if (jsonContent == null)
 				{
-					log.error("FAILED to find task file: {}", jsonFile);
+					log.error("Missing task file: {}", jsonFile);
 					continue;
 				}
 
@@ -1439,7 +1438,7 @@ public class ChunkBlazerPlugin extends Plugin
 				}
 				catch (Exception parseEx)
 				{
-					log.error("JSON PARSE ERROR for {}: {}", jsonFile, parseEx.getMessage(), parseEx);
+					log.error("Bad JSON in {}: {}", jsonFile, parseEx.getMessage(), parseEx);
 					continue;
 				}
 
@@ -1481,7 +1480,7 @@ public class ChunkBlazerPlugin extends Plugin
 							}
 							else
 							{
-								log.warn("Chunk '{}' in {} has null regionIds!", chunk.getName(), jsonFile);
+								log.warn("Chunk '{}' in {}: no regionIds", chunk.getName(), jsonFile);
 							}
 						}
 
@@ -1516,12 +1515,12 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			else
 			{
-				log.error(">>> LUMBRIDGE (12850) NOT FOUND in chunksByRegionId!");
+				log.error("Lumbridge chunk missing");
 			}
 		}
 		else
 		{
-			log.error("NO REGIONS LOADED! chunksByRegionId is empty!");
+			log.error("No chunks loaded");
 		}
 
 		// Data-driven boss NPC-death detection: refresh the npc-id -> boss-key map from
@@ -1596,7 +1595,7 @@ public class ChunkBlazerPlugin extends Plugin
 		String problem = task.getGroupContentSchemaError();
 		if (problem != null)
 		{
-			log.warn("[CHUNKBLAZER] task schema error in '{}': {}", task.getTaskId(), problem);
+			log.warn("Task '{}': {}", task.getTaskId(), problem);
 		}
 	}
 
@@ -1631,7 +1630,7 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			// Loud, because the failure is otherwise invisible: the section
 			// just renders empty and no global task ever awards a point.
-			log.error("Global Tasks loaded but contained ZERO tasks, check the region-group wrapper");
+			log.error("Global tasks file has no tasks");
 		}
 	}
 
@@ -1640,7 +1639,7 @@ public class ChunkBlazerPlugin extends Plugin
 		String json = readTaskFileContent(file);
 		if (json == null)
 		{
-			log.error("FAILED to find Global Tasks file: {}", file);
+			log.error("Missing Global Tasks file: {}", file);
 			return;
 		}
 
@@ -2182,8 +2181,7 @@ public class ChunkBlazerPlugin extends Plugin
 			completedTaskCache.keySet().removeIf(id -> id.startsWith("progression_"));
 		}
 
-		log.warn("[CHUNKBLAZER] repaired a bogus all-zeros Progression baseline: "
-			+ "cleared baseline, un-completed {} progression tasks, refunded {} points", removed, refunded);
+		log.warn("Repaired zero Progression baseline: {} tasks undone, {} points refunded", removed, refunded);
 	}
 
 	/**
@@ -2514,10 +2512,7 @@ public class ChunkBlazerPlugin extends Plugin
 						// Log what we actually SENT as well. If the reason looks
 						// wrong for the account, the snapshot is the thing to
 						// distrust — client-side reads can be unhydrated.
-						log.warn("[CHUNKBLAZER] Competitive eligibility refused: reason='{}' "
-								+ "submitted combat={} questPoints={} totalLevel={} skills={}",
-							reason, snapshot.getCombatLevel(), snapshot.getQuestPoints(),
-							snapshot.getTotalLevel(), snapshot.getSkills());
+						log.warn("Competitive refused: {} (combat {} qp {} total {} skills {})", reason, snapshot.getCombatLevel(), snapshot.getQuestPoints(), snapshot.getTotalLevel(), snapshot.getSkills());
 					}
 				});
 		});
@@ -2647,7 +2642,7 @@ public class ChunkBlazerPlugin extends Plugin
 					}
 					else if (response.isAlreadyLocked())
 					{
-						log.warn("Server already had a locked mode: {}", response.getGameModeEnum());
+						log.warn("Mode already locked: {}", response.getGameModeEnum());
 					}
 					else
 					{
@@ -2657,8 +2652,7 @@ public class ChunkBlazerPlugin extends Plugin
 						{
 							addPluginChatMessage("Competitive was declined: your account isn't eligible. Pick Casual in the side panel to play.");
 						}
-						log.warn("Server lock-mode response: status={} message={}",
-							response.getStatus(), response.getMessage());
+						log.warn("Lock mode: {} {}", response.getStatus(), response.getMessage());
 					}
 				});
 		}
@@ -3047,7 +3041,7 @@ public class ChunkBlazerPlugin extends Plugin
 			}
 			// Garbage in the recovery box (typo, partial paste, stray text). Never adopt
 			// it and wipe it, so it cannot override a good key or be retried every login.
-			log.warn("[CHUNKBLAZER] ignored a recovery key that is not a valid account-key format");
+			log.warn("Ignored invalid recovery key");
 			configManager.setConfiguration(CONFIG_GROUP, "apiKey", "");
 			addPluginChatMessage("That sync key isn't valid, so it was ignored. Your saved key is unchanged.");
 		}
@@ -3144,7 +3138,7 @@ public class ChunkBlazerPlugin extends Plugin
 		String owner = unsavedApiKeyAccount;
 		if (owner == null || !owner.equals(currentAccountId))
 		{
-			log.warn("[CHUNKBLAZER] dropped a held sync key: the account it belongs to is no longer logged in");
+			log.warn("Dropped held sync key: account logged out");
 			unsavedApiKey = null;
 			unsavedApiKeyAccount = null;
 			return;
@@ -3565,8 +3559,7 @@ public class ChunkBlazerPlugin extends Plugin
 				}
 				else
 				{
-					log.warn("Verification POST rejected: {}",
-						resp != null ? resp.getMessage() : "null response");
+					log.warn("Verification rejected: {}", resp != null ? resp.getMessage() : "null response");
 					addPluginChatMessage("That code didn't work - it may have expired. Issuing a fresh one...");
 					// Likely an expired code. Issue a new one so the player can
 					// retry. Use the Nuzlocke-aware kickoff if a lock is pending.
@@ -3876,8 +3869,7 @@ public class ChunkBlazerPlugin extends Plugin
 	{
 		if (!isAccountStateAvailable())
 		{
-			log.warn("[CHUNKBLAZER] per-account write '{}' refused, no RS profile is active, so an "
-				+ "RSProfile write would be silently dropped. This caller must be gated on the profile.", key);
+			log.warn("Dropped per-account write '{}': no RS profile", key);
 			return;
 		}
 		// Skip no-op writes: a single completion can re-run the same save path
@@ -4613,8 +4605,7 @@ public class ChunkBlazerPlugin extends Plugin
 	private void declareIntentionalReset(String reason)
 	{
 		pendingIntentionalReset = true;
-		log.warn("[CHUNKBLAZER] intentional reset declared ({}), the next sync will be "
-			+ "allowed to drop progress server-side", reason);
+		log.warn("Reset declared ({}): next sync may drop progress", reason);
 	}
 
 	/**
@@ -4966,8 +4957,7 @@ public class ChunkBlazerPlugin extends Plugin
 		int inMemoryProgress = task.getCurrentProgress();
 		if (inMemoryProgress > savedProgress)
 		{
-			log.warn("PROGRESS REGRESSION: task '{}' (id={}) in-memory={}, restoring from config={}, caller stack:",
-				task.getName(), task.getTaskId(), inMemoryProgress, savedProgress, new Throwable());
+			log.warn("Progress went back on '{}' ({}): {} in memory, {} saved", task.getName(), task.getTaskId(), inMemoryProgress, savedProgress, new Throwable());
 		}
 
 		int targetQty;
@@ -5178,7 +5168,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 		if (chunk.getTasks() == null || chunk.getTasks().isEmpty())
 		{
-			log.warn("rollTasksForRegion: Chunk {} ({}) has no tasks", regionId, chunk.getName());
+			log.warn("Chunk {} ({}) has no tasks", regionId, chunk.getName());
 			return new HashSet<>();
 		}
 
@@ -6427,10 +6417,7 @@ public class ChunkBlazerPlugin extends Plugin
 		// recompute just re-confirmed it without complaint. Say so instead.
 		if (spent > earned)
 		{
-			log.warn("[CHUNKBLAZER] spend counter exceeds lifetime earnings: spent {} > earned {}. "
-					+ "The balance is pinned at 0 and every point earned will vanish on the next "
-					+ "recompute. Expect migrateRepairImpossiblePointsSpent() to correct this on login.",
-				spent, earned);
+			log.warn("Spent {} > earned {}", spent, earned);
 		}
 
 		if (balance != acInt("totalPoints", 0))
@@ -6567,11 +6554,7 @@ public class ChunkBlazerPlugin extends Plugin
 		}
 
 		int earned = computeEarnedPoints();
-		log.warn("[CHUNKBLAZER] impossible spend counter repaired: spent {} exceeds the {} its {} owned "
-				+ "chunk(s) could ever cost (lifetime earned {}). Rebuilt from the chunks actually owned: "
-				+ "spent = {}. Balance goes {} to {}.",
-			spent, ledger, getUnlockedRegionIds().size(), earned, ledger,
-			Math.max(0, earned - spent), Math.max(0, earned - ledger));
+		log.warn("Spent repaired: {} > {} for {} chunks (earned {}), now {}, balance {} -> {}", spent, ledger, getUnlockedRegionIds().size(), earned, ledger, Math.max(0, earned - spent), Math.max(0, earned - ledger));
 		setAccountState("pointsSpent", ledger);
 	}
 
@@ -6626,7 +6609,7 @@ public class ChunkBlazerPlugin extends Plugin
 		NuzlockeChunk chunk = chunksByRegionId.get(regionId);
 		if (chunk == null || !chunk.isBoss())
 		{
-			log.warn("unlockBossRegion({}) called for a non-boss chunk", regionId);
+			log.warn("Boss unlock {} refused: not a boss chunk", regionId);
 			return;
 		}
 
@@ -6636,7 +6619,7 @@ public class ChunkBlazerPlugin extends Plugin
 		Set<Integer> neighbors = getNeighborRegionIds();
 		if (!neighbors.contains(regionId))
 		{
-			log.warn("unlockBossRegion({}) refused, not adjacent to any unlocked chunk", regionId);
+			log.warn("Boss unlock {} refused: not adjacent", regionId);
 			addPluginChatMessage("That boss chunk isn't adjacent to your unlocked area yet.");
 			return;
 		}
@@ -7196,8 +7179,7 @@ public class ChunkBlazerPlugin extends Plugin
 
 		if (currentPoints < cost)
 		{
-			log.warn("Not enough points to unlock region {}. Need {} but have {}",
-				regionId, cost, currentPoints);
+			log.warn("Unlock {} refused: need {}, have {}", regionId, cost, currentPoints);
 			return;
 		}
 
@@ -7212,8 +7194,7 @@ public class ChunkBlazerPlugin extends Plugin
 		Set<Integer> neighbors = getNeighborRegionIds();
 		if (!neighbors.contains(regionId))
 		{
-			log.warn("unlockRegion({}) refused, region is not adjacent to any unlocked chunk (neighbors: {})",
-				regionId, neighbors);
+			log.warn("Unlock {} refused: not adjacent ({})", regionId, neighbors);
 			return;
 		}
 

@@ -118,13 +118,6 @@ public abstract class AbstractTaskModule implements TaskCompletionModule
 		this.completionCallback = callback;
 	}
 
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		this.activeTask = task;
-		this.currentProgress = task.getCurrentProgress();
-	}
-
 	/**
 	 * Add an active task for multi-task tracking.
 	 */

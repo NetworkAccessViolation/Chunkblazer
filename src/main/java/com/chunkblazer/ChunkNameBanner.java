@@ -27,13 +27,13 @@
 package com.chunkblazer;
 
 import java.awt.AlphaComposite;
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Composite;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -83,9 +83,6 @@ public class ChunkNameBanner extends Overlay
 	// Dungeons sit 6400 tiles (100 regions) north of the land above them.
 	private static final int UNDERGROUND_REGION_Y = 100;
 
-	private static final Color BACKGROUND = new Color(25, 22, 18, 225);
-	private static final Color BORDER = new Color(200, 160, 70);
-	private static final Color TITLE = new Color(255, 230, 170);
 
 	private enum Phase
 	{
@@ -371,50 +368,40 @@ public class ChunkNameBanner extends Overlay
 	/** {@code flash} (0 to 1) brightens the border for a moment when the chunk is unlocked. */
 	private void draw(Graphics2D graphics, double shown, double flash)
 	{
-		Font titleFont = FontManager.getRunescapeBoldFont().deriveFont(20f);
-		Font subtitleFont = FontManager.getRunescapeSmallFont();
-		graphics.setFont(titleFont);
-		FontMetrics titleMetrics = graphics.getFontMetrics();
-		graphics.setFont(subtitleFont);
-		FontMetrics subtitleMetrics = graphics.getFontMetrics();
+		drawSkinned(graphics, shown, flash);
+	}
 
-		int width = Math.max(titleMetrics.stringWidth(title), subtitleMetrics.stringWidth(subtitle)) + PAD_X * 2;
-		int height = titleMetrics.getHeight() + subtitleMetrics.getHeight() + PAD_Y * 2;
-		int x = client.getViewportXOffset() + (client.getViewportWidth() - width) / 2;
+	/** Old School: a stone sign with the name in the game's bold font, the status under it. */
+	private void drawSkinned(Graphics2D graphics, double shown, double flash)
+	{
+		Font titleFont = Skin.bold();
+		Font subtitleFont = FontManager.getRunescapeSmallFont();
+		FontMetrics tm = graphics.getFontMetrics(titleFont);
+		FontMetrics sm = graphics.getFontMetrics(subtitleFont);
+		int width = Math.max(tm.stringWidth(title), sm.stringWidth(subtitle)) + PAD_X * 2;
+		int height = tm.getAscent() + sm.getHeight() + PAD_Y * 2;
+		int viewX = client.getViewportXOffset();
+		int viewWidth = client.getViewportWidth();
+		int x = viewX + (viewWidth - width) / 2;
 		int shownY = client.getViewportYOffset() + TOP_MARGIN;
 		int y = (int) Math.round(shownY - (height + TOP_MARGIN) * (1 - shown));
 
 		Composite previousComposite = graphics.getComposite();
 		Object previousAntialias = graphics.getRenderingHint(RenderingHints.KEY_ANTIALIASING);
 		graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, (float) Math.max(0, Math.min(1, shown))));
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		graphics.setColor(BACKGROUND);
-		graphics.fillRoundRect(x, y, width, height, 12, 12);
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+		Skin.stoneFrame(graphics, new Rectangle(x, y, width, height), 0);
 		if (flash > 0)
 		{
-			// Unlock flash: a glow around the sign that fades away.
-			Color glow = ChunkUnlockType.UNLOCKED.color;
-			graphics.setColor(new Color(glow.getRed(), glow.getGreen(), glow.getBlue(), (int) (120 * flash)));
-			graphics.setStroke(new BasicStroke(6f));
-			graphics.drawRoundRect(x - 2, y - 2, width + 4, height + 4, 14, 14);
+			graphics.setColor(new Color(255, 255, 0, (int) (220 * flash)));
+			graphics.drawRect(x - 2, y - 2, width + 3, height + 3);
 		}
-		graphics.setColor(flash > 0 ? blend(BORDER, ChunkUnlockType.UNLOCKED.color, flash) : BORDER);
-		graphics.setStroke(new BasicStroke(2f));
-		graphics.drawRoundRect(x, y, width, height, 12, 12);
-
-		int titleY = y + PAD_Y + titleMetrics.getAscent();
+		Color status = flash > 0 ? blend(subtitleColor, ChunkUnlockType.UNLOCKED.color, flash) : subtitleColor;
+		int titleY = y + PAD_Y + tm.getAscent() - 3;
 		graphics.setFont(titleFont);
-		graphics.setColor(Color.BLACK);
-		graphics.drawString(title, x + (width - titleMetrics.stringWidth(title)) / 2 + 1, titleY + 1);
-		graphics.setColor(TITLE);
-		graphics.drawString(title, x + (width - titleMetrics.stringWidth(title)) / 2, titleY);
-
-		int subtitleY = titleY + titleMetrics.getDescent() + subtitleMetrics.getAscent();
+		Skin.centred(graphics, title, x + width / 2, titleY, new Color(255, 152, 31));
 		graphics.setFont(subtitleFont);
-		graphics.setColor(subtitleColor);
-		graphics.drawString(subtitle, x + (width - subtitleMetrics.stringWidth(subtitle)) / 2, subtitleY);
-
+		Skin.centred(graphics, subtitle, x + width / 2, titleY + sm.getAscent() + 3, status);
 		graphics.setComposite(previousComposite);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, previousAntialias);
 	}

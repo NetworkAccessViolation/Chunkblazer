@@ -461,6 +461,10 @@ class QuestRequirements
 		{
 			lines.add(cost);
 		}
+		if (need.chunks != null && !need.chunks.isEmpty())
+		{
+			lines.add(Line.spaced("Chunks are from Quest Helper: an estimate of the essential ones.", UNSURE));
+		}
 		return lines;
 	}
 
@@ -531,7 +535,8 @@ class QuestRequirements
 
 	/**
 	 * "Unlock cost: 14 points for 6 chunks": points for the paid ones at your current
-	 * price, plus boss tokens and free chunks. Null when nothing is left to unlock.
+	 * price, plus boss tokens. Free chunks cost nothing, so aren't mentioned; null when
+	 * there's nothing to pay.
 	 */
 	private Line costLine(Set<Integer> regions)
 	{
@@ -540,7 +545,6 @@ class QuestRequirements
 			return null;
 		}
 		int paid = 0;
-		int free = 0;
 		int boss = 0;
 		for (int region : regions)
 		{
@@ -548,16 +552,16 @@ class QuestRequirements
 			{
 				boss++;
 			}
-			else if (plugin.getRegionUnlockCost(region) == 0)
-			{
-				free++;
-			}
-			else
+			else if (plugin.getRegionUnlockCost(region) != 0)
 			{
 				paid++;
 			}
 		}
 		// Each paid unlock raises the price of the next, so add them up from your current rank.
+		if (paid == 0 && boss == 0)
+		{
+			return null;
+		}
 		int rank = plugin.countPayableUnlockedChunks();
 		int points = 0;
 		for (int k = 1; k <= paid; k++)
@@ -569,10 +573,6 @@ class QuestRequirements
 		if (boss > 0)
 		{
 			text.append(", ").append(boss).append(boss == 1 ? " boss token" : " boss tokens");
-		}
-		if (free > 0)
-		{
-			text.append(", ").append(free).append(" free");
 		}
 		return Line.spaced(text.toString(), COST);
 	}

@@ -170,23 +170,6 @@ public abstract class AbstractTaskModuleTest
 	}
 
 	/**
-	 * Create a task with skill constraints.
-	 */
-	protected NuzlockeTask createTaskWithSkillConstraint(String name, String taskId, String completionType,
-														String skill, int level, int xp)
-	{
-		NuzlockeTask task = createTestTask(name, taskId, completionType, 1);
-
-		TaskConstraints constraints = new TaskConstraints();
-		constraints.setRequiredSkill(skill);
-		constraints.setRequiredLevel(level);
-		constraints.setRequiredXp(xp);
-
-		task.setConstraints(constraints);
-		return task;
-	}
-
-	/**
 	 * Create a task with varbit constraint.
 	 */
 	protected NuzlockeTask createTaskWithVarbit(String name, String taskId, int varbitId, int expectedValue)

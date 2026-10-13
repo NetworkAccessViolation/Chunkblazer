@@ -36,7 +36,6 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
-import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -95,7 +94,7 @@ public class WorldMapLegendOverlay extends Overlay
 
 	private void drawLegend(Graphics2D graphics, Rectangle worldMapRect)
 	{
-		graphics.setFont(FontManager.getRunescapeSmallFont());
+		graphics.setFont(Skin.small());
 		FontMetrics fm = graphics.getFontMetrics();
 
 		int padding = 6;
@@ -111,10 +110,7 @@ public class WorldMapLegendOverlay extends Overlay
 		int x = (int) worldMapRect.getX() + 8;
 		int y = (int) (worldMapRect.getY() + worldMapRect.getHeight()) - height - 8;
 
-		graphics.setColor(new Color(30, 30, 30, 220));
-		graphics.fillRect(x, y, width, height);
-		graphics.setColor(new Color(90, 90, 90));
-		graphics.drawRect(x, y, width, height);
+		Skin.panel(graphics, new Rectangle(x - 2, y - 2, width + 5, height + 5), 0, null);
 
 		int rowY = y + padding;
 		for (ChunkUnlockType row : ROWS)
@@ -130,8 +126,8 @@ public class WorldMapLegendOverlay extends Overlay
 			graphics.setColor(SWATCH_BORDER);
 			graphics.drawRect(sx, sy, swatch, swatch);
 
-			graphics.setColor(Color.WHITE);
-			graphics.drawString(row.legend, sx + swatch + padding, rowY + (lineHeight + fm.getAscent()) / 2 - 2);
+			graphics.setColor(new Color(255, 152, 31));
+			Skin.text(graphics, row.legend, sx + swatch + padding, rowY + (lineHeight + fm.getAscent()) / 2 - 2);
 			rowY += lineHeight;
 		}
 	}

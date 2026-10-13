@@ -143,15 +143,8 @@ public class NpcDialogueModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error("NpcDialogueModule.addActiveTask() EXCEPTION: ", e);
+			log.error("NpcDialogueModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

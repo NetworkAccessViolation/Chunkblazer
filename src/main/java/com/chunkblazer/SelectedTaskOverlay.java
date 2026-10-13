@@ -43,7 +43,6 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
-import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.ComponentConstants;
@@ -80,7 +79,6 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private static final Color CLOSE_IDLE = new Color(200, 200, 200);
 	private static final Color CLOSE_HOVER = new Color(255, 90, 90);
 	private static final Color ARCHIVE_HOVER = new Color(190, 140, 90);
-	private static final Color VANI_BACKGROUND = new Color(30, 26, 22, 215);
 	private static final Color NET_ORANGE = new Color(255, 152, 0);
 
 	// Countdown colours, from plenty of time left to out of time.
@@ -159,8 +157,16 @@ public class SelectedTaskOverlay extends OverlayPanel
 		// touches the progress bar.
 		panelComponent.setPreferredSize(new Dimension(190, 0));
 		panelComponent.setGap(new Point(0, 3));
-		panelComponent.setBackgroundColor(VANI_BACKGROUND);
+		// Inside the stone frame's edges, with more room at the foot (left, top, right, bottom).
+		panelComponent.setBorder(new Rectangle(5, 5, 5, 8));
+		// The stone frame is painted behind the panel (at last frame's size).
+		panelComponent.setBackgroundColor(new Color(0, 0, 0, 0));
+		return drawVani(graphics, task, style);
+	}
 
+	/** Vani's full box (and the Compact strip). */
+	private Dimension drawVani(Graphics2D graphics, NuzlockeTask task, TaskTrackerStyle style)
+	{
 		Color tier = TaskCardTier.fromTask(task).getAccent();
 		// Compact: one small line, out of the way. Hovering it opens the full box (what to do,
 		// requirements, missing levels); timed tasks keep the full box for their countdown.
@@ -188,6 +194,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		{
 			graphics.clip(new Rectangle(0, 0, w, h));
 		}
+		Skin.panel(graphics, new Rectangle(0, 0, fullSize.width, fullSize.height), 0, tier);
 
 		// The heading is the task's category and level, in its tier colour (which is its points).
 		panelComponent.getChildren().add(TitleComponent.builder()
@@ -199,7 +206,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		// LineComponent wraps long text onto extra lines automatically.
 		panelComponent.getChildren().add(LineComponent.builder()
 				.left(task.getName())
-				.leftColor(Color.WHITE)
+				.leftColor(new Color(255, 152, 31))
 				.build());
 
 		// What the task actually asks for, when the name alone doesn't say. A timed task's
@@ -254,8 +261,9 @@ public class SelectedTaskOverlay extends OverlayPanel
 			bar.setMinimum(0);
 			bar.setMaximum(target);
 			bar.setValue(Math.min(progress, target));
-			bar.setForegroundColor(tier);
-			bar.setBackgroundColor(BAR_BACKGROUND);
+			// A soft green in a dark groove.
+			bar.setForegroundColor(Skin.FILL);
+			bar.setBackgroundColor(new Color(40, 34, 27));
 			bar.setLabelDisplayMode(ProgressBarComponent.LabelDisplayMode.FULL); // shows "3/10"
 			panelComponent.getChildren().add(bar);
 		}
@@ -270,8 +278,9 @@ public class SelectedTaskOverlay extends OverlayPanel
 
 		// Close X in the top-right corner and the archive book in the top-left, drawn
 		// over the panel just painted.
-		Rectangle box = new Rectangle(size.width - CLOSE_SIZE - CLOSE_MARGIN, CLOSE_MARGIN, CLOSE_SIZE, CLOSE_SIZE);
-		Rectangle book = new Rectangle(CLOSE_MARGIN, CLOSE_MARGIN - 1, CLOSE_SIZE, CLOSE_SIZE + 2);
+		// (Just below the frame's top edge.)
+		Rectangle box = new Rectangle(size.width - CLOSE_SIZE - CLOSE_MARGIN - 1, CLOSE_MARGIN + 3, CLOSE_SIZE, CLOSE_SIZE);
+		Rectangle book = new Rectangle(CLOSE_MARGIN + 1, CLOSE_MARGIN + 2, CLOSE_SIZE, CLOSE_SIZE + 2);
 
 		// Hover test using the game's own mouse position, which is in the same
 		// coordinate space the overlay is drawn in (works in stretched/resized
@@ -308,7 +317,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 	private Dimension drawCompact(Graphics2D graphics, NuzlockeTask task, Color tier)
 	{
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.setFont(FontManager.getRunescapeSmallFont());
+		graphics.setFont(Skin.small());
 		FontMetrics fm = graphics.getFontMetrics();
 		int target = Math.max(1, task.getTargetQuantity());
 		int done = Math.min(task.getCurrentProgress(), target);
@@ -316,20 +325,20 @@ public class SelectedTaskOverlay extends OverlayPanel
 		// The whole name, however long: the strip grows to fit it.
 		String name = task.getName() == null ? "" : task.getName();
 		int width = 15 + fm.stringWidth(name) + (count.isEmpty() ? 0 : 8 + fm.stringWidth(count));
-		int height = 18;
-		graphics.setColor(new Color(20, 18, 15, 175));
-		graphics.fillRoundRect(0, 0, width, height, 9, 9);
+		int height = 20;
+		Skin.panel(graphics, new Rectangle(0, 0, width + 4, height), 0, null);
 		graphics.setColor(tier);
-		graphics.fillRoundRect(3, 4, 3, height - 8, 3, 3);
+		graphics.fillRect(5, 5, 3, height - 10);
 		if (target > 1)
 		{
-			graphics.fillRect(9, height - 3, (width - 15) * done / target, 2);
+			graphics.setColor(Skin.FILL);
+			graphics.fillRect(9, height - 6, (width - 15) * done / target, 2);
 		}
 		boolean ready = TaskTargetExtras.canDo(client, plugin, task);
 		graphics.setColor(ready ? Color.WHITE : MISSING_LEVEL);
-		graphics.drawString(name, 9, 14);
-		graphics.setColor(REQUIREMENT_TEXT);
-		graphics.drawString(count, width - 6 - fm.stringWidth(count), 14);
+		Skin.text(graphics, name, 9, 14);
+		graphics.setColor(new Color(255, 255, 0));
+		Skin.text(graphics, count, width - 6 - fm.stringWidth(count), 14);
 		return new Dimension(width, height);
 	}
 
@@ -343,6 +352,7 @@ public class SelectedTaskOverlay extends OverlayPanel
 		panelComponent.setPreferredSize(new Dimension(ComponentConstants.STANDARD_WIDTH, 0));
 		panelComponent.setGap(new Point(5, 1));
 		panelComponent.setBackgroundColor(ComponentConstants.STANDARD_BACKGROUND_COLOR);
+		panelComponent.setBorder(new Rectangle(4, 4, 4, 4));
 		panelComponent.getChildren().add(TitleComponent.builder().text("Selected Task").color(NET_ORANGE).build());
 		panelComponent.getChildren().add(LineComponent.builder().left(task.getName()).build());
 		// An empty title, for a little padding.
@@ -524,7 +534,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 		{
 			return lines;
 		}
-		if (withTime && c.getTimeInTicks() != null && c.getTimeInTicks() > 0)
+		// One tick ("Within 0:01", a first-hit kill) says nothing useful.
+		if (withTime && c.getTimeInTicks() != null && c.getTimeInTicks() > 1)
 		{
 			int seconds = (int) Math.round(c.getTimeInTicks() * 0.6);
 			lines.add(String.format("Within %d:%02d", seconds / 60, seconds % 60));

@@ -64,6 +64,9 @@ public class ChunkBlazerPanel extends PluginPanel
 	// ChunkBlazer theme accent, flame orange.
 	private static final Color FLAME = new Color(255, 152, 0);
 	private static final int TASK_TEXT_WRAP_WIDTH = CONTENT_WIDTH - 25;
+	private static final Font SMALL = FontManager.getRunescapeSmallFont();
+	private static final Font BOLD = FontManager.getRunescapeBoldFont();
+	private static final String WRAP = "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>";
 
 	private ChunkBlazerPlugin plugin;
 
@@ -90,9 +93,24 @@ public class ChunkBlazerPanel extends PluginPanel
 
 
 
-	public ChunkBlazerPanel()
+	/** Give the panel the game's look (PanelStyle); called once its task list is in. */
+	public void setOldSchool()
 	{
-		super(true);
+		SwingUtilities.invokeLater(() ->
+		{
+			PanelStyle.apply(this);
+			revalidate();
+			repaint();
+		});
+	}
+
+	@Override
+	protected void paintComponent(java.awt.Graphics g)
+	{
+		java.awt.Graphics2D g2 = (java.awt.Graphics2D) g.create();
+		g2.setPaint(Skin.stone(false));
+		g2.fillRect(0, 0, getWidth(), getHeight());
+		g2.dispose();
 	}
 
 	public void init(ChunkBlazerPlugin plugin)
@@ -142,11 +160,9 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Points, chunks and tasks all live in the in-game task window now.
 		overlayHint = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
 		overlayHint.setAlignmentX(LEFT_ALIGNMENT);
-		overlayHint.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME),
-			new EmptyBorder(5, 6, 5, 6)));
+		frame(overlayHint, FLAME, 5, 6);
 		overlayHint.add(new WrappingTextLabel("Click a task to track it, right-click to star it, "
-			+ "click a quest for its requirements, click a heading to fold it.", FontManager.getRunescapeSmallFont(), FLAME, CONTENT_WIDTH - 16));
+			+ "click a quest for its requirements, click a heading to fold it.", SMALL, FLAME, CONTENT_WIDTH - 16));
 		overlayHint.setVisible(false);
 		mainPanel.add(overlayHint);
 		mainPanel.add(Box.createVerticalStrut(8));
@@ -189,11 +205,39 @@ public class ChunkBlazerPanel extends PluginPanel
 		return button;
 	}
 
+	/** Run {@code action} when the label is clicked (with a hand cursor). */
+	private static void onClick(JLabel label, Runnable action)
+	{
+		label.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		label.addMouseListener(new java.awt.event.MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(java.awt.event.MouseEvent e)
+			{
+				action.run();
+			}
+		});
+	}
+
+	/** A section's frame: a line in {@code edge} with the padding inside it. */
+	private static void frame(JComponent c, Color edge, int v, int h)
+	{
+		c.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(edge), new EmptyBorder(v, h, v, h)));
+	}
+
+	/** Wrapped small text for a section. */
+	private static WrappingTextLabel note(String text, Color color)
+	{
+		WrappingTextLabel label = new WrappingTextLabel(text, SMALL, color, TASK_TEXT_WRAP_WIDTH);
+		label.setAlignmentX(LEFT_ALIGNMENT);
+		return label;
+	}
+
 	/** A subtle text-only link button. */
 	private JButton linkButton(String text, Color color, String tooltip)
 	{
 		JButton button = new JButton(text);
-		button.setFont(FontManager.getRunescapeSmallFont());
+		button.setFont(SMALL);
 		button.setForeground(color);
 		button.setBorderPainted(false);
 		button.setContentAreaFilled(false);
@@ -274,24 +318,21 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JPanel createVerificationSection()
 	{
 		JPanel panel = boxPanel(new Color(60, 45, 18)); // dark amber
-		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(new Color(230, 170, 50), 2),
-			new EmptyBorder(8, 8, 8, 8)
-		));
+		panel.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(230, 170, 50), 2), new EmptyBorder(8, 8, 8, 8)));
 
-		addLabel(panel, "Verify Your Account", FontManager.getRunescapeBoldFont(), new Color(255, 190, 60));
+		addLabel(panel, "Verify Your Account", BOLD, new Color(255, 190, 60));
 		panel.add(Box.createVerticalStrut(5));
 
 		WrappingTextLabel body = new WrappingTextLabel(
 			"Type this code in public chat and hit Enter to verify your ChunkBlazer account:",
-			FontManager.getRunescapeSmallFont(),
+			SMALL,
 			Color.WHITE,
 			CONTENT_WIDTH - 4);
 		panel.add(body);
 		panel.add(Box.createVerticalStrut(6));
 
 		verificationCodeLabel = addLabel(panel, " ",
-			FontManager.getRunescapeBoldFont().deriveFont(24f), new Color(120, 230, 120));
+			BOLD.deriveFont(24f), new Color(120, 230, 120));
 
 		return panel;
 	}
@@ -352,33 +393,17 @@ public class ChunkBlazerPanel extends PluginPanel
 		row.setAlignmentX(LEFT_ALIGNMENT);
 		row.setMaximumSize(new Dimension(PANEL_WIDTH, 16));
 
-		row.add(styledLabel("Progress synced to", FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR));
+		row.add(styledLabel("Progress synced to", SMALL, ColorScheme.LIGHT_GRAY_COLOR));
 
-		JLabel site = styledLabel("chunkblazer.com", FontManager.getRunescapeSmallFont(), new Color(255, 152, 0));
-		site.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		JLabel site = styledLabel("chunkblazer.com", SMALL, new Color(255, 152, 0));
 		site.setToolTipText("Track your account progress at chunkblazer.com");
-		site.addMouseListener(new java.awt.event.MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(java.awt.event.MouseEvent e)
-			{
-				openLink("https://chunkblazer.com");
-			}
-		});
+		onClick(site, () -> openLink("https://chunkblazer.com"));
 		row.add(site);
 
 		// ASCII "(?)" — Runescape font lacks a circled-i glyph
-		JLabel info = styledLabel("(?)", FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR);
-		info.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		JLabel info = styledLabel("(?)", SMALL, ColorScheme.LIGHT_GRAY_COLOR);
 		info.setToolTipText("How your data is used");
-		info.addMouseListener(new java.awt.event.MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(java.awt.event.MouseEvent e)
-			{
-				showDataUseDialog();
-			}
-		});
+		onClick(info, () -> showDataUseDialog());
 		row.add(info);
 
 		return row;
@@ -470,36 +495,26 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JPanel createSyncPromptSection()
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(FLAME),
-			new EmptyBorder(6, 6, 6, 6)));
+		frame(panel, FLAME, 6, 6);
 		panel.setAlignmentX(LEFT_ALIGNMENT);
 
-		addLabel(panel, "Server sync is off", FontManager.getRunescapeBoldFont(), FLAME);
+		addLabel(panel, "Server sync is off", BOLD, FLAME);
 		panel.add(Box.createVerticalStrut(3));
 
-		WrappingTextLabel body = new WrappingTextLabel(
-			"Turn on sync to save your progress across devices, show on the leaderboard, "
-			+ "see other players, and play Competitive mode. Nothing is sent until you enable it. "
-			+ "Your current progress will sync with the server when you do.",
-			FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
-		body.setAlignmentX(LEFT_ALIGNMENT);
+		WrappingTextLabel body = note("Turn on sync to save your progress across devices, show on the leaderboard, see other players, and play Competitive mode. Nothing is sent until you enable it. Your current progress will sync with the server when you do.", ColorScheme.LIGHT_GRAY_COLOR);
 		panel.add(body);
 
 		panel.add(Box.createVerticalStrut(3));
 		WrappingTextLabel comp = new WrappingTextLabel(
 			"Competitive mode requires a new Ironman, Hardcore Ironman, or Ultimate Ironman account with combat level 9 or lower and no skill above level 3.",
-			FontManager.getRunescapeSmallFont(), new Color(255, 190, 60), TASK_TEXT_WRAP_WIDTH);
+			SMALL, new Color(255, 190, 60), TASK_TEXT_WRAP_WIDTH);
 		comp.setAlignmentX(LEFT_ALIGNMENT);
 		panel.add(comp);
 
 		// Shown until the player picks: a new device for an existing account must not
 		// deal Lumbridge before it knows whether the server already has a roll.
 		panel.add(Box.createVerticalStrut(3));
-		WrappingTextLabel hint = new WrappingTextLabel(
-			"Your starting tasks are dealt once you choose Enable Sync or Play offline.",
-			FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR, TASK_TEXT_WRAP_WIDTH);
-		hint.setAlignmentX(LEFT_ALIGNMENT);
+		WrappingTextLabel hint = note("Your starting tasks are dealt once you choose Enable Sync or Play offline.", ColorScheme.LIGHT_GRAY_COLOR);
 		syncChoiceHint = hint;
 		panel.add(hint);
 
@@ -529,17 +544,9 @@ public class ChunkBlazerPanel extends PluginPanel
 		panel.add(playOfflineButton);
 
 		panel.add(Box.createVerticalStrut(4));
-		JLabel info = styledLabel("Read how your data is used", FontManager.getRunescapeSmallFont(), ColorScheme.LIGHT_GRAY_COLOR);
-		info.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
+		JLabel info = styledLabel("Read how your data is used", SMALL, ColorScheme.LIGHT_GRAY_COLOR);
 		info.setAlignmentX(LEFT_ALIGNMENT);
-		info.addMouseListener(new java.awt.event.MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(java.awt.event.MouseEvent e)
-			{
-				showDataUseDialog();
-			}
-		});
+		onClick(info, () -> showDataUseDialog());
 		panel.add(info);
 
 		return panel;
@@ -594,17 +601,14 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JPanel createHeaderSection()
 	{
 		JPanel headerPanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-		headerPanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(3, 6, 3, 6)
-		));
+		frame(headerPanel, ColorScheme.MEDIUM_GRAY_COLOR, 3, 6);
 
 		JPanel titleRow = styledPanel(new BorderLayout(3, 0), ColorScheme.DARKER_GRAY_COLOR);
 		titleRow.setAlignmentX(CENTER_ALIGNMENT);
 		titleRow.setMaximumSize(new Dimension(CONTENT_WIDTH, 20));
 
 		// Orange title
-		titleRow.add(styledLabel("ChunkBlazer", FontManager.getRunescapeBoldFont(), new Color(255, 152, 0)), BorderLayout.WEST);
+		titleRow.add(styledLabel("ChunkBlazer", BOLD, new Color(255, 152, 0)), BorderLayout.WEST);
 
 
 		headerPanel.add(titleRow);
@@ -613,9 +617,9 @@ public class ChunkBlazerPanel extends PluginPanel
 		JPanel infoRow = styledPanel(new FlowLayout(FlowLayout.LEFT, 0, 0), ColorScheme.DARKER_GRAY_COLOR);
 		infoRow.setAlignmentX(CENTER_ALIGNMENT);
 
-		regionLabel = styledLabel("Unknown (0)", FontManager.getRunescapeSmallFont(), Color.WHITE);
+		regionLabel = styledLabel("Unknown (0)", SMALL, Color.WHITE);
 
-		modeLabel = styledLabel(" | Mode: --", FontManager.getRunescapeSmallFont(), new Color(0, 200, 200));
+		modeLabel = styledLabel(" | Mode: --", SMALL, new Color(0, 200, 200));
 
 		infoRow.add(regionLabel);
 		infoRow.add(modeLabel);
@@ -629,13 +633,10 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JPanel createModeSelectionSection()
 	{
 		JPanel modePanel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-		modePanel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(10, 10, 10, 10)
-		));
+		frame(modePanel, ColorScheme.MEDIUM_GRAY_COLOR, 10, 10);
 
 		// Section title
-		addLabel(modePanel, "Select Game Mode", FontManager.getRunescapeBoldFont(), Color.WHITE);
+		addLabel(modePanel, "Select Game Mode", BOLD, Color.WHITE);
 		modePanel.add(Box.createVerticalStrut(3));
 		modePanel.add(sectionDivider());
 		modePanel.add(Box.createVerticalStrut(5));
@@ -643,15 +644,15 @@ public class ChunkBlazerPanel extends PluginPanel
 		// Verify-first prompt: verification (the chat-code handshake) proves account
 		// ownership and is required for Competitive, so lead with it here in the same
 		// amber as the "Verify Your Account" banner it points back to.
-		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
+		addLabel(modePanel, WRAP
 			+ "Verify your account, then choose your game mode. Type the code from the verify "
 			+ "banner in public chat first."
-			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), new Color(255, 190, 60));
+			+ "</td></tr></table></html>", SMALL, new Color(255, 190, 60));
 		modePanel.add(Box.createVerticalStrut(8));
 
 		// Warning text
 		addLabel(modePanel, "<html><i>This choice is permanent for this account!</i></html>",
-			FontManager.getRunescapeSmallFont(), Color.YELLOW);
+			SMALL, Color.YELLOW);
 		modePanel.add(Box.createVerticalStrut(10));
 
 		// Radio buttons
@@ -668,9 +669,9 @@ public class ChunkBlazerPanel extends PluginPanel
 
 		// Fixed-width table keeps the blurb inside CONTENT_WIDTH; Swing's CSS
 		// subset ignores width on div/body/p, so a table is the reliable wrap.
-		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
+		addLabel(modePanel, WRAP
 			+ "Start anywhere. Play on any account. Featured on the casual leaderboard."
-			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+			+ "</td></tr></table></html>", SMALL, Color.LIGHT_GRAY);
 		modePanel.add(Box.createVerticalStrut(5));
 
 		nuzlockeRadio = new JRadioButton("Competitive");
@@ -681,9 +682,9 @@ public class ChunkBlazerPanel extends PluginPanel
 		modeGroup.add(nuzlockeRadio);
 		modePanel.add(nuzlockeRadio);
 
-		addLabel(modePanel, "<html><table width='190' cellpadding='0' cellspacing='0'><tr><td>"
+		addLabel(modePanel, WRAP
 			+ "Featured on the main page of the leaderboard and website. You must start on a new Ironman, Hardcore Ironman or Ultimate Ironman account (combat level 9 or lower)."
-			+ "</td></tr></table></html>", FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+			+ "</td></tr></table></html>", SMALL, Color.LIGHT_GRAY);
 		modePanel.add(Box.createVerticalStrut(10));
 
 		// Confirm button
@@ -703,16 +704,13 @@ public class ChunkBlazerPanel extends PluginPanel
 	private JPanel createLoggedOutSection()
 	{
 		JPanel panel = boxPanel(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			new EmptyBorder(15, 10, 15, 10)
-		));
+		frame(panel, ColorScheme.MEDIUM_GRAY_COLOR, 15, 10);
 
-		addLabel(panel, "Not logged in", FontManager.getRunescapeBoldFont(), Color.WHITE);
+		addLabel(panel, "Not logged in", BOLD, Color.WHITE);
 		panel.add(Box.createVerticalStrut(5));
 
 		addLabel(panel, "<html>Log into Old School RuneScape to start playing ChunkBlazer.</html>",
-			FontManager.getRunescapeSmallFont(), Color.LIGHT_GRAY);
+			SMALL, Color.LIGHT_GRAY);
 
 		return panel;
 	}

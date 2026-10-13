@@ -188,15 +188,8 @@ public class AgilityModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error("AgilityModule.addActiveTask() EXCEPTION: ", e);
+			log.error("AgilityModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override
