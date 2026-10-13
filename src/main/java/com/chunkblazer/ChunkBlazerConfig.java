@@ -446,11 +446,9 @@ public interface ChunkBlazerConfig extends Config
 	)
 	default boolean showWorldMapChunks()
 	{
-		// Default to the scene toggle's value so splitting this out doesn't change
-		// behaviour on upgrade: someone who had "Show Chunk Borders" off keeps the
-		// world map clear, and someone who had it on keeps it. Once they set this
-		// toggle explicitly, it takes its own stored value.
-		return showSceneChunks();
+		// On by default: the world map borders are how players see their chunks. Anyone
+		// who has set this toggle keeps their stored value.
+		return true;
 	}
 
 	@ConfigItem(
