@@ -190,6 +190,9 @@ class GrandfatherCasualTest
 		assertTrue(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(3, 9, 1, 15, 3)), "at every limit");
 		assertTrue(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(null, 3, 1, 10, 1)), "type unknown");
 		assertFalse(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(0, 3, 1, 10, 1)), "a main");
+		assertTrue(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(4, 3, 1, 10, 1)), "a group ironman");
+		assertTrue(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(6, 3, 1, 10, 1)), "an unranked group ironman");
+		assertFalse(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(7, 3, 1, 10, 1)), "an unknown type");
 		assertFalse(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(1, 10, 1, 10, 1)), "combat 10");
 		assertFalse(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(1, 3, 2, 10, 1)), "a real quest");
 		assertFalse(ChunkBlazerPlugin.couldStillGoCompetitive(snapshot(1, 3, 1, 16, 1)), "Hitpoints 16");

@@ -1126,7 +1126,7 @@ public class ChunkBlazerPlugin extends Plugin
 	static boolean couldStillGoCompetitive(EligibilitySnapshot s)
 	{
 		Integer type = s.getAccountType();
-		if ((type != null && (type < 1 || type > 3)) || s.getCombatLevel() > 9 || s.getQuestPoints() > 1)
+		if ((type != null && (type < 1 || type > 6)) || s.getCombatLevel() > 9 || s.getQuestPoints() > 1)
 		{
 			return false;
 		}
@@ -3745,7 +3745,7 @@ public class ChunkBlazerPlugin extends Plugin
 	// One "select your game mode" chat reminder per session while no mode is locked.
 	private boolean modeChoiceNoticeShown;
 	static final String SELECT_MODE_MESSAGE = "Please select your game mode in the ChunkBlazer panel! "
-		+ "Competitive mode requires a new Ironman, Hardcore Ironman, or Ultimate Ironman account with combat level 9 or lower and no skill above level 3.";
+		+ "Competitive mode requires a new ironman account (Group included) with combat level 9 or lower and no skill above level 3.";
 
 	/**
 	 * Whether an unlocked region with no roll may be rolled now: only once we know the
@@ -4711,7 +4711,7 @@ public class ChunkBlazerPlugin extends Plugin
 			.playerHash(hashRsn(rsn))
 			.accountHash(hashedAccountId())
 			.displayName(rsn)
-			.accountType("NORMAL")
+			.accountType(String.valueOf(client.getVarbitValue(VarbitID.IRONMAN)))
 			.gameMode(modeName)
 			.combatLevel(local != null ? local.getCombatLevel() : 0)
 			.totalLevel(client.getTotalLevel())

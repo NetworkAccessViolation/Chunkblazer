@@ -48,7 +48,7 @@ public class PlayerSyncRequest
 	/** Current RSN (for display, not verification) */
 	private String displayName;
 
-	/** Account type (NORMAL, IRONMAN, HARDCORE_IRONMAN, etc.) */
+	/** The game's account-type value (VarbitID.IRONMAN); 4-6 are group ironmen. */
 	private String accountType;
 
 	/** ChunkBlazer game mode (CASUAL, NUZLOCKE) */

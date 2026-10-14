@@ -61,7 +61,7 @@ public class EligibilitySnapshot
 	private Map<String, Integer> skills;
 
 	/**
-	 * The game's account-type value (VarbitID.IRONMAN): 1 Ironman, 2 Ultimate, 3 Hardcore.
+	 * The game's account-type value (VarbitID.IRONMAN): 1 Ironman, 2 Ultimate, 3 Hardcore, 4-6 Group.
 	 * Competitive is ironman-only, and a fresh account isn't on the hiscores yet to check.
 	 */
 	@SerializedName("account_type")
