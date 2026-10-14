@@ -77,6 +77,8 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.KeyCode;
@@ -94,9 +96,9 @@ import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
+import net.runelite.client.ui.components.IconTextField;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.game.SkillIconManager;
-import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.input.KeyListener;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseAdapter;
@@ -137,7 +139,6 @@ public class TaskBrowserOverlay extends Overlay
 	private static final int MAX_WIDTH = 600;
 	private static final int MAX_HEIGHT = 440;
 	private static final int HEADER = 40;
-	private static final int TABS = 32;
 	private static final int ROW = 40;
 	// Each extra line of a long task name.
 	private static final int NAME_LINE = 15;
@@ -150,7 +151,6 @@ public class TaskBrowserOverlay extends Overlay
 	private static final int DETAIL_LINE = 13;
 	private static final int SECTION_TEXT = 11;
 	private static final int QUEST_CHECKS_PER_TICK = 15;
-	private static final int MAX_SEARCH = 40;
 	// Arrow directions for arrow().
 	private static final int UP = 0;
 	private static final int DOWN = 1;
@@ -269,7 +269,6 @@ public class TaskBrowserOverlay extends Overlay
 	private final ChunkBlazerConfig config;
 	private final ChunkBlazerWorldMapOverlay worldMap;
 	private final TaskArchive archive;
-	private final ChatboxPanelManager chatboxPanelManager;
 	private final ClientThread clientThread;
 	private final SavedTaskTracker savedTracker;
 	private final TaskItemOverlay itemOverlay;
@@ -279,7 +278,6 @@ public class TaskBrowserOverlay extends Overlay
 
 	private volatile boolean open;
 	private volatile String search = "";
-	private volatile boolean searchFocused;
 	private volatile boolean currentChunkOnly;
 	// A chunk picked on the world map; while set, only its tasks are listed.
 	private volatile String pinnedChunk;
@@ -442,8 +440,7 @@ public class TaskBrowserOverlay extends Overlay
 		return event;
 	};
 
-	// Esc closes the window and the quest/saved box (F-keys close the box too). Search typing goes through a chatbox
-	// input (startSearch), so key-remapping plugins don't eat the letters.
+	// Esc closes the window and the quest/saved box (F-keys close the box too).
 	private final KeyListener keys = new KeyListener()
 	{
 		@Override
@@ -466,7 +463,7 @@ public class TaskBrowserOverlay extends Overlay
 			{
 				questPane = null;
 			}
-			if (open && !searchFocused && event.getKeyCode() == KeyEvent.VK_ESCAPE)
+			if (open && event.getKeyCode() == KeyEvent.VK_ESCAPE)
 			{
 				close();
 				event.consume();
@@ -487,7 +484,7 @@ public class TaskBrowserOverlay extends Overlay
 	public TaskBrowserOverlay(Client client, ChunkBlazerPlugin plugin, ConfigManager configManager,
 		OverlayManager overlayManager, MouseManager mouseManager, SkillIconManager skillIcons, KeyManager keyManager,
 		EventBus eventBus, ChunkBlazerConfig config, ChunkBlazerWorldMapOverlay worldMap, TaskArchive archive,
-		ChatboxPanelManager chatboxPanelManager, ClientThread clientThread, SavedTaskTracker savedTracker,
+		ClientThread clientThread, SavedTaskTracker savedTracker,
 		TaskItemOverlay itemOverlay, ChunkNameBanner banner, WorldMapLegendOverlay legend,
 		QuestRequirements quests)
 	{
@@ -502,7 +499,6 @@ public class TaskBrowserOverlay extends Overlay
 		this.config = config;
 		this.worldMap = worldMap;
 		this.archive = archive;
-		this.chatboxPanelManager = chatboxPanelManager;
 		this.clientThread = clientThread;
 		this.savedTracker = savedTracker;
 		this.itemOverlay = itemOverlay;
@@ -585,7 +581,6 @@ public class TaskBrowserOverlay extends Overlay
 		open = true;
 		questPane = null;
 		pinnedChunk = null;
-		stopSearch();
 		refresh();
 		if (!newIds.isEmpty())
 		{
@@ -597,7 +592,6 @@ public class TaskBrowserOverlay extends Overlay
 	private void close()
 	{
 		open = false;
-		stopSearch();
 		pinnedChunk = null;
 		finishNew();
 	}
@@ -656,6 +650,7 @@ public class TaskBrowserOverlay extends Overlay
 		tab = Tab.ACTIVE;
 		clearFilters();
 		search = "";
+		SwingUtilities.invokeLater(() -> sideSearch.setText(""));
 		open = true;
 		refresh();
 	}
@@ -753,6 +748,7 @@ public class TaskBrowserOverlay extends Overlay
 	private final JComboBox<String> sideSkill = new JComboBox<>();
 	private final JComboBox<String> sideTier = new JComboBox<>();
 	private final JComboBox<String> sideSort = new JComboBox<>();
+	private final IconTextField sideSearch = new IconTextField();
 	private final Map<Filter, JButton> sideBoxes = new EnumMap<>(Filter.class);
 	private final JButton sideFold = new JButton();
 	private final JButton sideClear = new JButton("Clear");
@@ -852,7 +848,9 @@ public class TaskBrowserOverlay extends Overlay
 		String here = currentChunkName();
 		List<NuzlockeTask> chunk = new ArrayList<>();
 		List<NuzlockeTask> globals = new ArrayList<>();
-		Predicate<NuzlockeTask> test = filterTest(filterOn, filterHidden, filterSkill, filterTier);
+		String query = search.trim().toLowerCase();
+		Predicate<NuzlockeTask> test = filterTest(filterOn, filterHidden, filterSkill, filterTier)
+			.and(t -> query.isEmpty() || matchesSearch(t, query));
 		for (NuzlockeTask task : pool(true))
 		{
 			chunkNames.computeIfAbsent(task.getTaskId(), k -> chunkName(task));
@@ -888,7 +886,7 @@ public class TaskBrowserOverlay extends Overlay
 		int[] numbers = {plugin.getTotalPoints(), paidChunks(), plugin.getCompletedTaskIdSet().size(), plugin.getBossTokens()};
 		String stats = Arrays.toString(numbers);
 		// Only rebuild when something changed, so the panel doesn't jump while scrolling.
-		StringBuilder key = new StringBuilder(stats + sideSize + filterLabel() + sortField + ascending + saved);
+		StringBuilder key = new StringBuilder(stats + sideSize + filterLabel() + sortField + ascending + saved + query);
 		items.forEach(o -> key.append(o instanceof NuzlockeTask
 			? ((NuzlockeTask) o).getTaskId() + ((NuzlockeTask) o).getCurrentProgress() : o));
 		if (key.toString().equals(sideKey))
@@ -979,9 +977,33 @@ public class TaskBrowserOverlay extends Overlay
 		return sideFilterBox;
 	}
 
-	/** Filters (with Clear beside it), the filter buttons, then Sort with A- / A+ beside it, spaced out. */
+	/** Search, Filters (with Clear beside it), the filter buttons, then Sort with A- / A+ beside it, spaced out. */
 	private JPanel sideControls()
 	{
+		// Search matches name, description, category and chunk, in the side panel and the window alike.
+		sideSearch.setIcon(IconTextField.Icon.SEARCH);
+		sideSearch.setPreferredSize(new Dimension(0, 30));
+		sideSearch.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+		sideSearch.getDocument().addDocumentListener(new DocumentListener()
+		{
+			@Override
+			public void insertUpdate(DocumentEvent e)
+			{
+				searched();
+			}
+
+			@Override
+			public void removeUpdate(DocumentEvent e)
+			{
+				searched();
+			}
+
+			@Override
+			public void changedUpdate(DocumentEvent e)
+			{
+				searched();
+			}
+		});
 		sideClear.setFont(FontManager.getRunescapeSmallFont());
 		sideClear.addActionListener(e ->
 		{
@@ -1009,13 +1031,20 @@ public class TaskBrowserOverlay extends Overlay
 		controls.setLayout(new BoxLayout(controls, BoxLayout.Y_AXIS));
 		controls.setOpaque(false);
 		controls.setBorder(new EmptyBorder(6, 0, 8, 0));
-		for (JComponent row : Arrays.asList(row(sideFold, sideClear), sideFilters(), row(sideSort, sizes)))
+		for (JComponent row : Arrays.asList(sideSearch, row(sideFold, sideClear), sideFilters(), row(sideSort, sizes)))
 		{
 			row.setAlignmentX(Component.LEFT_ALIGNMENT);
 			row.setBorder(new EmptyBorder(0, 0, 5, 0));
 			controls.add(row);
 		}
 		return controls;
+	}
+
+	private void searched()
+	{
+		search = sideSearch.getText();
+		refresh();
+		sideChanged();
 	}
 
 	/** {@code main} filling the width with {@code side} at its right. */
@@ -1382,38 +1411,6 @@ public class TaskBrowserOverlay extends Overlay
 			plugin.clearSelectedTask();
 		}
 		rowsBuiltAt = 0;
-	}
-
-	// --- Search ---------------------------------------------------------------
-
-	/** Search typed in a chatbox input, like the bank search; the list filters as you type. */
-	private void startSearch()
-	{
-		if (searchFocused)
-		{
-			return;
-		}
-		searchFocused = true;
-		String current = search;
-		clientThread.invoke(() -> chatboxPanelManager.openTextInput("Search tasks")
-			.value(current)
-			.onChanged(text ->
-			{
-				search = text.length() > MAX_SEARCH ? text.substring(0, MAX_SEARCH) : text;
-				refresh();
-			})
-			.onDone((Consumer<String>) text -> searchFocused = false)
-			.onClose(() -> searchFocused = false)
-			.build());
-	}
-
-	private void stopSearch()
-	{
-		if (searchFocused)
-		{
-			searchFocused = false;
-			clientThread.invoke(() -> chatboxPanelManager.close());
-		}
 	}
 
 	private void refresh()
@@ -2043,43 +2040,15 @@ public class TaskBrowserOverlay extends Overlay
 		String chunkLabel = pinnedChunk != null ? Skin.fit(sm, pinnedChunk, side.width - 40) : side.width < SIDEBAR ? "This chunk" : "This chunk only";
 		drawChunkToggle(graphics, new Rectangle(side.x + 6, side.y + side.height - 30, side.width - 12, 22), chunkLabel, mx, my);
 
-		// The content: search, Filter and Sort along the top, the list, then a hint line.
+		// The content: the list, then a hint line.
 		int cx = side.x + side.width + PAD;
 		int cw = x + width - PAD - cx;
-		int barY = y + HEADER + 8;
-		int buttonHeight = TABS - 10;
-		int buttonWidth = Math.max(78, Math.min(120, cw / 4));
-		Rectangle sortButton = new Rectangle(cx + cw - buttonWidth, barY, buttonWidth, buttonHeight);
-		Rectangle filterButton = new Rectangle(sortButton.x - 6 - buttonWidth, barY, buttonWidth, buttonHeight);
-		graphics.setFont(small);
-		drawSearch(graphics, new Rectangle(cx, barY, filterButton.x - 8 - cx, buttonHeight), mx, my);
-		// Filters and sort are set in the side panel; here they say what's on, and the x clears.
-		// Saved and Archived show all their tasks, so the filter does nothing there.
-		boolean filtering = tab == Tab.ACTIVE && anyFilter();
-		drawButton(graphics, filterButton, "Filter: " + (tab != Tab.ACTIVE ? "off" : filterLabel()), filtering, mx, my);
-		if (filtering)
-		{
-			// Outlined in orange, so it's clear why tasks are missing.
-			graphics.setColor(TITLE);
-			graphics.drawRect(filterButton.x, filterButton.y, filterButton.width - 1, filterButton.height - 1);
-			Rectangle clear = new Rectangle(filterButton.x + filterButton.width - 16, filterButton.y + 2, 14,
-				filterButton.height - 4);
-			hits.add(0, new Hit(clear, () ->
-			{
-				clearFilters();
-				refresh();
-			}));
-			cross(graphics, clear.x + 7, clear.y + clear.height / 2, 3, clear.contains(mx, my) ? NO_LEVEL : SUBTEXT);
-		}
-		drawButton(graphics, sortButton, "Sort: " + sortField.label, false, mx, my);
-		arrow(graphics, sortButton.x + sortButton.width - 10, sortButton.y + sortButton.height / 2,
-			ascending ? UP : DOWN, SUBTEXT);
 
 		// Old School: column headings over the list, like the Leagues task table.
 		int columns = 16;
 		if (columns > 0)
 		{
-			Rectangle strip = new Rectangle(cx - 2, y + HEADER + TABS - 2, cw + 6, columns);
+			Rectangle strip = new Rectangle(cx - 2, y + HEADER + 6, cw + 6, columns);
 			graphics.setColor(DARK);
 			graphics.fillRect(strip.x, strip.y, strip.width, strip.height);
 			Skin.bevel(graphics, strip, true);
@@ -2088,7 +2057,7 @@ public class TaskBrowserOverlay extends Overlay
 			Skin.text(graphics, "Task", strip.x + 52, strip.y + 14);
 			Skin.text(graphics, "Points", strip.x + strip.width - 12 - graphics.getFontMetrics().stringWidth("Points"), strip.y + 14);
 		}
-		Rectangle list = new Rectangle(cx - 2, y + HEADER + TABS + columns, cw + 6, height - HEADER - TABS - FOOTER - 2 - columns);
+		Rectangle list = new Rectangle(cx - 2, y + HEADER + 8 + columns, cw + 6, height - HEADER - 8 - FOOTER - 2 - columns);
 		int shown = drawList(graphics, list, mx, my, regular, small);
 
 		// The hint line: how many, and what clicks do.
@@ -2320,56 +2289,6 @@ public class TaskBrowserOverlay extends Overlay
 		Skin.text(graphics, label, sx + sw + 6, textY);
 	}
 
-	private void drawSearch(Graphics2D graphics, Rectangle box, int mx, int my)
-	{
-		hits.add(0, new Hit(box, this::startSearch));
-		Rectangle clear = new Rectangle(box.x + box.width - 18, box.y + 2, 16, box.height - 4);
-		if (!search.isEmpty())
-		{
-			hits.add(0, new Hit(clear, () ->
-			{
-				search = "";
-				stopSearch();
-				refresh();
-			}));
-		}
-		Skin.field(graphics, box, box.contains(mx, my), searchFocused);
-		// A magnifying glass.
-		int gx = box.x + 8;
-		int gy = box.y + box.height / 2;
-		graphics.setColor(SUBTEXT);
-		graphics.setStroke(new BasicStroke(1.4f));
-		graphics.drawOval(gx - 1, gy - 5, 8, 8);
-		graphics.drawLine(gx + 6, gy + 2, gx + 9, gy + 5);
-		graphics.setStroke(new BasicStroke(1));
-
-		FontMetrics fm = graphics.getFontMetrics();
-		int textX = box.x + 22;
-		int textY = box.y + (box.height + fm.getAscent()) / 2 - 1;
-		if (search.isEmpty() && !searchFocused)
-		{
-			graphics.setColor(STAR_OFF);
-			Skin.text(graphics, Skin.fit(fm, "Search tasks, chunks, categories...", box.width - 30), textX, textY);
-			return;
-		}
-		String shown = search;
-		while (!shown.isEmpty() && fm.stringWidth(shown) > box.width - 44)
-		{
-			shown = shown.substring(1);
-		}
-		graphics.setColor(Color.WHITE);
-		Skin.text(graphics, shown, textX, textY);
-		if (searchFocused && (System.currentTimeMillis() / 500) % 2 == 0)
-		{
-			int caretX = textX + 1 + fm.stringWidth(shown);
-			graphics.drawLine(caretX, box.y + 4, caretX, box.y + box.height - 5);
-		}
-		if (!search.isEmpty())
-		{
-			cross(graphics, clear.x + 8, clear.y + clear.height / 2, 3, clear.contains(mx, my) ? NO_LEVEL : SUBTEXT);
-		}
-	}
-
 	/** A tab down the sidebar: its name and a count badge. (The marker by the chosen one is drawn after.) */
 	private void drawTab(Graphics2D graphics, Rectangle area, String label, int count, Tab which, int mx, int my)
 	{
@@ -2395,19 +2314,6 @@ public class TaskBrowserOverlay extends Overlay
 		graphics.fillRect(bx, area.y + 5, bw, 14);
 		graphics.setColor(chosen ? Color.WHITE : SUBTEXT);
 		Skin.text(graphics, n, bx + (bw - fm.stringWidth(n)) / 2, area.y + 16);
-	}
-
-	/** A read-out of a setting that's changed in the side panel. */
-	private void drawButton(Graphics2D graphics, Rectangle area, String label, boolean active, int mx, int my)
-	{
-		if (area.contains(mx, my))
-		{
-			tip = "Filters and sort are set in the ChunkBlazer side panel";
-		}
-		Skin.field(graphics, area, false, false);
-		graphics.setColor(active ? Color.WHITE : SUBTEXT);
-		FontMetrics fm = graphics.getFontMetrics();
-		Skin.text(graphics, Skin.fit(fm, label, area.width - 22), area.x + 8, area.y + (area.height + fm.getAscent()) / 2 - 1);
 	}
 
 	// --- List rows ---------------------------------------------------------------

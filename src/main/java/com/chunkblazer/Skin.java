@@ -194,19 +194,6 @@ final class Skin
 		bevel(g, r, !active);
 	}
 
-	/** A text box's face: sunk into the stone, outlined in orange while typing. */
-	static void field(Graphics2D g, Rectangle r, boolean hover, boolean focused)
-	{
-		g.setColor(FIELD);
-		g.fillRect(r.x, r.y, r.width, r.height);
-		bevel(g, r, false);
-		if (focused || hover)
-		{
-			g.setColor(focused ? new Color(255, 152, 31) : new Color(255, 255, 255, 40));
-			g.drawRect(r.x + 1, r.y + 1, r.width - 3, r.height - 3);
-		}
-	}
-
 	/**
 	 * A progress bar filled to {@code fraction}: a dark groove with a soft green fill (or
 	 * {@code color} when {@code tinted}, for a countdown). {@code glow} (0 to 1) rims it in yellow.
