@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
+import net.runelite.api.events.ActorDeath;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
 import com.chunkblazer.NuzlockeTask;
@@ -165,6 +166,13 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 		{
 			module.startUp();
 		}
+	}
+
+	/** A death the client never reported (see ChunkBlazerPlugin.onNpcDespawned). */
+	public void onMissedDeath(ActorDeath death)
+	{
+		npcKillModule.onActorDeath(death);
+		raidChallengeModule.onActorDeath(death);
 	}
 
 	/**

@@ -110,6 +110,10 @@ class BossKcPhrasesTest
 		{
 			return "sol_heredit";
 		}
+		else if (plain.contains("amoxliatl") && plain.contains("kill count is"))
+		{
+			return "amoxliatl";
+		}
 		return null;
 	}
 
@@ -140,6 +144,7 @@ class BossKcPhrasesTest
 		{"Your Duke Sucellus kill count is: 3.", "duke_sucellus"},
 		{"Your Vardorvis kill count is: 3.", "vardorvis"},
 		{"Your Sol Heredit kill count is: 1.", "sol_heredit"},
+		{"Your Amoxliatl kill count is: 2.", "amoxliatl"},
 		// case handling
 		{"YOUR SCURRIUS KILL COUNT IS: 1.", "scurrius"},
 		// the regular Nightmare must not mint the Phosani token
@@ -204,7 +209,7 @@ class BossKcPhrasesTest
 	@Test
 	void rulesLoadFromResource()
 	{
-		assertEquals(23, RULES.length);
+		assertEquals(24, RULES.length);
 		assertArrayEquals(new String[]{"tombs of amascut", "count is", "toa"}, RULES[0]);
 	}
 }

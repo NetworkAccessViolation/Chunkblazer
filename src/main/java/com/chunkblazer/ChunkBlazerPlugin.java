@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import lombok.Getter;
@@ -96,6 +97,8 @@ import net.runelite.client.util.Filepath;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
 import net.runelite.client.game.chatbox.ChatboxPanelManager;
+import net.runelite.client.game.NpcUtil;
+import net.runelite.api.events.NpcDespawned;
 import com.chunkblazer.api.ApiOutcome;
 import com.chunkblazer.api.ChunkBlazerApiClient;
 import com.chunkblazer.api.EligibilitySnapshot;
@@ -3378,10 +3381,33 @@ public class ChunkBlazerPlugin extends Plugin
 		{
 			return;
 		}
+		reportedDeaths.add((NPC) event.getActor());
 		String key = bossNpcKeys.get(((NPC) event.getActor()).getId());
 		if (bossEngagement.onBossDeath(key))
 		{
 			recordBossCompletion(key);
+		}
+	}
+
+	@Inject
+	private NpcUtil npcUtil;
+
+	// NPCs the client reported dying, so the despawn fallback never counts one twice.
+	private final Set<NPC> reportedDeaths = Collections.newSetFromMap(new WeakHashMap<>());
+
+	/**
+	 * Amoxliatl's health bar never sets the dead flag, so the client sends no ActorDeath
+	 * for it. RuneLite's isDying still knows it died: replay the death to our listeners.
+	 */
+	@Subscribe
+	public void onNpcDespawned(NpcDespawned event)
+	{
+		NPC npc = event.getNpc();
+		if (!reportedDeaths.remove(npc) && npcUtil.isDying(npc))
+		{
+			ActorDeath death = new ActorDeath(npc);
+			onActorDeath(death);
+			taskModuleManager.onMissedDeath(death);
 		}
 	}
 

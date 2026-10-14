@@ -84,5 +84,8 @@
 	["vardorvis", "kill count is", "vardorvis"],
 	// Fortis Colosseum (solo, instanced) — clearing it prints "Your Sol Heredit kill
 	// count is: N" alongside the run duration, which fires only on a full clear.
-	["sol heredit", "kill count is", "sol_heredit"]
+	["sol heredit", "kill count is", "sol_heredit"],
+	// Amoxliatl's nonstandard health bar never sets the dead flag, so ActorDeath (and the
+	// boss_npc_ids path) never fires for it. Gate on "Your Amoxliatl kill count is: N".
+	["amoxliatl", "kill count is", "amoxliatl"]
 ]
