@@ -327,8 +327,10 @@ public class ChunkNameBanner extends Overlay
 		}
 		boolean neighbor = !unlocked && plugin.getNeighborRegionIds().contains(regionId);
 		ChunkUnlockType type = ChunkUnlockType.of(plugin, regionId, unlocked, neighbor);
+		// Only a chunk you could unlock right now waits on screen. One you were moved into
+		// (a random event's prison, a teleport) just says it's locked and goes.
 		queue(new Banner(name, statusText(type, ChunkUnlockType.costLabel(plugin, regionId, type)),
-			type.color, regionId, !unlocked));
+			type.color, regionId, type.isUnlockable()));
 	}
 
 	/** "Lumbridge (12850)" -> "Lumbridge"; null for regions without a chunk name. */

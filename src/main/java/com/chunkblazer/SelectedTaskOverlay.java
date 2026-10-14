@@ -43,6 +43,7 @@ import javax.inject.Singleton;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.overlay.OverlayPanel;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.components.ComponentConstants;
@@ -94,6 +95,10 @@ public class SelectedTaskOverlay extends OverlayPanel
 	// Same for the archive book in the opposite corner, plus the task it would archive.
 	private volatile Rectangle archiveButton;
 	private volatile boolean archiveHovered;
+	// Beside the book: switch between the compact strip and the detailed box.
+	private volatile Rectangle modeButton;
+	private volatile boolean modeHovered;
+	private final ConfigManager configManager;
 	private volatile String shownTaskId;
 
 	// The game only advances in 0.6s ticks; remembering when the current tick began
@@ -116,9 +121,10 @@ public class SelectedTaskOverlay extends OverlayPanel
 
 	@Inject
 	public SelectedTaskOverlay(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config, TaskArchive archive,
-		NPCKillModule killModule)
+		NPCKillModule killModule, ConfigManager configManager)
 	{
 		super(plugin);
+		this.configManager = configManager;
 		this.killModule = killModule;
 		this.client = client;
 		this.plugin = plugin;
@@ -289,6 +295,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 		Rectangle bounds = getBounds();
 		closeHovered = isHovered(mouse, bounds, box);
 		archiveHovered = isHovered(mouse, bounds, book);
+		Rectangle mode = new Rectangle(book.x + book.width + 5, CLOSE_MARGIN + 3, CLOSE_SIZE, CLOSE_SIZE);
+		modeHovered = isHovered(mouse, bounds, mode);
 
 		graphics.setColor(closeHovered ? CLOSE_HOVER : CLOSE_IDLE);
 		graphics.setStroke(new BasicStroke(2));
@@ -296,6 +304,17 @@ public class SelectedTaskOverlay extends OverlayPanel
 		graphics.drawLine(box.x, box.y + box.height, box.x + box.width, box.y);
 		TaskArchive.drawBook(graphics, book.x, book.y, book.width, book.height,
 				archiveHovered ? ARCHIVE_HOVER : CLOSE_IDLE, false);
+		// A bar ("shrink to the strip") on the detailed box, an outlined box ("keep it open") on the compact one.
+		graphics.setColor(modeHovered ? CLOSE_HOVER : CLOSE_IDLE);
+		if (style == TaskTrackerStyle.COMPACT)
+		{
+			graphics.drawRect(mode.x, mode.y, mode.width - 1, mode.height - 1);
+		}
+		else
+		{
+			graphics.fillRect(mode.x, mode.y + mode.height - 3, mode.width, 2);
+		}
+		modeButton = mode;
 
 		closeButton = box;
 		archiveButton = book;
@@ -480,6 +499,8 @@ public class SelectedTaskOverlay extends OverlayPanel
 		closeHovered = false;
 		archiveButton = null;
 		archiveHovered = false;
+		modeButton = null;
+		modeHovered = false;
 		shownTaskId = null;
 	}
 
@@ -493,6 +514,19 @@ public class SelectedTaskOverlay extends OverlayPanel
 	boolean isArchiveHovered()
 	{
 		return archiveButton != null && archiveHovered;
+	}
+
+	/** True while the mouse is over the compact/detailed switch. */
+	boolean isModeHovered()
+	{
+		return modeButton != null && modeHovered;
+	}
+
+	/** Switch the box between the compact strip and the detailed box. */
+	void toggleMode()
+	{
+		configManager.setConfiguration("chunkblazer", "taskTrackerStyle",
+			config.taskTrackerStyle() == TaskTrackerStyle.COMPACT ? TaskTrackerStyle.VANI : TaskTrackerStyle.COMPACT);
 	}
 
 	/** Archive the task this box is showing and stop tracking it. */

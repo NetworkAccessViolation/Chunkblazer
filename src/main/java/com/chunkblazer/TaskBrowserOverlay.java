@@ -139,6 +139,8 @@ public class TaskBrowserOverlay extends Overlay
 	private static final int HEADER = 40;
 	private static final int TABS = 32;
 	private static final int ROW = 40;
+	// Each extra line of a long task name.
+	private static final int NAME_LINE = 15;
 	// Between task cards; the tabs and tier filter down the left; the hint line at the foot.
 	private static final int ROW_GAP = 4;
 	private static final int SIDEBAR = 132;
@@ -1897,12 +1899,13 @@ public class TaskBrowserOverlay extends Overlay
 			}
 		}
 
-		int viewWidth = client.getViewportWidth();
-		int viewHeight = client.getViewportHeight();
-		int width = Math.min(MAX_WIDTH, viewWidth - 20);
-		int height = Math.min(MAX_HEIGHT, viewHeight - 20);
-		int x = client.getViewportXOffset() + (viewWidth - width) / 2;
-		int y = client.getViewportYOffset() + (viewHeight - height) / 2;
+		// Centred over the game view; in fixed mode that's always the 512 x 334 box at the top left.
+		Rectangle view = client.isResized() ? new Rectangle(client.getViewportXOffset(), client.getViewportYOffset(),
+			client.getViewportWidth(), client.getViewportHeight()) : new Rectangle(4, 4, 512, 334);
+		int width = Math.min(MAX_WIDTH, view.width - 20);
+		int height = Math.min(MAX_HEIGHT, view.height - 20);
+		int x = view.x + (view.width - width) / 2;
+		int y = view.y + (view.height - height) / 2;
 		if (moved)
 		{
 			x = Math.max(0, Math.min(customX, client.getCanvasWidth() - width - 1));
@@ -2037,7 +2040,7 @@ public class TaskBrowserOverlay extends Overlay
 			}
 		}
 		// The current-chunk switch (or the chunk picked on the map) sits at the bottom.
-		String chunkLabel = pinnedChunk != null ? Skin.fit(sm, pinnedChunk, side.width - 40) : "This chunk only";
+		String chunkLabel = pinnedChunk != null ? Skin.fit(sm, pinnedChunk, side.width - 40) : side.width < SIDEBAR ? "This chunk" : "This chunk only";
 		drawChunkToggle(graphics, new Rectangle(side.x + 6, side.y + side.height - 30, side.width - 12, 22), chunkLabel, mx, my);
 
 		// The content: search, Filter and Sort along the top, the list, then a hint line.
@@ -2154,7 +2157,9 @@ public class TaskBrowserOverlay extends Overlay
 		List<Entry> entries = currentRows();
 		FontMetrics sm = graphics.getFontMetrics(small);
 		int detailWidth = list.width - 70;
+		FontMetrics rm = graphics.getFontMetrics(regular);
 		List<List<QuestRequirements.Line>> details = new ArrayList<>();
+		List<Integer> heights = new ArrayList<>();
 		int contentHeight = 4;
 		int tasks = 0;
 		for (Entry entry : entries)
@@ -2162,7 +2167,9 @@ public class TaskBrowserOverlay extends Overlay
 			List<QuestRequirements.Line> wrapped = entry.task != null && expanded.contains(entry.task.getTaskId())
 				? wrapDetail(sm, entry.task, detailWidth) : new ArrayList<>();
 			details.add(wrapped);
-			contentHeight += ROW + detailHeight(wrapped) + ROW_GAP;
+			int nameLines = entry.task == null ? 1 : rowName(rm, entry.task, list.width - 12 - (entry.child ? 18 : 0) - 160).size();
+			heights.add(ROW + (nameLines - 1) * NAME_LINE + detailHeight(wrapped));
+			contentHeight += heights.get(heights.size() - 1) + ROW_GAP;
 			tasks += entry.task != null ? 1 : entry.members.size();
 		}
 		scroll = Math.max(0, Math.min(scroll, Math.max(0, contentHeight - list.height)));
@@ -2181,7 +2188,7 @@ public class TaskBrowserOverlay extends Overlay
 		for (int i = 0; i < entries.size(); i++)
 		{
 			Entry entry = entries.get(i);
-			int rowHeight = ROW + detailHeight(details.get(i));
+			int rowHeight = heights.get(i);
 			if (rowY + rowHeight >= list.y && rowY <= list.y + list.height)
 			{
 				int indent = entry.child ? 18 : 0;
@@ -2458,14 +2465,17 @@ public class TaskBrowserOverlay extends Overlay
 		Skin.text(graphics, points, rightEdge - sm.stringWidth(points), row.y + 17);
 		graphics.setFont(regular);
 		FontMetrics fm = graphics.getFontMetrics();
-		String shown = Skin.fit(fm, name, chipX - 48 - textX);
 		graphics.setColor(nameColor);
-		Skin.text(graphics, shown, textX, row.y + 17);
+		String[] lines = name.split("\n");
+		for (int i = 0; i < lines.length; i++)
+		{
+			Skin.text(graphics, Skin.fit(fm, lines[i], chipX - 48 - textX), textX, row.y + 17 + i * NAME_LINE);
+		}
 		if (info != null)
 		{
 			graphics.setFont(small);
 			graphics.setColor(infoColor);
-			Skin.text(graphics, Skin.fit(sm, info, rightEdge - 90 - textX), textX, row.y + 32);
+			Skin.text(graphics, Skin.fit(sm, info, rightEdge - 90 - textX), textX, row.y + 32 + (lines.length - 1) * NAME_LINE);
 		}
 		return chipX;
 	}
@@ -2520,7 +2530,10 @@ public class TaskBrowserOverlay extends Overlay
 		boolean expandable = !requirementsFor(task).isEmpty() || QuestRequirements.isQuestTask(task);
 		int textX = row.x + 50;
 		boolean canDo = canDo(task);
-		String name = (task.getName() == null ? taskId : task.getName()) + (canDo ? "" : " " + levelNote(task));
+		List<String> names = rowName(graphics.getFontMetrics(regular), task, row.width - 160);
+		String name = String.join("\n", names);
+		// Everything under the name moves down a line when the name takes two.
+		int lift = (names.size() - 1) * NAME_LINE;
 		String chunk = chunkNames.getOrDefault(taskId, "");
 		String here = currentChunkName();
 		boolean inHere = !chunk.isEmpty() && chunk.equals(here);
@@ -2550,7 +2563,7 @@ public class TaskBrowserOverlay extends Overlay
 			hits.add(new Hit(star.intersection(list), () -> toggleSaved(taskId)));
 			hits.add(new Hit(book.intersection(list), () -> toggleArchived(task)));
 		}
-		drawDetail(graphics, detail, textX, row.y + ROW - 1, list, mx, my, small);
+		drawDetail(graphics, detail, textX, row.y + ROW - 1 + lift, list, mx, my, small);
 		if (inList)
 		{
 			hits.add(new Hit(row.intersection(list), () -> trackOrOpen(task, this::openQuestPane)));
@@ -2584,16 +2597,16 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			String tag = "TRACKING";
 			graphics.setColor(TITLE);
-			Skin.text(graphics, tag, rightEdge - sm.stringWidth(tag), row.y + 32);
+			Skin.text(graphics, tag, rightEdge - sm.stringWidth(tag), row.y + 32 + lift);
 		}
 		else if (target > 1)
 		{
 			String progress = Math.min(task.getCurrentProgress(), target) + "/" + target;
 			int progressWidth = sm.stringWidth(progress);
 			graphics.setColor(SUBTEXT);
-			Skin.text(graphics, progress, rightEdge - progressWidth, row.y + 32);
+			Skin.text(graphics, progress, rightEdge - progressWidth, row.y + 32 + lift);
 			int barX = rightEdge - progressWidth - 62;
-			Skin.bar(graphics, barX, row.y + 26, 56, 6, (float) TaskTargetExtras.progress(task), tier, 0, false);
+			Skin.bar(graphics, barX, row.y + 26 + lift, 56, 6, (float) TaskTargetExtras.progress(task), tier, 0, false);
 		}
 	}
 
@@ -3020,6 +3033,11 @@ public class TaskBrowserOverlay extends Overlay
 		{
 			questPane = null;
 		}
+		// Opening the world map closes the task window (the tasks key + click opens it again).
+		if (event.getGroupId() == InterfaceID.WORLDMAP && open)
+		{
+			close();
+		}
 	}
 
 	/** Switching side tab (prayer, inventory...) closes the quest pane. */
@@ -3093,6 +3111,15 @@ public class TaskBrowserOverlay extends Overlay
 
 
 	/** Split text into lines that fit the width, breaking between words. */
+	/** A task's name (with any missing levels) as its row shows it, wrapped onto up to three lines. */
+	private List<String> rowName(FontMetrics fm, NuzlockeTask task, int width)
+	{
+		String name = (task.getName() == null ? task.getTaskId() : task.getName()) + (canDo(task) ? "" : " " + levelNote(task));
+		List<String> lines = wrap(fm, name, width);
+		return lines.size() <= 3 ? lines
+			: Arrays.asList(lines.get(0), lines.get(1), Skin.fit(fm, String.join(" ", lines.subList(2, lines.size())), width));
+	}
+
 	private static List<String> wrap(FontMetrics fm, String text, int width)
 	{
 		List<String> lines = new ArrayList<>();
