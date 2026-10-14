@@ -406,7 +406,7 @@ public class ChunkBlazerApiClient
 		String key = currentApiKey();
 		if (key.isEmpty())
 		{
-			log.warn("Cannot lock mode: no API key (neither login-issued nor configured)");
+			log.warn("Cannot lock mode: no API key");
 			return CompletableFuture.completedFuture(LockModeResponse.error("Not logged in to server"));
 		}
 		LockModeRequest request = LockModeRequest.builder()

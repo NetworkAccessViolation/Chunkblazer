@@ -54,7 +54,6 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
-import net.runelite.api.KeyCode;
 import net.runelite.api.Menu;
 import net.runelite.api.MenuAction;
 import net.runelite.api.MenuEntry;
@@ -83,8 +82,6 @@ import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.outline.ModelOutlineRenderer;
-import net.runelite.client.ui.overlay.tooltip.Tooltip;
-import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import net.runelite.client.util.Text;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
@@ -111,9 +108,6 @@ import net.runelite.api.gameval.InventoryID;
  * Which targets get an outline is the Outline Mode (task window cogwheel): all task
  * targets, only those of saved tasks, only those with a task you have the level
  * for, or none. The right-click Tasks menu always lists every task.
- *
- * Holding Shift over a task target lists its tasks in a tooltip at the cursor (names,
- * progress, and any levels you're missing), without opening the right-click menu.
  *
  * Inventory tools get a Tasks menu too (knife: fletching, tinderbox: firemaking,
  * pestle and mortar: herblore...; see TaskTargetExtras.matchesItem).
@@ -296,15 +290,11 @@ public class TaskTargetHighlighter extends Overlay
 	// by spawn/despawn events and fully rescanned when the wanted set changes.
 	private final Set<TileObject> trackedObjects = new HashSet<>();
 
-	private final TooltipManager tooltipManager;
-
-	// Most tasks listed in the Shift + hover tooltip before it says "and N more".
-	private static final int HOVER_MAX_TASKS = 8;
 
 	@Inject
 	public TaskTargetHighlighter(Client client, ChunkBlazerPlugin plugin, ChunkBlazerConfig config,
 		ModelOutlineRenderer outlineRenderer, TaskArchive archive, Gson gson,
-		TaskItemOverlay itemOverlay, TooltipManager tooltipManager)
+		TaskItemOverlay itemOverlay)
 	{
 		Tables tables = loadTables(gson);
 		BOSS_ENTRANCES.putAll(tables.bossEntrances);
@@ -313,7 +303,6 @@ public class TaskTargetHighlighter extends Overlay
 		{
 			BOSS_REGIONS.add(entrance.region);
 		}
-		this.tooltipManager = tooltipManager;
 		this.itemOverlay = itemOverlay;
 		this.client = client;
 		this.plugin = plugin;
@@ -877,7 +866,6 @@ public class TaskTargetHighlighter extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		showHoveredTasks();
 		OutlineMode mode = config.taskOutlineMode();
 		if (mode == OutlineMode.OFF)
 		{
@@ -1207,69 +1195,5 @@ public class TaskTargetHighlighter extends Overlay
 	private String levelNote(NuzlockeTask task)
 	{
 		return TaskTargetExtras.levelNote(client, plugin, task);
-	}
-
-	// --- Shift + hover ---------------------------------------------------------------
-
-	/**
-	 * While Shift is held over an NPC or object with tasks (the action the game would
-	 * show at the top left, like "Attack Cow"), list its tasks in a tooltip at the cursor.
-	 */
-	private void showHoveredTasks()
-	{
-		if (!client.isKeyPressed(KeyCode.KC_SHIFT) || client.isMenuOpen())
-		{
-			return;
-		}
-		MenuEntry[] entries = client.getMenu().getMenuEntries();
-		if (entries == null || entries.length == 0)
-		{
-			return;
-		}
-		MenuEntry top = entries[entries.length - 1];
-		List<NuzlockeTask> tasks;
-		if (top.getNpc() != null)
-		{
-			tasks = tasksForNpc(top.getNpc());
-		}
-		else if (isObjectAction(top.getType()) || top.getType() == MenuAction.EXAMINE_OBJECT)
-		{
-			tasks = tasksForObject(top.getIdentifier());
-		}
-		else
-		{
-			return;
-		}
-		if (tasks == null || tasks.isEmpty())
-		{
-			return;
-		}
-
-		StringBuilder text = new StringBuilder("<col=ff9040>Tasks</col>");
-		int shown = 0;
-		for (NuzlockeTask task : tasks)
-		{
-			if (shown == HOVER_MAX_TASKS)
-			{
-				text.append("</br><col=9f9f9f>and ").append(tasks.size() - shown).append(" more</col>");
-				break;
-			}
-			text.append("</br>");
-			if (canDo(task))
-			{
-				text.append(task.getName());
-			}
-			else
-			{
-				text.append("<col=ff5050>").append(task.getName()).append(' ').append(levelNote(task)).append("</col>");
-			}
-			if (task.getTargetQuantity() > 1)
-			{
-				text.append(" <col=ffff00>").append(Math.min(task.getCurrentProgress(), task.getTargetQuantity()))
-					.append('/').append(task.getTargetQuantity()).append("</col>");
-			}
-			shown++;
-		}
-		tooltipManager.add(new Tooltip(text.toString()));
 	}
 }

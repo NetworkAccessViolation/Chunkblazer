@@ -31,7 +31,7 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Card rarity for the task-reveal cards. One tier per card art set.
+ * Card rarity for the task-reveal cards, and the colour each tier is shown in.
  *
  * <p><b>Where the tier comes from.</b> Task JSON has no difficulty field — {@code level}
  * is a skill-level requirement, not a rarity — so the tier is derived from
@@ -54,23 +54,11 @@ public enum TaskCardTier
 	ELITE("Elite", new Color(214, 158, 46)),
 	MASTER("Master", new Color(196, 68, 62));
 
-	/** Shown on the card and in the fallback art. */
+	/** Shown on the card. */
 	private final String displayName;
 
-	/** Accent used for the name plate, the flip glow, and the art-missing fallback. */
+	/** The tier's colour, wherever tasks are shown. */
 	private final Color accent;
-
-	/** Card face art, e.g. {@code Task_Cards/front_easy.png}. */
-	public String getFrontAsset()
-	{
-		return "Task_Cards/front_" + name().toLowerCase() + ".png";
-	}
-
-	/** Card back art, e.g. {@code Task_Cards/back_easy.png}. */
-	public String getBackAsset()
-	{
-		return "Task_Cards/back_" + name().toLowerCase() + ".png";
-	}
 
 	/**
 	 * Tier for a task, from its {@code base_points}. Anything outside 1..5 — including

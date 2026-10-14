@@ -58,12 +58,6 @@ public interface TaskCompletionModule
 	boolean canHandle(NuzlockeTask task);
 
 	/**
-	 * Called when a new task is assigned that this module handles.
-	 * Use this to set up tracking for the specific task requirements.
-	 */
-	void onTaskAssigned(NuzlockeTask task);
-
-	/**
 	 * Called when the current task is completed or changed.
 	 * Clean up any task-specific tracking.
 	 */

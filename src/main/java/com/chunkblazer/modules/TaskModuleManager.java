@@ -50,7 +50,6 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 	private final List<NuzlockeTask> activeTasks = new ArrayList<>();
 	private final Map<String, AbstractTaskModule> taskToModuleMap = new HashMap<>();
 
-	private AbstractTaskModule activeModule; // Legacy single module for backward compatibility
 	private TaskCompletionHandler completionHandler;
 
 	@Inject
@@ -177,45 +176,6 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 		{
 			module.shutDown();
 		}
-		activeModule = null;
-	}
-
-	/**
-	 * Assign a task to the appropriate module.
-	 */
-	public void assignTask(NuzlockeTask task)
-	{
-		if (task == null)
-		{
-			clearTask();
-			return;
-		}
-
-		String completionType = task.getCompletionType();
-		if (completionType == null)
-		{
-			log.warn("Task {} has no completion type", task.getTaskId());
-			return;
-		}
-
-		// Find module that can handle this task
-		AbstractTaskModule module = findModuleForTask(task);
-		if (module == null)
-		{
-			log.warn("No module found for completion type: {}", completionType);
-			return;
-		}
-
-		// Clear previous module
-		if (activeModule != null && activeModule != module)
-		{
-			activeModule.onTaskCleared();
-		}
-
-		// Assign to new module
-		activeModule = module;
-		module.onTaskAssigned(task);
-
 	}
 
 	/**
@@ -224,12 +184,11 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 	public void clearTask()
 	{
 		// Diagnostic: clearTask wipes module per-task state. If this fires unexpectedly during a session, log the trigger so we can correlate with progress regressions.
-		// Clear every module's per-module list, not just the legacy activeModule. Otherwise modules retain stale tasks across resets and end up with duplicates after re-registration.
+		// Clear every module's list, so modules never keep stale tasks across resets.
 		for (AbstractTaskModule module : modules)
 		{
 			module.onTaskCleared();
 		}
-		activeModule = null;
 		activeTasks.clear();
 		taskToModuleMap.clear();
 	}
@@ -311,29 +270,6 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 		}
 
 		return null;
-	}
-
-	/**
-	 * Get the current progress for the active task.
-	 */
-	public int getCurrentProgress()
-	{
-		if (activeModule != null)
-		{
-			return activeModule.getCurrentProgress();
-		}
-		return 0;
-	}
-
-	/**
-	 * Force a progress check.
-	 */
-	public void checkProgress()
-	{
-		if (activeModule != null)
-		{
-			activeModule.checkProgress();
-		}
 	}
 
 	// --- TaskCompletionCallback Implementation ---

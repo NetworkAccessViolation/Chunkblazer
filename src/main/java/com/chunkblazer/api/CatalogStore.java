@@ -341,7 +341,7 @@ public class CatalogStore
 		}
 		catch (Exception e)
 		{
-			log.warn("Failed to read cached task catalog, will use seed: {}", e.getMessage());
+			log.warn("Cached catalog unreadable: {}", e.getMessage());
 			return null;
 		}
 	}
@@ -421,7 +421,7 @@ public class CatalogStore
 			if (!isComplete(fresh))
 			{
 				// Never let a short/partial catalog blank good local data.
-				log.warn("Rejecting incomplete task catalog from server");
+				log.warn("Incomplete catalog rejected");
 				return;
 			}
 
@@ -446,7 +446,7 @@ public class CatalogStore
 			// A code/config bug in the refresh path (e.g. the apiEnabled proxy throw)
 			// would otherwise surface only as a generic RuneLite "uncaught exception".
 			// Attribute it clearly so a dead sync layer never hides again.
-			log.warn("Task catalog refresh crashed, server sync is down this session", e);
+			log.warn("Catalog refresh failed", e);
 		}
 	}
 

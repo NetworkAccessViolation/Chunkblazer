@@ -129,7 +129,7 @@ public class QuestCheckModule extends AbstractTaskModule
 
 		if (questName == null || questName.isEmpty())
 		{
-			log.warn("QUEST_CHECK task '{}' has no constraints.quest, not tracking", task.getTaskId());
+			log.warn("Task '{}': no quest", task.getTaskId());
 			return;
 		}
 
@@ -142,9 +142,7 @@ public class QuestCheckModule extends AbstractTaskModule
 		{
 			if (unknownQuestNames.add(questName))
 			{
-				log.warn("QUEST_CHECK task '{}' names unknown quest constant '{}', "
-					+ "task data is likely newer than the RuneLite API this plugin was built against",
-					task.getTaskId(), questName);
+				log.warn("Task '{}': unknown quest '{}'", task.getTaskId(), questName);
 			}
 			return;
 		}
@@ -157,13 +155,6 @@ public class QuestCheckModule extends AbstractTaskModule
 		// every account at load, including maxed questers). Sweep so those
 		// complete immediately instead of waiting for an unrelated varbit.
 		requestSweep();
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

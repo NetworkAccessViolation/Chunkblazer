@@ -197,20 +197,13 @@ public class VarbitCheckModule extends AbstractTaskModule
 			}
 			else
 			{
-				log.warn("  >>> No varbit/varp ID found in task constraints!");
+				log.warn("Varbit task: no varbit/varp id");
 			}
 		}
 		catch (Exception e)
 		{
-			log.error("VarbitCheckModule.addActiveTask() EXCEPTION: ", e);
+			log.error("VarbitCheckModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

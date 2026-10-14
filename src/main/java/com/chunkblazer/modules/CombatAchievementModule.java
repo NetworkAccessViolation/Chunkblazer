@@ -120,13 +120,6 @@ public class CombatAchievementModule extends AbstractTaskModule
 	}
 
 	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
-	}
-
-	@Override
 	public void addActiveTask(NuzlockeTask task)
 	{
 		super.addActiveTask(task);
@@ -134,7 +127,7 @@ public class CombatAchievementModule extends AbstractTaskModule
 		List<Integer> caIds = task.getCaIds();
 		if (caIds == null || caIds.isEmpty())
 		{
-			log.warn("COMBAT_ACHIEVEMENT task {} has no ca_ids, it can never complete", task.getTaskId());
+			log.warn("Task {}: no ca_ids", task.getTaskId());
 			return;
 		}
 		taskCaIds.put(task.getTaskId(), new ArrayList<>(caIds));

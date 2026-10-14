@@ -208,7 +208,7 @@ public class AssetStore
 			}
 			catch (Exception e)
 			{
-				log.warn("Failed to read cached asset manifest, will refetch: {}", e.getMessage());
+				log.warn("Cached manifest unreadable: {}", e.getMessage());
 			}
 		}
 
@@ -433,7 +433,7 @@ public class AssetStore
 			if (!isUsable(fresh))
 			{
 				// An empty/blank manifest must not blank good local data.
-				log.warn("Ignoring empty asset manifest from server");
+				log.warn("Empty asset manifest ignored");
 				return;
 			}
 

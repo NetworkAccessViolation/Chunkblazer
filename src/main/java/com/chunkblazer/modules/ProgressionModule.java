@@ -122,8 +122,7 @@ public class ProgressionModule extends AbstractTaskModule
 
 		if (skillName == null || skillName.isEmpty())
 		{
-			log.warn("SKILL_THRESHOLD task '{}' has no constraints.required_skill, not tracking",
-				task.getTaskId());
+			log.warn("Task '{}': no required_skill", task.getTaskId());
 			return;
 		}
 
@@ -134,16 +133,14 @@ public class ProgressionModule extends AbstractTaskModule
 		}
 		catch (IllegalArgumentException e)
 		{
-			log.warn("SKILL_THRESHOLD task '{}' names unknown skill '{}', not tracking",
-				task.getTaskId(), skillName);
+			log.warn("Task '{}': unknown skill '{}'", task.getTaskId(), skillName);
 			return;
 		}
 
 		int level = constraints.getRequiredLevel();
 		if (level <= 1)
 		{
-			log.warn("SKILL_THRESHOLD task '{}' has no meaningful required_level ({}), not tracking",
-				task.getTaskId(), level);
+			log.warn("Task '{}': bad required_level {}", task.getTaskId(), level);
 			return;
 		}
 
@@ -154,13 +151,6 @@ public class ProgressionModule extends AbstractTaskModule
 		// can still have crossed one while the plugin was off (or on another
 		// machine). Settle those at registration instead of making them re-level.
 		checkTaskCompletion(task);
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

@@ -216,13 +216,13 @@ public class ObtainModule extends AbstractTaskModule
 					}
 					else
 					{
-						log.warn("      >>> WARNING: itemIds is NULL/empty for this RequiredItem, slot ignored!");
+						log.warn("Obtain task: required item has no ids");
 					}
 				}
 			}
 			else
 			{
-				log.warn("  >>> WARNING: No required_items defined for this OBTAIN task!");
+				log.warn("Obtain task: no required_items");
 			}
 
 			taskSlots.put(task.getTaskId(), slots);
@@ -297,16 +297,8 @@ public class ObtainModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error(">>> ObtainModule.addActiveTask() EXCEPTION: ", e);
+			log.error("ObtainModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		// For legacy single-task support
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

@@ -62,9 +62,6 @@ public class TaskConstraints
 	@SerializedName("required_level")
 	private Integer requiredLevel;
 
-	@SerializedName("required_xp")
-	private Integer requiredXp;
-
 	@SerializedName("required_region")
 	private Integer requiredRegion;
 
@@ -180,11 +177,6 @@ public class TaskConstraints
 		return requiredLevel != null ? requiredLevel : 1;
 	}
 
-	public int getRequiredXp()
-	{
-		return requiredXp != null ? requiredXp : 0;
-	}
-
 	public boolean hasEquipmentConstraints()
 	{
 		return (noEquipment != null && noEquipment) ||
@@ -261,7 +253,6 @@ public class TaskConstraints
 			// Handle integer fields that might be arrays
 			constraints.setTimeInTicks(readFlexibleInt(obj, "time_in_ticks"));
 			constraints.setRequiredLevel(readFlexibleInt(obj, "required_level"));
-			constraints.setRequiredXp(readFlexibleInt(obj, "required_xp"));
 			constraints.setRequiredRegion(readFlexibleInt(obj, "required_region"));
 			constraints.setMinCombatLevel(readFlexibleInt(obj, "min_combat_level"));
 			constraints.setMaxCombatLevel(readFlexibleInt(obj, "max_combat_level"));

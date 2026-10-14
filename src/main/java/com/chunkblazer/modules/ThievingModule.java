@@ -181,15 +181,8 @@ public class ThievingModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error("ThievingModule.addActiveTask() EXCEPTION: ", e);
+			log.error("ThievingModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

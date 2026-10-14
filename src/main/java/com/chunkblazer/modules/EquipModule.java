@@ -134,13 +134,13 @@ public class EquipModule extends AbstractTaskModule
 					}
 					else
 					{
-						log.warn("EquipModule: itemIds is NULL for a RequiredItem on task '{}'", task.getName());
+						log.warn("Task '{}': required item has no ids", task.getName());
 					}
 				}
 			}
 			else
 			{
-				log.warn("EquipModule: no required_items defined for EQUIP task '{}'", task.getName());
+				log.warn("Task '{}': no required_items", task.getName());
 			}
 
 			taskTargetItems.put(task.getTaskId(), targetItems);
@@ -158,14 +158,6 @@ public class EquipModule extends AbstractTaskModule
 		{
 			log.error("EquipModule.addActiveTask() failed", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		// For legacy single-task support
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

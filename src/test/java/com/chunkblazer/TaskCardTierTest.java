@@ -47,13 +47,11 @@ class TaskCardTierTest
 	}
 
 	@Test
-	void everyTierNamesBothArtFiles()
+	void everyTierHasAColour()
 	{
 		for (TaskCardTier tier : TaskCardTier.values())
 		{
-			assertNotNull(tier.getAccent(), tier + " needs an accent colour for the fallback card");
-			assertEquals("Task_Cards/front_" + tier.name().toLowerCase() + ".png", tier.getFrontAsset());
-			assertEquals("Task_Cards/back_" + tier.name().toLowerCase() + ".png", tier.getBackAsset());
+			assertNotNull(tier.getAccent(), tier + " needs an accent colour");
 		}
 	}
 }

@@ -231,8 +231,7 @@ public class FarmingModule extends AbstractTaskModule
 			}
 			if (watched.isEmpty())
 			{
-				log.warn("FARMING task '{}' ({}) has no required_items, cannot track it",
-					task.getName(), task.getTaskId());
+				log.warn("Task '{}' ({}): no required_items", task.getName(), task.getTaskId());
 				return;
 			}
 
@@ -255,16 +254,8 @@ public class FarmingModule extends AbstractTaskModule
 		}
 		catch (Exception e)
 		{
-			log.error("FarmingModule.addActiveTask() EXCEPTION: ", e);
+			log.error("FarmingModule failed to add a task", e);
 		}
-	}
-
-	@Override
-	public void onTaskAssigned(NuzlockeTask task)
-	{
-		// For legacy single-task support
-		super.onTaskAssigned(task);
-		addActiveTask(task);
 	}
 
 	@Override

@@ -26,13 +26,10 @@
 
 package com.chunkblazer;
 
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
-import java.awt.RenderingHints;
 import java.awt.event.MouseEvent;
 import javax.inject.Inject;
 import javax.inject.Provider;
@@ -42,7 +39,6 @@ import net.runelite.api.GameState;
 import net.runelite.api.MenuEntry;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
-import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayManager;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -57,9 +53,6 @@ import net.runelite.client.ui.overlay.OverlayPriority;
 public class SavedTaskTracker extends Overlay
 {
 	private static final int SIZE = 32;
-	private static final Color FILL = new Color(48, 42, 34, 235);
-	private static final Color RIM = new Color(255, 152, 31);
-	private static final Color PAPER = new Color(232, 214, 170);
 
 	private final Client client;
 	private final ChunkBlazerConfig config;
@@ -127,42 +120,25 @@ public class SavedTaskTracker extends Overlay
 		// scene the menu has "Walk here" + "Cancel", over an interface it's a widget entry or just "Cancel".
 		MenuEntry[] entries = client.getMenuEntries();
 		boolean covered = client.isMenuOpen() || entries.length < 2 || entries[entries.length - 1].getWidget() != null;
-		hovered = !covered && m != null && bounds != null && new Rectangle(bounds.x, bounds.y + top, d, d).contains(m.getX(), m.getY());
+		hovered = !covered && m != null && bounds != null
+			&& new Rectangle(bounds.x, bounds.y + top, d, d).contains(m.getX(), m.getY());
+		drawSkinned(graphics, d, top);
+		return new Dimension(d + 4, d + top);
+	}
 
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.setColor(FILL);
-		graphics.fillOval(0, top, d, d);
-		graphics.setColor(hovered ? Color.WHITE : RIM);
-		graphics.setStroke(new BasicStroke(Math.max(1.5f, d / 16f)));
-		graphics.drawOval(0, top, d, d);
+	private static final java.awt.image.BufferedImage ORB = Skin.image("orb");
+	private static final java.awt.image.BufferedImage ORB_HOVER = Skin.image("orb_hover");
 
-		// The icon: a little task sheet with three lines.
-		int w = d * 9 / 20;
-		int h = d * 11 / 20;
-		int px = (d - w) / 2;
-		int py = top + (d - h) / 2;
-		graphics.setColor(PAPER);
-		graphics.fillRoundRect(px, py, w, h, 3, 3);
-		graphics.setColor(new Color(110, 80, 40));
-		for (int i = 1; i <= 3; i++)
-		{
-			int ly = py + h * i / 4;
-			graphics.drawLine(px + w / 5, ly, px + w * 4 / 5, ly);
-		}
-
-		// How many saved tasks are waiting.
+	/** A stone orb like the minimap's with a task sheet in it, and the count in yellow game text. */
+	private void drawSkinned(Graphics2D g, int d, int top)
+	{
+		g.drawImage(hovered ? ORB_HOVER : ORB, 0, top, d, d, null);
 		int count = browser.get().savedTasks().size();
 		if (count > 0)
 		{
 			String text = String.valueOf(count);
-			graphics.setFont(FontManager.getRunescapeSmallFont());
-			FontMetrics fm = graphics.getFontMetrics();
-			int bw = Math.max(14, fm.stringWidth(text) + 6);
-			graphics.setColor(RIM);
-			graphics.fillRoundRect(d - bw + 4, 0, bw, 14, 14, 14);
-			graphics.setColor(Color.BLACK);
-			graphics.drawString(text, d - bw + 4 + (bw - fm.stringWidth(text)) / 2, 11);
+			g.setFont(Skin.small());
+			Skin.text(g, text, d - g.getFontMetrics().stringWidth(text) + 2, 11, new Color(255, 255, 0));
 		}
-		return new Dimension(d + 4, d + top);
 	}
 }
