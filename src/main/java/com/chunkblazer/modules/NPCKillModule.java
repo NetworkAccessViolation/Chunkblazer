@@ -30,6 +30,7 @@ import com.google.common.collect.ImmutableSet;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +45,7 @@ import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.NPC;
+import net.runelite.api.NPCComposition;
 import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Skill;
@@ -365,6 +367,8 @@ public class NPCKillModule extends AbstractTaskModule
 		final int deathTick;
 		// Captured while the NPC is still in the scene — see the class comment.
 		final int npcId;
+		// Every id it went by (see npcIds); tasks may list any of them.
+		final Set<Integer> ids;
 		final String npcName;
 		final int npcCombatLevel;
 		final WorldPoint deathLocation;
@@ -375,6 +379,7 @@ public class NPCKillModule extends AbstractTaskModule
 			this.fight = fight;
 			this.deathTick = deathTick;
 			this.npcId = npc.getId();
+			this.ids = npcIds(npc);
 			this.npcName = npc.getName();
 			this.npcCombatLevel = npc.getCombatLevel();
 			this.deathLocation = npc.getWorldLocation();
@@ -539,7 +544,7 @@ public class NPCKillModule extends AbstractTaskModule
 		int latest = -1;
 		for (NPC npc : client.getNpcs())
 		{
-			if (npc == null || !target.matchesNpcId(npc.getId()))
+			if (npc == null || npcIds(npc).stream().noneMatch(target::matchesNpcId))
 			{
 				continue;
 			}
@@ -1210,7 +1215,7 @@ public class NPCKillModule extends AbstractTaskModule
 	 */
 	private boolean needsOnTaskWait(DeathRecord death)
 	{
-		for (NuzlockeTask task : findMatchingTasks(death.npcId))
+		for (NuzlockeTask task : findMatchingTasks(death))
 		{
 			if (requiresOnTaskGate(task))
 			{
@@ -1236,7 +1241,7 @@ public class NPCKillModule extends AbstractTaskModule
 		// held death's NPC handle may already be a despawned husk reporting id=-1.
 
 		// Check all active tasks for a match
-		List<NuzlockeTask> matchingTasks = mostSpecificMatches(findMatchingTasks(death.npcId));
+		List<NuzlockeTask> matchingTasks = mostSpecificMatches(findMatchingTasks(death));
 
 		if (matchingTasks.isEmpty())
 		{
@@ -1445,20 +1450,42 @@ public class NPCKillModule extends AbstractTaskModule
 	}
 
 	/**
-	 * Find all active tasks that match this NPC id.
-	 *
-	 * <p>Takes the id rather than the NPC deliberately: a despawned handle reports -1,
-	 * which matches nothing and makes the kill disappear without a word. Callers
-	 * deciding a death must pass {@link DeathRecord#npcId}, never {@code npc.getId()}.
+	 * Every id this NPC goes by: its own, its base composition's and the form it shows as.
+	 * Some NPCs report a new id while tasks list an old one (Paterdomus monks report 16272,
+	 * their composition is 3485); a task may list any of them.
 	 */
-	private List<NuzlockeTask> findMatchingTasks(int npcId)
+	private static Set<Integer> npcIds(NPC npc)
+	{
+		Set<Integer> ids = new LinkedHashSet<>();
+		ids.add(npc.getId());
+		NPCComposition base = npc.getComposition();
+		if (base != null)
+		{
+			ids.add(base.getId());
+		}
+		NPCComposition shown = npc.getTransformedComposition();
+		if (shown != null)
+		{
+			ids.add(shown.getId());
+		}
+		return ids;
+	}
+
+	/**
+	 * Find all active tasks that match this death's NPC, by any of its ids.
+	 *
+	 * <p>Takes the record rather than the NPC deliberately: a despawned handle reports -1,
+	 * which matches nothing and makes the kill disappear without a word. The ids are
+	 * snapshotted in {@link DeathRecord} while the NPC is still in the scene.
+	 */
+	private List<NuzlockeTask> findMatchingTasks(DeathRecord death)
 	{
 		List<NuzlockeTask> matches = new ArrayList<>();
 
 		for (NuzlockeTask task : activeTasks)
 		{
 			TargetNpc targetNpc = task.getTargetNpc();
-			if (targetNpc != null && targetNpc.matchesNpcId(npcId))
+			if (targetNpc != null && death.ids.stream().anyMatch(targetNpc::matchesNpcId))
 			{
 				matches.add(task);
 			}
