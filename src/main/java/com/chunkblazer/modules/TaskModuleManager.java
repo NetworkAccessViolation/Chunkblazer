@@ -168,6 +168,13 @@ public class TaskModuleManager implements AbstractTaskModule.TaskCompletionCallb
 		}
 	}
 
+	/** Track a task again after the plugin held back its completion. */
+	public void retrack(NuzlockeTask task)
+	{
+		activeTasks.remove(task);
+		registerActiveTask(task);
+	}
+
 	/** A death the client never reported (see ChunkBlazerPlugin.onNpcDespawned). */
 	public void onMissedDeath(ActorDeath death)
 	{

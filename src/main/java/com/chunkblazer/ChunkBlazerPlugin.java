@@ -374,6 +374,11 @@ public class ChunkBlazerPlugin extends Plugin
 				{
 					return;
 				}
+				if (task != null && inPracticeArena())
+				{
+					heldInArena.add(task);
+					return;
+				}
 				// Coalesce: enqueue and let flushPendingCompletions() (onGameTick) do
 				// the expensive settle-up ONCE for the whole batch. Completing tasks
 				// one-by-one here — two config writes + a disk flush + five panel
@@ -399,7 +404,7 @@ public class ChunkBlazerPlugin extends Plugin
 			@Override
 			public void onProgressUpdated(NuzlockeTask task, int newProgress)
 			{
-				if (!countedWorld)
+				if (!countedWorld || inPracticeArena())
 				{
 					return;
 				}
@@ -565,6 +570,31 @@ public class ChunkBlazerPlugin extends Plugin
 	 * boosted or throwaway progress, so nothing done there may count. RuneLite gives the first
 	 * five their own profile type; tournament and LMS worlds are checked by world type.
 	 */
+	// Tasks a module reported in LMS or the PvP tutorial. The module stopped tracking
+	// them, so they're handed back once the player leaves.
+	private final Set<NuzlockeTask> heldInArena = ConcurrentHashMap.newKeySet();
+
+	/**
+	 * LMS and Pete Kayer's PvP tutorial lend 99 stats, prayers and gear, so nothing done
+	 * there counts. The tutorial has no varbit of its own: its instance NPCs give it away.
+	 */
+	boolean inPracticeArena()
+	{
+		if (client.getVarbitValue(VarbitID.BR_INGAME) != 0)
+		{
+			return true;
+		}
+		// PVPTUT_TUTOR_INSTANCE (16577) to PVPTUT_SA_NPC_PARTNER_6 (16630), newer than our API.
+		for (NPC npc : client.getTopLevelWorldView().npcs())
+		{
+			if (npc.getId() >= 16577 && npc.getId() <= 16630)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	boolean onCountedWorld()
 	{
 		java.util.Set<net.runelite.api.WorldType> types = client.getWorldType();
@@ -862,6 +892,18 @@ public class ChunkBlazerPlugin extends Plugin
 		// once, and the per-task settle-up path freezes the client at that volume
 		// (see completeTasks()). Coalescing keeps it to a single settle-up per tick.
 		flushPendingCompletions();
+
+		if (!heldInArena.isEmpty() && !inPracticeArena())
+		{
+			for (NuzlockeTask task : heldInArena)
+			{
+				if (!task.isCompleted())
+				{
+					taskModuleManager.retrack(task);
+				}
+			}
+			heldInArena.clear();
+		}
 		if (unsavedApiKey != null)
 		{
 			retryUnsavedApiKey(hashedAccountId());
