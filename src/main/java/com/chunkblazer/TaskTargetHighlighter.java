@@ -42,6 +42,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -284,7 +285,8 @@ public class TaskTargetHighlighter extends Overlay
 	private final Map<Integer, Info> objectInfoCache = new HashMap<>();
 	private final Map<Integer, Info> npcInfoCache = new HashMap<>();
 	private final Map<Integer, List<NuzlockeTask>> objectMatchCache = new HashMap<>();
-	private final Map<Integer, List<NuzlockeTask>> npcMatchCache = new HashMap<>();
+	// Keyed by every id the NPC goes by (see npcIds).
+	private final Map<Set<Integer>, List<NuzlockeTask>> npcMatchCache = new HashMap<>();
 
 	// Objects in the scene that currently have at least one task. Kept up to date
 	// by spawn/despawn events and fully rescanned when the wanted set changes.
@@ -707,16 +709,43 @@ public class TaskTargetHighlighter extends Overlay
 		});
 	}
 
-	/** Every active task this NPC is relevant to (by id or by rule). */
+	/**
+	 * Every id this NPC goes by: its own, its base composition's and the form it shows as.
+	 * Some NPCs report a new id while tasks list an old one (Paterdomus monks report 16272,
+	 * their composition is 3485); a task may list any of them.
+	 */
+	private static Set<Integer> npcIds(NPC npc)
+	{
+		Set<Integer> ids = new LinkedHashSet<>();
+		ids.add(npc.getId());
+		NPCComposition base = npc.getComposition();
+		if (base != null)
+		{
+			ids.add(base.getId());
+		}
+		NPCComposition shown = npc.getTransformedComposition();
+		if (shown != null)
+		{
+			ids.add(shown.getId());
+		}
+		return ids;
+	}
+
+	/** Every active task this NPC is relevant to (by any of its ids, or by rule). */
 	private List<NuzlockeTask> tasksForNpc(NPC npc)
 	{
-		return npcMatchCache.computeIfAbsent(npc.getId(), key ->
+		return npcMatchCache.computeIfAbsent(npcIds(npc), key ->
 		{
 			List<NuzlockeTask> result = new ArrayList<>();
-			List<NuzlockeTask> direct = npcTasks.get(key);
-			if (direct != null)
+			for (int each : key)
 			{
-				result.addAll(direct);
+				for (NuzlockeTask task : npcTasks.getOrDefault(each, Collections.emptyList()))
+				{
+					if (!result.contains(task))
+					{
+						result.add(task);
+					}
+				}
 			}
 			if (!npcRules.isEmpty())
 			{
